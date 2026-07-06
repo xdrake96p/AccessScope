@@ -311,7 +311,7 @@ class NodeAccessibilityAnalyzer(
             val result = WcagContrast.measureTextContrast(bitmap, snap.bounds, large) ?: return
             if (!WcagContrast.isReliableMeasurement(result)) return
             val isFieldLabel = PrecisionRules.isKnownContrastFieldLabel(snap)
-            val minConfidence = if (isFieldLabel) 0.60f else 0.72f
+            val minConfidence = if (isFieldLabel) 0.55f else 0.72f
             if (result.confidence < minConfidence) return
             if (!isFieldLabel &&
                 WcagContrast.relativeLuminance(result.foreground) > 0.80 &&
@@ -319,7 +319,12 @@ class NodeAccessibilityAnalyzer(
             ) {
                 return
             }
-            val threshold = if (large) WcagContrast.MIN_LARGE_TEXT_CONTRAST else WcagContrast.MIN_TEXT_CONTRAST
+            // Field label micro (txt_data_*): non scartare per altezza px sotto soglia 12sp
+            val threshold = if (large || isFieldLabel) {
+                WcagContrast.MIN_LARGE_TEXT_CONTRAST
+            } else {
+                WcagContrast.MIN_TEXT_CONTRAST
+            }
             if (result.ratio < threshold) {
                 violations += v(ViolationType.LOW_COLOR_CONTRAST, snap, packageName, screenTitle,
                     "Contrasto ${"%.2f".format(result.ratio)}:1 (serve ≥ $threshold:1). " +
@@ -441,15 +446,13 @@ class NodeAccessibilityAnalyzer(
 
     private fun isListItemTemplate(viewId: String, nodes: List<NodeSnapshot>): Boolean {
         if (nodes.size < 2) return false
-        if (PrecisionRules.isKnownListTemplateId(viewId)) {
-            if (nodes.map { it.className }.distinct().size == 1) return true
-        }
+        // Carousel Nexi: stesso viewId in item con classi wrapper diverse (SwipeLayout vs RelativeLayout)
+        if (PrecisionRules.isKnownListTemplateId(viewId)) return true
         val sameClass = nodes.map { it.className }.distinct().size == 1
         if (!sameClass) return false
         val heights = nodes.map { it.bounds.height() }
         val avg = heights.average()
         if (heights.all { kotlin.math.abs(it - avg) <= avg * 0.15 + 2 }) return true
-        // Carousel: stessa larghezza, altezze diverse, item impilati verticalmente
         val widths = nodes.map { it.bounds.width() }
         val widthAvg = widths.average()
         val widthSimilar = widths.all { kotlin.math.abs(it - widthAvg) <= widthAvg * 0.12 + 4 }

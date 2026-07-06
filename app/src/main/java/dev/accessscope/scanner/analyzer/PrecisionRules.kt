@@ -1,5 +1,7 @@
 package dev.accessscope.scanner.analyzer
 
+import android.graphics.Rect
+
 object PrecisionRules {
 
     fun viewIdShort(snap: NodeSnapshot): String =
@@ -97,6 +99,22 @@ object PrecisionRules {
                 other.hasAccessibleName()
         }
 
+    /** Figli etichettati che intersecano il container (ScrollView spesso non contiene bounds stretti). */
+    fun hasLabeledDescendantInScroll(snap: NodeSnapshot, all: List<NodeSnapshot>): Boolean =
+        all.any { other ->
+            other != snap &&
+                Rect.intersects(snap.bounds, other.bounds) &&
+                other.hasAccessibleName()
+        }
+
+    fun isMainContentScroll(snap: NodeSnapshot, screenArea: Int): Boolean {
+        if (!snap.isScrollable) return false
+        if (viewIdShort(snap) !in MAIN_CONTENT_SCROLL_IDS) return false
+        if (screenArea <= 0) return true
+        val snapArea = snap.bounds.width() * snap.bounds.height()
+        return snapArea > screenArea * 0.35f
+    }
+
     fun isCtaContainer(snap: NodeSnapshot): Boolean {
         val id = viewIdShort(snap)
         return id in setOf(
@@ -155,6 +173,7 @@ object PrecisionRules {
                 "last_access", "name_account", "labelcontacts", "enroll_user",
                 "tv_custom", "topbar_title", "no_result", "filtri_attivi",
                 "totale_distinte", "total_amount_ins", "user_type", "currency",
+                "multiple_slection", "checkbox_all",
             )
         ) {
             return true
@@ -195,10 +214,12 @@ object PrecisionRules {
     private val KNOWN_LIST_TEMPLATE_IDS = setOf(
         "content", "layout_content", "amount_dist", "amount_effetti", "causale",
         "vop_info", "data_creazione", "data_esecuzione", "txt_data_creazione",
-        "txt_data_esecuzione", "nome_banca", "state", "layout_content",
-        "check_multiple_selection", "beneficiario", "numero", "scadenza",
-        "recycler_distinte", "carousel_distinte_item",
+        "txt_data_esecuzione", "nome_banca", "state",
+        "check_multiple_selection", "multiple_slection", "beneficiario", "numero",
+        "scadenza", "recycler_distinte", "currency_symbol", "layout_content",
     )
+
+    private val MAIN_CONTENT_SCROLL_IDS = setOf("scrollview_port", "scroll", "card_home")
 
     fun isKnownListTemplateId(viewId: String?): Boolean {
         if (viewId.isNullOrBlank()) return false
@@ -220,6 +241,10 @@ object PrecisionRules {
         if ("topbar_title" in ids && ids.any { it.startsWith("topbar") || it.startsWith("layout_topbar") }) {
             return true
         }
+        // Fascia topbar Nexi: elementi affiancati per design, spacing intenzionale
+        val inTopBand = a.bounds.top < 400 && b.bounds.top < 400
+        val topBarRelated = ids.any { it.startsWith("topbar") || it.startsWith("layout_topbar") }
+        if (inTopBand && topBarRelated) return true
         return false
     }
 
@@ -250,17 +275,18 @@ object PrecisionRules {
 
     fun shouldSkipScrollWithoutLabel(snap: NodeSnapshot, all: List<NodeSnapshot>, screenArea: Int): Boolean {
         if (!snap.isScrollable) return false
+        if (isMainContentScroll(snap, screenArea)) return true
         val cls = snap.className.lowercase()
         val isKnownContainer = isScrollContainer(snap) ||
             cls.contains("recyclerview") ||
             cls.contains("viewpager")
         if (!isKnownContainer) return false
-        if (hasLabeledDescendant(snap, all)) return true
+        if (hasLabeledDescendant(snap, all) || hasLabeledDescendantInScroll(snap, all)) return true
         val snapArea = snap.bounds.width() * snap.bounds.height()
         if (screenArea > 0 && snapArea > screenArea * 0.5f) {
             val labeledChildren = all.count { other ->
                 other != snap &&
-                    snap.bounds.contains(other.bounds) &&
+                    Rect.intersects(snap.bounds, other.bounds) &&
                     other.hasAccessibleName()
             }
             if (labeledChildren >= 3) return true
@@ -274,6 +300,8 @@ object PrecisionRules {
         if (!snap.isInteractiveClickable() && !snap.isFocusable) return false
         if (isRecyclerListItem(snap, all)) return false
         if (isHomeChartOrCtaWidget(snap)) return false
+        val id = viewIdShort(snap)
+        if (id in setOf("multiple_slection", "checkbox_all") && snap.hasAccessibleName()) return false
         if (isCtaContainer(snap) && (hasTvCustomDescendant(snap, all) || hasLabeledDescendant(snap, all))) {
             return false
         }
