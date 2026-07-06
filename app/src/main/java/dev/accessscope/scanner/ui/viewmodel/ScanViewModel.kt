@@ -1,7 +1,6 @@
 package dev.accessscope.scanner.ui.viewmodel
 
 import android.app.Application
-import android.content.pm.PackageManager
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import dev.accessscope.scanner.AccessScopeApp
@@ -11,6 +10,7 @@ import dev.accessscope.scanner.data.ScanSessionState
 import dev.accessscope.scanner.data.ViolationArea
 import dev.accessscope.scanner.service.AccessScopeAccessibilityService
 import dev.accessscope.scanner.service.ScanOverlayService
+import dev.accessscope.scanner.util.AppIconCache
 import dev.accessscope.scanner.util.AppLaunchHelper
 import dev.accessscope.scanner.util.DebugTrace
 import dev.accessscope.scanner.util.PackageHelper
@@ -146,6 +146,10 @@ class ScanViewModel(application: Application) : AndroidViewModel(application) {
                     .thenBy { !it.isSystemApp }
                     .thenBy { it.label.lowercase() },
             )
+            val pm = getApplication<Application>().packageManager
+            withContext(Dispatchers.Default) {
+                AppIconCache.preload(pm, enriched.take(64).map { it.packageName })
+            }
             _uiState.update { state ->
                 state.copy(
                     apps = enriched,
@@ -239,13 +243,8 @@ class ScanViewModel(application: Application) : AndroidViewModel(application) {
         (getApplication<AccessScopeApp>()).stopScanSession(fromOverlay = false)
     }
 
-    fun appIcon(packageName: String): android.graphics.drawable.Drawable? {
-        return try {
-            getApplication<Application>().packageManager.getApplicationIcon(packageName)
-        } catch (_: PackageManager.NameNotFoundException) {
-            null
-        }
-    }
+    fun appIconBitmap(packageName: String): androidx.compose.ui.graphics.ImageBitmap? =
+        AppIconCache.getOrLoad(getApplication<Application>().packageManager, packageName)
 
     fun selectAllVisible() {
         _uiState.update { state ->

@@ -1,5 +1,9 @@
 package dev.accessscope.scanner.ui.components
 
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -26,6 +30,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.animation.togetherWith
+import dev.accessscope.scanner.ui.theme.AccessScopeMotion
 import dev.accessscope.scanner.ui.theme.BrandLight
 import dev.accessscope.scanner.ui.theme.BrandPrimary
 import dev.accessscope.scanner.ui.theme.HeaderGradient
@@ -92,10 +98,18 @@ fun HeroHeader(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                HeaderChip(
-                    label = if (isScanning) "Scansione attiva" else "Pronto",
-                    highlight = isScanning,
-                )
+                AnimatedContent(
+                    targetState = isScanning,
+                    transitionSpec = {
+                        fadeIn(AccessScopeMotion.fadeInTween) togetherWith fadeOut(AccessScopeMotion.screenExitTween)
+                    },
+                    label = "scan_status_chip",
+                ) { scanning ->
+                    HeaderChip(
+                        label = if (scanning) "Scansione attiva" else "Pronto",
+                        highlight = scanning,
+                    )
+                }
                 HeaderChip(label = "$selectedCount app selezionate")
             }
         }

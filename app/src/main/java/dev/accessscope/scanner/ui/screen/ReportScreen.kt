@@ -1,6 +1,9 @@
 package dev.accessscope.scanner.ui.screen
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -53,14 +56,19 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.accessscope.scanner.data.AccessibilityViolation
+import dev.accessscope.scanner.data.CheckAreaSummary
+import dev.accessscope.scanner.data.PassedCheck
 import dev.accessscope.scanner.data.ScreenReaderFinding
+import dev.accessscope.scanner.data.ViolationArea
 import dev.accessscope.scanner.data.ViolationSeverity
 import dev.accessscope.scanner.report.ReportHelper
 import dev.accessscope.scanner.report.ReportSectionGroup
+import dev.accessscope.scanner.ui.theme.AccessScopeMotion
 import dev.accessscope.scanner.ui.theme.BrandDark
 import dev.accessscope.scanner.ui.theme.BrandLight
 import dev.accessscope.scanner.ui.theme.BrandPrimary
 import dev.accessscope.scanner.ui.theme.BrandSecondary
+import dev.accessscope.scanner.ui.theme.Success
 import dev.accessscope.scanner.ui.theme.TextSecondary
 import dev.accessscope.scanner.ui.theme.severityColor
 import dev.accessscope.scanner.ui.viewmodel.ScanViewModel
@@ -84,7 +92,14 @@ fun ReportScreen(
     val filteredViolations = remember(violations, severityFilter) {
         severityFilter?.let { s -> violations.filter { it.type.severity == s } } ?: violations
     }
-    val screenTotals = remember(violations) { ReportHelper.screenTotals(violations) }
+    val checkSummaries = remember(scan.checkSummaries) { scan.checkSummaries }
+    val passedTotal = remember(checkSummaries) { ReportHelper.totalPassedChecks(checkSummaries) }
+    val coverage = remember(checkSummaries, violations) {
+        ReportHelper.globalCheckCoverage(checkSummaries, violations)
+    }
+    val screenOverview = remember(violations, checkSummaries) {
+        ReportHelper.screenOverview(violations, checkSummaries)
+    }
     val sectionGroups = remember(filteredViolations) {
         ReportHelper.groupViolationsBySection(filteredViolations)
     }
@@ -125,7 +140,7 @@ fun ReportScreen(
         },
         modifier = Modifier.navigationBarsPadding(),
     ) { padding ->
-        if (violations.isEmpty() && scan.screenReaderFindings.isEmpty()) {
+        if (violations.isEmpty() && scan.screenReaderFindings.isEmpty() && passedTotal == 0) {
             Box(
                 Modifier
                     .fillMaxSize()
@@ -153,7 +168,14 @@ fun ReportScreen(
                     appCount = scan.selectedPackages.size,
                     violationCount = violations.size,
                     talkBackCount = scan.screenReaderFindings.size,
+                    passedCheckCount = passedTotal,
                 )
+            }
+
+            if (coverage.isNotEmpty()) {
+                item {
+                    CheckCoverageCard(coverage = coverage)
+                }
             }
 
             item {
@@ -164,14 +186,15 @@ fun ReportScreen(
                 )
             }
 
-            if (screenTotals.isNotEmpty()) {
-                item {
-                    ScreenOverviewCard(screenTotals = screenTotals)
+            if (screenOverview.isNotEmpty()) {
+                item(key = "screen_overview") {
+                    ScreenOverviewCard(entries = screenOverview)
                 }
             }
 
             sectionGroups.forEach { (section, sectionViolations) ->
                 val talkBack = talkBackBySection[section].orEmpty()
+                val screenChecks = ReportHelper.checksForScreen(checkSummaries, section.screenTitle)
                 val key = sectionKey(section)
                 val expanded = key in expandedSections
 
@@ -180,9 +203,21 @@ fun ReportScreen(
                         section = section,
                         violationCount = sectionViolations.size,
                         talkBackCount = talkBack.size,
+                        passedCount = screenChecks.sumOf { it.passedCount },
                         expanded = expanded,
                         onToggle = { toggleSection(section) },
                     )
+                }
+
+                if (expanded && screenChecks.isNotEmpty()) {
+                    item(key = "passed_$key") {
+                        AnimatedVisibility(
+                            visible = true,
+                            enter = fadeIn(AccessScopeMotion.fadeInTween) + expandVertically(),
+                        ) {
+                            PassedChecksCard(summaries = screenChecks)
+                        }
+                    }
                 }
 
                 if (expanded) {
@@ -234,6 +269,7 @@ private fun ReportSummaryCard(
     appCount: Int,
     violationCount: Int,
     talkBackCount: Int,
+    passedCheckCount: Int = 0,
 ) {
     val date = remember {
         SimpleDateFormat("dd MMMM yyyy, HH:mm", Locale.ITALY).format(Date())
@@ -276,6 +312,9 @@ private fun ReportSummaryCard(
                 SummaryRow("Analisi eseguite", "$scanAnalyses")
             }
             SummaryRow("Problemi trovati", "$violationCount")
+            if (passedCheckCount > 0) {
+                SummaryRow("Controlli superati", "$passedCheckCount")
+            }
             SummaryRow("Note screen reader", "$talkBackCount")
         }
     }
@@ -322,22 +361,37 @@ private fun SeverityFilterRow(
 }
 
 @Composable
-private fun ScreenOverviewCard(screenTotals: Map<String, Int>) {
+private fun ScreenOverviewCard(entries: List<ReportHelper.ScreenOverviewEntry>) {
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(containerColor = BrandLight),
         shape = RoundedCornerShape(16.dp),
     ) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Text("Schermate con problemi", fontWeight = FontWeight.SemiBold)
-            screenTotals.toSortedMap().forEach { (screen, total) ->
+            Text("Panoramica schermate", fontWeight = FontWeight.SemiBold)
+            entries.forEach { entry ->
+                val isClean = entry.violationCount == 0
                 Row(
                     Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Text(screen, style = MaterialTheme.typography.bodyMedium)
-                    Text("$total", fontWeight = FontWeight.Bold, color = BrandPrimary)
+                    Text(entry.screenTitle, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        if (entry.passedCount > 0) {
+                            Text(
+                                "${entry.passedCount} OK",
+                                fontWeight = FontWeight.Medium,
+                                color = Success,
+                                style = MaterialTheme.typography.labelMedium,
+                            )
+                        }
+                        Text(
+                            if (isClean) "0 problemi" else "${entry.violationCount}",
+                            fontWeight = FontWeight.Bold,
+                            color = if (isClean) Success else BrandPrimary,
+                        )
+                    }
                 }
             }
         }
@@ -349,6 +403,7 @@ private fun SectionHeaderCard(
     section: ReportSectionGroup,
     violationCount: Int,
     talkBackCount: Int,
+    passedCount: Int = 0,
     expanded: Boolean,
     onToggle: () -> Unit,
 ) {
@@ -379,7 +434,11 @@ private fun SectionHeaderCard(
                     )
                 }
                 Text(
-                    "$violationCount problemi · $talkBackCount note TalkBack",
+                    buildString {
+                        append("$violationCount problemi")
+                        if (passedCount > 0) append(" · $passedCount OK")
+                        if (talkBackCount > 0) append(" · $talkBackCount note TalkBack")
+                    },
                     style = MaterialTheme.typography.labelSmall,
                     color = TextSecondary,
                 )
@@ -439,16 +498,10 @@ private fun ViolationCard(
             }
             Text(type.wcagRef, style = MaterialTheme.typography.labelSmall, color = BrandPrimary)
             Text(violation.simpleExplanation, style = MaterialTheme.typography.bodySmall)
-            Text("Dettaglio: ${violation.details}", style = MaterialTheme.typography.labelSmall, color = TextSecondary)
-            Text("App: $appLabel", style = MaterialTheme.typography.labelSmall, color = TextSecondary)
-            val meta = buildList {
-                add(violation.viewClassName.substringAfterLast('.'))
-                violation.viewId?.let { add(it.substringAfterLast('/')) }
-                violation.bounds?.let { add(it) }
-            }.joinToString(" · ")
-            if (meta.isNotBlank()) {
-                Text(meta, style = MaterialTheme.typography.labelSmall, color = TextSecondary)
+            ReportHelper.violationDetailLines(violation).forEach { line ->
+                Text(line, style = MaterialTheme.typography.labelSmall, color = TextSecondary)
             }
+            Text("App: $appLabel", style = MaterialTheme.typography.labelSmall, color = TextSecondary)
     }
 }
 
@@ -479,6 +532,55 @@ private fun TalkBackFindingCard(
 }
 
 @Composable
+private fun CheckCoverageCard(
+    coverage: List<Pair<ViolationArea, Pair<Int, Int>>>,
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = Color(0xFFE8F5E9)),
+        shape = RoundedCornerShape(16.dp),
+    ) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("Copertura controlli per ambito", fontWeight = FontWeight.SemiBold)
+            coverage.forEach { (area, counts) ->
+                val (passed, failed) = counts
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                    Text("${area.emoji} ${area.title}", style = MaterialTheme.typography.bodyMedium)
+                    Text("OK $passed · Problemi $failed", color = Color(0xFF2E7D32), fontWeight = FontWeight.Medium)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun PassedChecksCard(summaries: List<CheckAreaSummary>) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = Color(0xFFF1F8E9)),
+        shape = RoundedCornerShape(12.dp),
+    ) {
+        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Text("✅ Controlli superati", fontWeight = FontWeight.SemiBold, color = Color(0xFF2E7D32))
+            summaries.forEach { summary ->
+                Text(
+                    "${summary.area.emoji} ${summary.area.title}: ${summary.passedCount} OK",
+                    fontWeight = FontWeight.Medium,
+                    style = MaterialTheme.typography.bodySmall,
+                )
+                summary.samples.take(3).forEach { sample ->
+                    Text(
+                        ReportHelper.passedCheckLine(sample),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = TextSecondary,
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
 private fun GlossaryCard() {
     var expanded by rememberSaveable { mutableStateOf(false) }
     val terms = listOf(
@@ -504,7 +606,11 @@ private fun GlossaryCard() {
                     contentDescription = null,
                 )
             }
-            AnimatedVisibility(expanded) {
+            AnimatedVisibility(
+                visible = expanded,
+                enter = fadeIn(AccessScopeMotion.fadeInTween),
+                exit = fadeOut(AccessScopeMotion.screenExitTween),
+            ) {
                 Column(Modifier.padding(top = 12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     terms.forEach { (term, definition) ->
                         Text(term, fontWeight = FontWeight.Medium, color = BrandPrimary)

@@ -5,6 +5,7 @@ import android.graphics.Rect
 import android.view.accessibility.AccessibilityNodeInfo
 import java.util.ArrayDeque
 import dev.accessscope.scanner.data.AccessibilityViolation
+import dev.accessscope.scanner.data.CheckAreaSummary
 import dev.accessscope.scanner.data.ScanScope
 import dev.accessscope.scanner.data.ScreenReaderFinding
 import dev.accessscope.scanner.data.ViolationArea
@@ -33,6 +34,7 @@ class NodeAccessibilityAnalyzer(
     ): AnalysisResult {
         analyzeFingerprint = screenFingerprint
         val violations = mutableListOf<AccessibilityViolation>()
+        val checkCollector = CheckCollector()
         val snapshots = mutableListOf<NodeSnapshot>()
         var traversalIndex = 0
         collectSnapshots(root, snapshots, ArrayDeque(), { traversalIndex++ })
@@ -45,7 +47,7 @@ class NodeAccessibilityAnalyzer(
                 checkSingleNode(
                     snap, snapshots, packageName, screenTitle,
                     violations, screenshot, customActionEmitted,
-                    viewport, screenWidth,
+                    viewport, screenWidth, checkCollector,
                 )
             }
         }
@@ -69,7 +71,7 @@ class NodeAccessibilityAnalyzer(
         }
 
         if (dynamicContentSilent && includes(ViolationArea.SCREEN_READER) &&
-            !PrecisionRules.isHomeScreenContext(snapshots, packageName)
+            !PrecisionRules.shouldSkipSilentDynamicContent(screenTitle, snapshots, packageName)
         ) {
             violations += AccessibilityViolation(
                 type = ViolationType.DYNAMIC_CONTENT_SILENT,
@@ -86,7 +88,11 @@ class NodeAccessibilityAnalyzer(
         } else {
             emptyList()
         }
-        return AnalysisResult(violations, screenReaderFindings)
+        return AnalysisResult(
+            violations,
+            screenReaderFindings,
+            checkCollector.buildSummaries(),
+        )
     }
 
     private fun collectSnapshots(
@@ -130,11 +136,12 @@ class NodeAccessibilityAnalyzer(
         customActionEmitted: MutableSet<String>,
         viewport: Rect,
         screenWidth: Int,
+        checkCollector: CheckCollector,
     ) {
         if (PrecisionRules.shouldSkipDrawerNode(snap)) return
         if (PrecisionRules.shouldSkipPinPadWhenNotPinScreen(snap, screenTitle, packageName)) return
         if (PrecisionRules.shouldSkipHomeWidgetAnalysis(snap, all, packageName)) return
-        if (PrecisionRules.shouldSkipStructuralNoise(snap, viewport, screenWidth)) return
+        if (PrecisionRules.shouldSkipStructuralNoise(snap, viewport, screenWidth, packageName)) return
 
         if (includes(ViolationArea.LABELS)) {
             val missingLabel = (snap.isInteractiveClickable() || PrecisionRules.shouldReportMissingTopBarLabel(snap, all)) &&
@@ -144,13 +151,35 @@ class NodeAccessibilityAnalyzer(
             if (missingLabel) {
                 violations += v(ViolationType.MISSING_LABEL, snap, packageName, screenTitle,
                     "Nessuna etichetta (testo, descrizione o hint).", 0.95f)
+            } else if (snap.isInteractiveClickable() && snap.hasAccessibleName()) {
+                checkCollector.recordPass(
+                    ViolationArea.LABELS, screenTitle, packageName,
+                    "Etichetta accessibile presente", snap, ViolationType.MISSING_LABEL.wcagRef,
+                )
+            } else if (PrecisionRules.shouldReportMissingTopBarLabel(snap, all) && snap.hasAccessibleName()) {
+                checkCollector.recordPass(
+                    ViolationArea.LABELS, screenTitle, packageName,
+                    "Icona toolbar con descrizione", snap, ViolationType.MISSING_LABEL.wcagRef,
+                )
             }
         }
         if (snap.isInteractiveClickable() && includes(ViolationArea.TOUCH)) {
             if (!PrecisionRules.shouldSkipTouchTargetCheck(snap, all, packageName)) {
                 if (snap.bounds.width() < minTouchTargetPx || snap.bounds.height() < minTouchTargetPx) {
-                    violations += v(ViolationType.SMALL_TOUCH_TARGET, snap, packageName, screenTitle,
-                        "Misura ${snap.bounds.width()}×${snap.bounds.height()} px, minimo ${minTouchTargetPx} px.", 0.92f)
+                    violations += v(
+                        ViolationType.SMALL_TOUCH_TARGET, snap, packageName, screenTitle,
+                        "Misura ${snap.bounds.width()}×${snap.bounds.height()} px, minimo ${minTouchTargetPx} px.",
+                        0.92f,
+                        measuredValue = "${snap.bounds.width()}×${snap.bounds.height()} px",
+                        requiredValue = "≥ ${minTouchTargetPx}×${minTouchTargetPx} px",
+                    )
+                } else {
+                    checkCollector.recordPass(
+                        ViolationArea.TOUCH, screenTitle, packageName,
+                        "Target di tocco sufficiente",
+                        snap, ViolationType.SMALL_TOUCH_TARGET.wcagRef,
+                        "${snap.bounds.width()}×${snap.bounds.height()} px",
+                    )
                 }
             }
         }
@@ -194,8 +223,9 @@ class NodeAccessibilityAnalyzer(
                 "Titolo visibile non marcato come heading.", 0.85f)
         }
 
-        if (includes(ViolationArea.TEXT) && snap.hasVisibleText() && !PrecisionRules.shouldSkipSmallTextCheck(snap) &&
-            !PrecisionRules.isOffScreenOrMarginalNode(snap, viewport)
+        if (includes(ViolationArea.TEXT) && snap.hasVisibleText() &&
+            !PrecisionRules.shouldSkipSmallTextCheck(snap, viewport, packageName) &&
+            !PrecisionRules.isOffScreenOrMarginalNode(snap, viewport, packageName)
         ) {
             if (snap.bounds.height() < minTextHeightPx) {
                 violations += v(ViolationType.TEXT_TOO_SMALL, snap, packageName, screenTitle,
@@ -310,7 +340,7 @@ class NodeAccessibilityAnalyzer(
         }
 
         if (includes(ViolationArea.COLOR)) {
-            screenshot?.let { checkContrast(snap, packageName, screenTitle, violations, it, all, viewport) }
+            screenshot?.let { checkContrast(snap, packageName, screenTitle, violations, it, all, viewport, checkCollector) }
         }
     }
 
@@ -322,6 +352,7 @@ class NodeAccessibilityAnalyzer(
         bitmap: Bitmap,
         all: List<NodeSnapshot>,
         viewport: Rect,
+        checkCollector: CheckCollector,
     ) {
         if (PrecisionRules.isLayoutContainer(snap.className)) return
         if (PrecisionRules.isLikelyStatusBadge(snap)) return
@@ -337,7 +368,11 @@ class NodeAccessibilityAnalyzer(
             val large = WcagContrast.isLargeText(snap.bounds.height(), density) || isFieldLabel
             val result = WcagContrast.measureTextContrast(bitmap, sampleBounds, large) ?: return
             if (!WcagContrast.isReliableMeasurement(result)) return
-            val minConfidence = if (isFieldLabel) 0.50f else 0.72f
+            val minConfidence = when {
+                PrecisionRules.viewIdShort(snap).startsWith("txt_data_") -> 0.45f
+                isFieldLabel -> 0.50f
+                else -> 0.72f
+            }
             if (result.confidence < minConfidence) return
             if (!isFieldLabel &&
                 WcagContrast.relativeLuminance(result.foreground) > 0.80 &&
@@ -352,10 +387,21 @@ class NodeAccessibilityAnalyzer(
                 WcagContrast.MIN_TEXT_CONTRAST
             }
             if (result.ratio < threshold) {
-                violations += v(ViolationType.LOW_COLOR_CONTRAST, snap, packageName, screenTitle,
+                violations += v(
+                    ViolationType.LOW_COLOR_CONTRAST, snap, packageName, screenTitle,
                     "Contrasto ${"%.2f".format(result.ratio)}:1 (serve ≥ $threshold:1). " +
                         "${result.samplesUsed} campioni, confidenza ${(result.confidence * 100).toInt()}%.",
-                    result.confidence)
+                    result.confidence,
+                    measuredValue = "${"%.2f".format(result.ratio)}:1",
+                    requiredValue = "≥ $threshold:1",
+                )
+            } else {
+                checkCollector.recordPass(
+                    ViolationArea.COLOR, screenTitle, packageName,
+                    "Contrasto testo sufficiente",
+                    snap, ViolationType.LOW_COLOR_CONTRAST.wcagRef,
+                    "${"%.2f".format(result.ratio)}:1 (≥ $threshold:1)",
+                )
             }
         } else if (snap.isInteractiveClickable() || snap.isImageClass()) {
             if (PrecisionRules.shouldSkipTopBarIconContrast(snap, all, viewport)) return
@@ -363,9 +409,20 @@ class NodeAccessibilityAnalyzer(
             if (!WcagContrast.isReliableMeasurement(result)) return
             if (result.confidence < 0.72f) return
             if (result.ratio < WcagContrast.MIN_NON_TEXT_CONTRAST) {
-                violations += v(ViolationType.LOW_NON_TEXT_CONTRAST, snap, packageName, screenTitle,
+                violations += v(
+                    ViolationType.LOW_NON_TEXT_CONTRAST, snap, packageName, screenTitle,
                     "Contrasto UI ${"%.2f".format(result.ratio)}:1 (serve ≥ ${WcagContrast.MIN_NON_TEXT_CONTRAST}:1).",
-                    result.confidence)
+                    result.confidence,
+                    measuredValue = "${"%.2f".format(result.ratio)}:1",
+                    requiredValue = "≥ ${WcagContrast.MIN_NON_TEXT_CONTRAST}:1",
+                )
+            } else {
+                checkCollector.recordPass(
+                    ViolationArea.COLOR, screenTitle, packageName,
+                    "Contrasto icona/controllo sufficiente",
+                    snap, ViolationType.LOW_NON_TEXT_CONTRAST.wcagRef,
+                    "${"%.2f".format(result.ratio)}:1",
+                )
             }
         }
     }
@@ -575,19 +632,45 @@ class NodeAccessibilityAnalyzer(
         return NON_DESCRIPTIVE_LINKS.any { n == it || n.matches(Regex("^$it\\W*")) }
     }
 
-    private fun v(type: ViolationType, snap: NodeSnapshot, pkg: String, screen: String, details: String, confidence: Float) =
-        AccessibilityViolation(
-            type = type,
-            viewClassName = snap.className,
-            screenTitle = screen,
-            packageName = pkg,
-            details = details,
-            viewId = snap.viewId,
-            bounds = snap.boundsLabel(),
-            sectionTitle = snap.sectionTitle,
-            confidence = confidence,
-            screenFingerprint = analyzeFingerprint,
-        )
+    private fun v(
+        type: ViolationType,
+        snap: NodeSnapshot,
+        pkg: String,
+        screen: String,
+        details: String,
+        confidence: Float,
+        measuredValue: String? = null,
+        requiredValue: String? = null,
+    ) = AccessibilityViolation(
+        type = type,
+        viewClassName = snap.className,
+        screenTitle = screen,
+        packageName = pkg,
+        details = details,
+        viewId = snap.viewId,
+        bounds = snap.boundsLabel(),
+        sectionTitle = snap.sectionTitle,
+        confidence = confidence,
+        screenFingerprint = analyzeFingerprint,
+        elementLabel = snap.accessibleName()?.take(80) ?: snap.text?.trim()?.take(80),
+        measuredValue = measuredValue,
+        requiredValue = requiredValue,
+        remediation = remediationFor(type),
+    )
+
+    private fun remediationFor(type: ViolationType): String = when (type) {
+        ViolationType.LOW_COLOR_CONTRAST, ViolationType.LOW_NON_TEXT_CONTRAST ->
+            "Aumenta il contrasto tra primo piano e sfondo (testo più scuro o sfondo più chiaro)."
+        ViolationType.MISSING_LABEL, ViolationType.IMAGE_MISSING_ALT, ViolationType.CUSTOM_ACTION_UNLABELED ->
+            "Aggiungi contentDescription o testo visibile che descriva l'azione o l'icona."
+        ViolationType.SMALL_TOUCH_TARGET, ViolationType.INSUFFICIENT_TOUCH_SPACING ->
+            "Ingrandisci l'area tappabile ad almeno 48×48 dp o aumenta lo spazio tra i controlli."
+        ViolationType.TEXT_TOO_SMALL ->
+            "Usa una dimensione testo ≥ 12sp (16sp consigliato per testo interattivo)."
+        ViolationType.DYNAMIC_CONTENT_SILENT ->
+            "Annuncia i cambi di contenuto con liveRegion o AccessibilityEvent TYPE_ANNOUNCEMENT."
+        else -> "Correggi secondo ${type.wcagRef} e verifica con TalkBack."
+    }
 
     private fun NodeSnapshot.area() = bounds.width() * bounds.height()
 
@@ -615,6 +698,7 @@ class NodeAccessibilityAnalyzer(
     data class AnalysisResult(
         val violations: List<AccessibilityViolation>,
         val screenReaderFindings: List<ScreenReaderFinding>,
+        val checkSummaries: List<CheckAreaSummary> = emptyList(),
     )
 
     companion object {

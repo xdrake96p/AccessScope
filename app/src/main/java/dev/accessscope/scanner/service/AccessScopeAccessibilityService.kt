@@ -286,6 +286,7 @@ class AccessScopeAccessibilityService : AccessibilityService() {
         val fingerprint = ScreenFingerprint.compute(root, packageName, screenTitle)
         val result = analyzer.analyzeTree(root, packageName, screenTitle, screenshot, fingerprint)
         repository.addViolations(result.violations)
+        repository.addCheckSummaries(result.checkSummaries)
         if (repository.currentScanScope().includes(ViolationArea.SCREEN_READER)) {
             repository.addScreenReaderFindings(result.screenReaderFindings)
         }

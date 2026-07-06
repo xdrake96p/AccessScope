@@ -1,5 +1,6 @@
 package dev.accessscope.scanner.data
 
+import dev.accessscope.scanner.analyzer.CheckCollector
 import dev.accessscope.scanner.report.ReportHelper
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -45,6 +46,7 @@ class ScanSessionRepository(context: android.content.Context) {
             scanScope = scanScope,
             lastPdfPath = null,
             errorMessage = null,
+            checkSummaries = emptyList(),
         )
         prefs.edit()
             .putBoolean(KEY_SCANNING, true)
@@ -99,6 +101,15 @@ class ScanSessionRepository(context: android.content.Context) {
             it.copy(
                 uniqueScreens = it.uniqueScreens + 1,
                 visitedScreenTitles = scannedScreenTitles.values.toList(),
+            )
+        }
+    }
+
+    fun addCheckSummaries(summaries: List<CheckAreaSummary>) {
+        if (summaries.isEmpty()) return
+        _state.update { current ->
+            current.copy(
+                checkSummaries = CheckCollector.merge(current.checkSummaries + summaries),
             )
         }
     }

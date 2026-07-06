@@ -227,9 +227,14 @@ data class AccessibilityViolation(
     val confidence: Float = 1.0f,
     val timestampMs: Long = System.currentTimeMillis(),
     val screenFingerprint: String? = null,
+    val elementLabel: String? = null,
+    val measuredValue: String? = null,
+    val requiredValue: String? = null,
+    val remediation: String? = null,
 ) {
     val area: ViolationArea get() = type.area
     val simpleExplanation: String get() = type.plainHint
+    val wcagReference: String get() = type.wcagRef
 
     /** Sottosezione UI (es. «Credenziali» dentro «Login»). */
     val reportSection: String
@@ -260,6 +265,27 @@ data class AccessibilityViolation(
     }
 }
 
+/** Controllo superato durante la scansione (campione rappresentativo). */
+data class PassedCheck(
+    val area: ViolationArea,
+    val checkLabel: String,
+    val screenTitle: String,
+    val packageName: String,
+    val elementSummary: String,
+    val viewId: String? = null,
+    val bounds: String? = null,
+    val wcagRef: String? = null,
+)
+
+/** Riepilogo controlli OK per ambito e schermata. */
+data class CheckAreaSummary(
+    val area: ViolationArea,
+    val screenTitle: String,
+    val packageName: String,
+    val passedCount: Int,
+    val samples: List<PassedCheck> = emptyList(),
+)
+
 data class ScreenReaderFinding(
     val packageName: String,
     val screenTitle: String,
@@ -289,6 +315,7 @@ data class ScanSessionState(
     val scanAnalyses: Int = 0,
     val scanScope: ScanScope = ScanScope.FULL,
     val visitedScreenTitles: List<String> = emptyList(),
+    val checkSummaries: List<CheckAreaSummary> = emptyList(),
     val lastPdfPath: String? = null,
     val errorMessage: String? = null,
 ) {

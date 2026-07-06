@@ -1,5 +1,11 @@
 package dev.accessscope.scanner.ui.screen
 
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -46,6 +52,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -54,20 +61,22 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.core.graphics.drawable.toBitmap
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.accessscope.scanner.data.InstalledAppInfo
 import dev.accessscope.scanner.ui.components.FeatureHighlights
 import dev.accessscope.scanner.ui.components.HeroHeader
 import dev.accessscope.scanner.ui.components.PermissionsCard
 import dev.accessscope.scanner.ui.components.ScanDashboard
+import dev.accessscope.scanner.ui.theme.AccessScopeMotion
 import dev.accessscope.scanner.ui.theme.BrandPrimary
 import dev.accessscope.scanner.ui.theme.Danger
+import dev.accessscope.scanner.ui.theme.Success
 import dev.accessscope.scanner.ui.theme.SurfaceLight
 import dev.accessscope.scanner.ui.theme.TextSecondary
+import dev.accessscope.scanner.util.AppIconCache
 import dev.accessscope.scanner.util.PdfHelper
 import dev.accessscope.scanner.ui.viewmodel.ScanViewModel
 
@@ -78,6 +87,7 @@ fun HomeScreen(
     onOpenSettings: () -> Unit = {},
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
+    val packageManager = remember(context) { context.packageManager }
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val snackbarHost = remember { SnackbarHostState() }
     var query by remember { mutableStateOf("") }
@@ -89,13 +99,20 @@ fun HomeScreen(
         }
     }
 
-    val filteredApps = remember(uiState.apps, query) {
-        if (query.isBlank()) uiState.apps
-        else uiState.apps.filter {
-            it.label.contains(query, ignoreCase = true) ||
-                it.packageName.contains(query, ignoreCase = true)
+    val filteredApps by remember {
+        derivedStateOf {
+            if (query.isBlank()) uiState.apps
+            else uiState.apps.filter {
+                it.label.contains(query, ignoreCase = true) ||
+                    it.packageName.contains(query, ignoreCase = true)
+            }
         }
     }
+
+    val showDashboard = uiState.scanState.isScanning ||
+        uiState.scanState.violations.isNotEmpty() ||
+        uiState.scanState.uniqueScreens > 0 ||
+        uiState.scanState.screenReaderFindings.isNotEmpty()
 
     Scaffold(
         modifier = Modifier.background(SurfaceLight),
@@ -119,7 +136,7 @@ fun HomeScreen(
             contentPadding = PaddingValues(bottom = 16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            item {
+            item(key = "hero") {
                 HeroHeader(
                     selectedCount = uiState.selectedPackages.size,
                     isScanning = uiState.scanState.isScanning,
@@ -127,7 +144,7 @@ fun HomeScreen(
                 )
             }
 
-            item {
+            item(key = "highlights") {
                 Column(Modifier.padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     FeatureHighlights()
                     PermissionsCard(
@@ -139,43 +156,33 @@ fun HomeScreen(
                 }
             }
 
-            if (uiState.scanState.isScanning) {
-                item {
-                    ScanDashboard(
-                        violations = uiState.scanState.violations,
-                        screens = uiState.scanState.uniqueScreens,
-                        scanAnalyses = uiState.scanState.scanAnalyses,
-                        talkBackFindings = uiState.scanState.screenReaderFindings.size,
-                        isPartialScan = !uiState.scanState.scanScope.isFullScan,
-                        scanScopeLabel = uiState.scanState.scanScope.label(),
-                        isScanning = true,
-                        onOpenReport = onOpenReport,
-                        modifier = Modifier.padding(horizontal = 16.dp),
-                    )
-                }
-            } else if (
-                uiState.scanState.violations.isNotEmpty() ||
-                uiState.scanState.uniqueScreens > 0 ||
-                uiState.scanState.screenReaderFindings.isNotEmpty()
-            ) {
-                item {
-                    ScanDashboard(
-                        violations = uiState.scanState.violations,
-                        screens = uiState.scanState.uniqueScreens,
-                        scanAnalyses = uiState.scanState.scanAnalyses,
-                        talkBackFindings = uiState.scanState.screenReaderFindings.size,
-                        isPartialScan = !uiState.scanState.scanScope.isFullScan,
-                        scanScopeLabel = uiState.scanState.scanScope.label(),
-                        isScanning = false,
-                        onOpenReport = onOpenReport,
-                        modifier = Modifier.padding(horizontal = 16.dp),
-                    )
+            if (showDashboard) {
+                item(key = "dashboard") {
+                    AnimatedVisibility(
+                        visible = true,
+                        enter = fadeIn(AccessScopeMotion.fadeInTween) + slideInVertically(
+                            animationSpec = androidx.compose.animation.core.tween(220),
+                            initialOffsetY = { it / 5 },
+                        ),
+                    ) {
+                        ScanDashboard(
+                            violations = uiState.scanState.violations,
+                            screens = uiState.scanState.uniqueScreens,
+                            scanAnalyses = uiState.scanState.scanAnalyses,
+                            talkBackFindings = uiState.scanState.screenReaderFindings.size,
+                            isPartialScan = !uiState.scanState.scanScope.isFullScan,
+                            scanScopeLabel = uiState.scanState.scanScope.label(),
+                            isScanning = uiState.scanState.isScanning,
+                            onOpenReport = onOpenReport,
+                            modifier = Modifier.padding(horizontal = 16.dp),
+                        )
+                    }
                 }
             }
 
             if (!uiState.scanState.isScanning) {
                 uiState.scanState.lastPdfPath?.let { path ->
-                    item {
+                    item(key = "pdf_$path") {
                         PdfResultCard(
                             path = path,
                             onOpenPdf = { PdfHelper.openPdf(context, path) },
@@ -185,7 +192,7 @@ fun HomeScreen(
                 }
             }
 
-            item {
+            item(key = "search_header") {
                 Column(Modifier.padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedTextField(
                         value = query,
@@ -242,7 +249,7 @@ fun HomeScreen(
             }
 
             if (filteredApps.isEmpty() && !uiState.isLoadingApps) {
-                item {
+                item(key = "empty") {
                     Box(
                         Modifier
                             .fillMaxWidth()
@@ -254,11 +261,18 @@ fun HomeScreen(
                 }
             }
 
-            items(filteredApps, key = { it.packageName }) { app ->
+            items(
+                items = filteredApps,
+                key = { it.packageName },
+                contentType = { "app_row" },
+            ) { app ->
+                val icon = remember(app.packageName) {
+                    AppIconCache.getOrLoad(packageManager, app.packageName)
+                }
                 AppRow(
                     app = app,
                     selected = app.packageName in uiState.selectedPackages,
-                    viewModel = viewModel,
+                    icon = icon,
                     onToggle = { viewModel.toggleApp(app.packageName) },
                     onToggleFavorite = { viewModel.toggleFavorite(app.packageName) },
                     modifier = Modifier.padding(horizontal = 16.dp),
@@ -299,18 +313,17 @@ private fun PdfResultCard(
 private fun AppRow(
     app: InstalledAppInfo,
     selected: Boolean,
-    viewModel: ScanViewModel,
+    icon: ImageBitmap?,
     onToggle: () -> Unit,
     onToggleFavorite: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val containerColor = if (selected) BrandPrimary.copy(alpha = 0.10f) else MaterialTheme.colorScheme.surface
     Card(
         modifier = modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(
-            containerColor = if (selected) BrandPrimary.copy(alpha = 0.12f) else MaterialTheme.colorScheme.surface,
-        ),
+        colors = CardDefaults.cardColors(containerColor = containerColor),
         shape = RoundedCornerShape(14.dp),
-        elevation = CardDefaults.cardElevation(defaultElevation = if (selected) 2.dp else 0.dp),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
     ) {
         Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
             IconButton(onClick = onToggleFavorite) {
@@ -320,10 +333,9 @@ private fun AppRow(
                     tint = if (app.isFavorite) Color(0xFFFFB300) else TextSecondary,
                 )
             }
-            val drawable = remember(app.packageName) { viewModel.appIcon(app.packageName) }
-            if (drawable != null) {
+            if (icon != null) {
                 Image(
-                    bitmap = drawable.toBitmap(width = 96, height = 96).asImageBitmap(),
+                    bitmap = icon,
                     contentDescription = "Icona ${app.label}",
                     modifier = Modifier.size(44.dp).clip(CircleShape),
                 )
@@ -374,46 +386,66 @@ private fun ScanActionBar(
             .padding(horizontal = 16.dp, vertical = 12.dp),
         horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        Button(
-            onClick = onStart,
-            enabled = !isScanning && canStart,
-            modifier = Modifier.weight(1f).height(52.dp),
-            shape = RoundedCornerShape(14.dp),
-            colors = ButtonDefaults.buttonColors(containerColor = BrandPrimary),
-            contentPadding = PaddingValues(horizontal = 16.dp),
-        ) {
-            Row(
-                horizontalArrangement = Arrangement.Center,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Icon(
-                    Icons.Outlined.PlayArrow,
-                    contentDescription = null,
-                    modifier = Modifier.size(22.dp),
-                )
-                Spacer(Modifier.width(8.dp))
-                Text("Avvia", style = MaterialTheme.typography.labelLarge)
+        AnimatedContent(
+            targetState = isScanning,
+            modifier = Modifier.weight(1f),
+            transitionSpec = {
+                fadeIn(AccessScopeMotion.fadeInTween) togetherWith fadeOut(AccessScopeMotion.screenExitTween)
+            },
+            label = "scan_primary_action",
+        ) { scanning ->
+            if (scanning) {
+                Button(
+                    onClick = onStop,
+                    modifier = Modifier.fillMaxWidth().height(52.dp),
+                    shape = RoundedCornerShape(14.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = Danger),
+                    contentPadding = PaddingValues(horizontal = 16.dp),
+                ) {
+                    Row(
+                        horizontalArrangement = Arrangement.Center,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Icon(Icons.Outlined.Stop, contentDescription = null, modifier = Modifier.size(22.dp))
+                        Spacer(Modifier.width(8.dp))
+                        Text("Stop scansione", style = MaterialTheme.typography.labelLarge)
+                    }
+                }
+            } else {
+                Button(
+                    onClick = onStart,
+                    enabled = canStart,
+                    modifier = Modifier.fillMaxWidth().height(52.dp),
+                    shape = RoundedCornerShape(14.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = BrandPrimary),
+                    contentPadding = PaddingValues(horizontal = 16.dp),
+                ) {
+                    Row(
+                        horizontalArrangement = Arrangement.Center,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Icon(Icons.Outlined.PlayArrow, contentDescription = null, modifier = Modifier.size(22.dp))
+                        Spacer(Modifier.width(8.dp))
+                        Text("Avvia scansione", style = MaterialTheme.typography.labelLarge)
+                    }
+                }
             }
         }
-        Button(
-            onClick = onStop,
-            enabled = isScanning,
-            modifier = Modifier.weight(1f).height(52.dp),
-            shape = RoundedCornerShape(14.dp),
-            colors = ButtonDefaults.buttonColors(containerColor = Danger),
-            contentPadding = PaddingValues(horizontal = 16.dp),
-        ) {
+        if (isScanning) {
             Row(
-                horizontalArrangement = Arrangement.Center,
+                modifier = Modifier
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(Success.copy(alpha = 0.12f))
+                    .padding(horizontal = 12.dp, vertical = 8.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Icon(
-                    Icons.Outlined.Stop,
-                    contentDescription = null,
-                    modifier = Modifier.size(22.dp),
+                CircularProgressIndicator(
+                    modifier = Modifier.size(18.dp),
+                    strokeWidth = 2.dp,
+                    color = Success,
                 )
                 Spacer(Modifier.width(8.dp))
-                Text("Stop", style = MaterialTheme.typography.labelLarge)
+                Text("Live", style = MaterialTheme.typography.labelMedium, color = Success)
             }
         }
     }

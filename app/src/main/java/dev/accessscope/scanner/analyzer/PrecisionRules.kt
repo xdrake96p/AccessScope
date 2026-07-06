@@ -23,12 +23,14 @@ object PrecisionRules {
     }
 
     /** Nodo fuori viewport o micro-testo in fondo schermo (layout nascosto). */
-    fun isOffScreenOrMarginalNode(snap: NodeSnapshot, viewport: Rect): Boolean {
+    fun isOffScreenOrMarginalNode(snap: NodeSnapshot, viewport: Rect, packageName: String = ""): Boolean {
         if (viewport.isEmpty) return false
         if (!Rect.intersects(snap.bounds, viewport)) return true
         val belowFold = snap.bounds.top > viewport.top + (viewport.height() * 0.90f).toInt()
         val tiny = snap.bounds.height() < snap.minTextHeightPx * 0.75f
+        // Micro-testo sotto fold: sempre rumore (anche field label), salvo recall mirato in viewport
         if (belowFold && tiny) return true
+        if (isKnownContrastFieldLabel(snap, packageName) && !belowFold) return false
         if (snap.bounds.left < viewport.left - snap.minTouchTargetPx) return true
         if (snap.bounds.right > viewport.right + snap.minTouchTargetPx) return true
         return false
@@ -46,22 +48,33 @@ object PrecisionRules {
 
     /** Riga selezione lista a tutta larghezza — overlap intenzionale col container. */
     fun isFullWidthListRow(snap: NodeSnapshot, screenWidth: Int): Boolean {
+        if (isCarouselSelectionRow(snap)) return true
         if (screenWidth <= 0) return false
         if (snap.bounds.width() < screenWidth * 0.80f) return false
         val id = viewIdShort(snap)
         return snap.isCheckable ||
             id.contains("select") ||
+            id.contains("slection") ||
             id.contains("check") ||
             id.contains("selection") ||
             id.contains("checkbox")
+    }
+
+    /** Checkbox/riga selezione carousel distinte — overlap col FrameLayout parent è intenzionale. */
+    fun isCarouselSelectionRow(snap: NodeSnapshot): Boolean {
+        val id = viewIdShort(snap)
+        return id in setOf("multiple_slection", "check_multiple_selection", "checkbox_all") ||
+            (id.contains("slection") && snap.bounds.width() >= snap.minTouchTargetPx * 5)
     }
 
     fun shouldSkipStructuralNoise(
         snap: NodeSnapshot,
         viewport: Rect,
         screenWidth: Int,
+        packageName: String = "",
     ): Boolean {
-        if (isOffScreenOrMarginalNode(snap, viewport)) return true
+        if (isKnownContrastFieldLabel(snap, packageName)) return false
+        if (isOffScreenOrMarginalNode(snap, viewport, packageName)) return true
         if (isAnomalousTouchBounds(snap)) return true
         if (isFullWidthListRow(snap, screenWidth)) return true
         return false
@@ -239,11 +252,63 @@ object PrecisionRules {
         val id = viewIdShort(snap)
         val chartContainers = AppPrecisionProfiles.homeChartContainerIds(packageName)
         val chartText = AppPrecisionProfiles.homeChartTextIds(packageName)
+        val carouselWidgets = AppPrecisionProfiles.homeCarouselWidgetIds(packageName)
         if (id in chartContainers || isHomeChartOrCtaWidget(snap, packageName) || isCtaContainer(snap, packageName)) {
             return true
         }
-        if (id in chartText) return true
+        if (id in chartText || id in carouselWidgets) return true
+        if (isHomeEffettiCarouselNode(snap, all, packageName)) return true
         return false
+    }
+
+    /** Tab o item carousel effetti in home — non schermata «Paga effetti». */
+    fun isHomeEffettiCarouselNode(snap: NodeSnapshot, all: List<NodeSnapshot>, packageName: String): Boolean {
+        if (!isHomeScreenContext(all, packageName)) return false
+        val id = viewIdShort(snap)
+        if (id == "tv_tab") return true
+        if (id !in setOf("numero", "amount_effetti", "scadenza", "beneficiario", "desc_breve")) return false
+        return all.any { viewIdShort(it) in setOf("card_home", "tab_home", "card_effetti") }
+    }
+
+    /** Carousel distinte/effetti: swipe aggiorna contenuto senza live region — rumore su schermate lista. */
+    fun shouldSkipSilentDynamicContent(
+        screenTitle: String,
+        snapshots: List<NodeSnapshot>,
+        packageName: String,
+    ): Boolean {
+        if (isHomeScreenContext(snapshots, packageName)) return true
+        val title = screenTitle.uppercase()
+        if (title.contains("DISTINTE") || title.contains("AUTORIZZA") ||
+            title.contains("EFFETTI") || title.contains("PAGA")
+        ) {
+            return true
+        }
+        val ids = snapshots.map { viewIdShort(it) }.toSet()
+        if (ids.contains("recycler_distinte") || ids.contains("recycler_effetti")) return true
+        if (ids.contains("vop_info") && (ids.contains("multiple_slection") || ids.contains("amount_dist"))) {
+            return true
+        }
+        if (isScrollableListScreen(snapshots)) return true
+        return false
+    }
+
+    /** Liste con RecyclerView / ricerca: aggiornamenti scroll senza live region sono attesi. */
+    fun isScrollableListScreen(snapshots: List<NodeSnapshot>): Boolean {
+        val hasRecycler = snapshots.any {
+            it.className.contains("RecyclerView", true) || it.className.contains("ListView", true)
+        }
+        if (!hasRecycler) return false
+        val hasSearch = snapshots.any { snap ->
+            snap.isEditable && (
+                viewIdShort(snap).contains("search") ||
+                    viewIdShort(snap).contains("edt_") ||
+                    viewIdShort(snap).contains("input") ||
+                    snap.hintText?.contains("cerca", ignoreCase = true) == true ||
+                    snap.hintText?.contains("search", ignoreCase = true) == true
+                )
+        }
+        val scrollables = snapshots.count { it.isScrollable }
+        return hasSearch || scrollables >= 2
     }
 
     fun shouldSkipOverlapBetween(
@@ -253,6 +318,7 @@ object PrecisionRules {
         packageName: String = "",
         screenWidth: Int = 0,
     ): Boolean {
+        if (isCarouselSelectionRow(a) || isCarouselSelectionRow(b)) return true
         if (shouldSkipTouchSpacingBetween(a, b)) return true
         if (screenWidth > 0 && (isFullWidthListRow(a, screenWidth) || isFullWidthListRow(b, screenWidth))) {
             return true
@@ -264,6 +330,7 @@ object PrecisionRules {
 
     fun shouldSkipCarouselListItemAnalysis(snap: NodeSnapshot, all: List<NodeSnapshot>, packageName: String): Boolean {
         if (isCarouselContentContainer(snap, all, packageName)) return true
+        if (isCarouselSelectionRow(snap)) return true
         val id = viewIdShort(snap)
         if ((id.contains("select") || id.contains("selection")) &&
             all.count { viewIdShort(it) == id } >= 1 &&
@@ -567,8 +634,9 @@ object PrecisionRules {
             isWideTapTarget(snap) ||
             isCtaContainer(snap, packageName)
 
-    fun shouldSkipSmallTextCheck(snap: NodeSnapshot): Boolean {
+    fun shouldSkipSmallTextCheck(snap: NodeSnapshot, viewport: Rect = android.graphics.Rect(), packageName: String = ""): Boolean {
         if (shouldSkipDrawerNode(snap)) return true
+        if (!viewport.isEmpty && isOffScreenOrMarginalNode(snap, viewport, packageName)) return true
         if (snap.className.contains("Toolbar", true)) return true
         if (snap.text?.length == 1) return true
         return snap.bounds.height() >= snap.minTextHeightPx * 0.85

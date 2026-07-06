@@ -2,7 +2,8 @@ package dev.accessscope.scanner.analyzer
 
 /**
  * Profili opzionali per regole di precisione specifiche per app.
- * Le euristiche in [PrecisionRules] restano generiche; qui si aggiungono solo marker noti.
+ * Le euristiche in [PrecisionRules] restano generiche e valgono per tutte le app;
+ * qui si aggiungono solo marker noti quando il codice sorgente è disponibile (es. Nexi in benchmark).
  */
 object AppPrecisionProfiles {
 
@@ -44,7 +45,7 @@ object AppPrecisionProfiles {
         "txt_data_creazione", "txt_data_esecuzione", "amount_dist", "amount_effetti",
         "beneficiario", "numero", "desc_breve", "scadenza", "iban", "ragione_sociale",
         "currency", "currency_symbol", "data_scadenza", "banca", "iban_account",
-        "labelcontacts", "nome_filiale",
+        "labelcontacts",
     )
 
     private val GENERIC_CTA_IDS = setOf(
@@ -66,6 +67,12 @@ object AppPrecisionProfiles {
 
     private val NEXI_HOME_CHART_CONTAINERS = setOf("entrate_home", "uscite_home")
 
+    private val NEXI_HOME_CAROUSEL_WIDGET_IDS = setOf(
+        "tv_tab", "tab_home", "card_effetti", "root_layout_effetti",
+        "card_insoluti", "root_layout_insoluti", "insoluti_title",
+        "unsolved_count", "unsolved_amount", "txt_insolved", "txt_tot",
+    )
+
     private val NEXI_PIN_KEYS = setOf(
         "cancell", "confirm", "zero", "uno", "due", "tre", "quattro",
         "cinque", "sei", "sette", "otto", "nove",
@@ -80,6 +87,10 @@ object AppPrecisionProfiles {
 
     fun homeChartContainerIds(packageName: String): Set<String> =
         if (isNexi(packageName)) NEXI_HOME_CHART_CONTAINERS else emptySet()
+
+    /** Nodi carousel effetti / tab in home — contrasto decorativo o tab styling. */
+    fun homeCarouselWidgetIds(packageName: String): Set<String> =
+        if (isNexi(packageName)) NEXI_HOME_CAROUSEL_WIDGET_IDS else emptySet()
 
     fun mainContentScrollIds(packageName: String): Set<String> =
         setOf("scrollview_port", "scroll", "card_home") + if (isNexi(packageName)) emptySet() else setOf("content")

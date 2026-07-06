@@ -1,6 +1,8 @@
 package dev.accessscope.scanner.report
 
 import dev.accessscope.scanner.data.AccessibilityViolation
+import dev.accessscope.scanner.data.CheckAreaSummary
+import dev.accessscope.scanner.data.PassedCheck
 import dev.accessscope.scanner.data.ScreenReaderFinding
 import dev.accessscope.scanner.data.ViolationArea
 import dev.accessscope.scanner.data.ViolationSeverity
@@ -119,6 +121,30 @@ object ReportHelper {
     fun screenTotals(violations: List<AccessibilityViolation>): Map<String, Int> =
         violations.groupingBy { it.screenTitle }.eachCount()
 
+    data class ScreenOverviewEntry(
+        val screenTitle: String,
+        val violationCount: Int,
+        val passedCount: Int,
+    )
+
+    fun screenOverview(
+        violations: List<AccessibilityViolation>,
+        summaries: List<CheckAreaSummary>,
+    ): List<ScreenOverviewEntry> {
+        val violationTotals = screenTotals(violations)
+        val passedByScreen = summaries.groupBy { it.screenTitle }
+            .mapValues { (_, items) -> items.sumOf { it.passedCount } }
+        return (violationTotals.keys + passedByScreen.keys)
+            .sorted()
+            .map { screen ->
+                ScreenOverviewEntry(
+                    screenTitle = screen,
+                    violationCount = violationTotals[screen] ?: 0,
+                    passedCount = passedByScreen[screen] ?: 0,
+                )
+            }
+    }
+
     fun areaTotals(
         violations: List<AccessibilityViolation>,
         screenReaderFindings: List<ScreenReaderFinding>,
@@ -136,4 +162,50 @@ object ReportHelper {
 
     fun cleanAreaCount(violations: List<AccessibilityViolation>, talkBackCount: Int): Int =
         ViolationArea.entries.size - areasWithIssues(violations, talkBackCount)
+
+    fun totalPassedChecks(summaries: List<CheckAreaSummary>): Int =
+        summaries.sumOf { it.passedCount }
+
+    fun groupChecksByScreen(summaries: List<CheckAreaSummary>): Map<String, List<CheckAreaSummary>> =
+        summaries.groupBy { it.screenTitle }.mapValues { (_, items) ->
+            items.sortedBy { it.area.ordinal }
+        }
+
+    fun checksForScreen(summaries: List<CheckAreaSummary>, screenTitle: String): List<CheckAreaSummary> =
+        summaries.filter { it.screenTitle == screenTitle }
+
+    fun globalCheckCoverage(
+        summaries: List<CheckAreaSummary>,
+        violations: List<AccessibilityViolation>,
+    ): List<Pair<ViolationArea, Pair<Int, Int>>> {
+        val passedByArea = summaries.groupBy { it.area }.mapValues { (_, items) -> items.sumOf { it.passedCount } }
+        val failedByArea = violations.groupingBy { it.area }.eachCount()
+        return ViolationArea.entries.mapNotNull { area ->
+            val passed = passedByArea[area] ?: 0
+            val failed = failedByArea[area] ?: 0
+            if (passed == 0 && failed == 0) null else area to (passed to failed)
+        }
+    }
+
+    fun violationDetailLines(v: AccessibilityViolation): List<String> = buildList {
+        add("Dettaglio: ${v.details}")
+        v.elementLabel?.takeIf { it.isNotBlank() }?.let { add("Elemento: \"$it\"") }
+        if (!v.measuredValue.isNullOrBlank() || !v.requiredValue.isNullOrBlank()) {
+            add("Misura: ${v.measuredValue ?: "—"} · Richiesto: ${v.requiredValue ?: "—"}")
+        }
+        add("WCAG: ${v.wcagReference}")
+        v.remediation?.let { add("Suggerimento: $it") }
+        val meta = buildList {
+            add(v.viewClassName.substringAfterLast('.'))
+            v.viewId?.substringAfterLast('/')?.let { add("@id/$it") }
+            v.bounds?.let { add(it) }
+        }.joinToString(" · ")
+        if (meta.isNotBlank()) add("Posizione: $meta")
+    }
+
+    fun passedCheckLine(check: PassedCheck): String = buildString {
+        append("✓ ${check.checkLabel}")
+        if (check.elementSummary.isNotBlank()) append(": ${check.elementSummary}")
+        check.viewId?.substringAfterLast('/')?.let { append(" (@id/$it)") }
+    }
 }

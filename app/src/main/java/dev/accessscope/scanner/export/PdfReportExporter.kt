@@ -10,7 +10,9 @@ import android.os.Build
 import android.os.Environment
 import android.provider.MediaStore
 import dev.accessscope.scanner.data.AccessibilityViolation
+import dev.accessscope.scanner.data.CheckAreaSummary
 import dev.accessscope.scanner.data.ScreenReaderFinding
+import dev.accessscope.scanner.data.ViolationArea
 import dev.accessscope.scanner.data.ViolationSeverity
 import dev.accessscope.scanner.data.ViolationType
 import dev.accessscope.scanner.report.ReportHelper
@@ -31,15 +33,18 @@ class PdfReportExporter(private val context: Context) {
         scanAnalyses: Int = uniqueScreens,
         scanScopeLabel: String = "Completa",
         scannedScreens: List<String> = emptyList(),
+        checkSummaries: List<CheckAreaSummary> = emptyList(),
     ): Result<String> = runCatching {
         val filtered = ReportHelper.filterViolations(violations)
         val document = PdfDocument()
         val ctx = PdfContext(document)
+        val passedTotal = ReportHelper.totalPassedChecks(checkSummaries)
 
-        drawCover(ctx, targetPackages, uniqueScreens, scanAnalyses, scanScopeLabel, filtered, screenReaderFindings.size)
+        drawCover(ctx, targetPackages, uniqueScreens, scanAnalyses, scanScopeLabel, filtered, screenReaderFindings.size, passedTotal)
         drawSummary(ctx, filtered, screenReaderFindings, scannedScreens)
+        drawCheckCoverage(ctx, checkSummaries, filtered)
         drawHowToRead(ctx)
-        drawScreenSections(ctx, filtered, screenReaderFindings)
+        drawScreenSections(ctx, filtered, screenReaderFindings, checkSummaries)
 
         drawGlossary(ctx)
         ctx.finish()
@@ -54,6 +59,7 @@ class PdfReportExporter(private val context: Context) {
         scopeLabel: String,
         filtered: List<AccessibilityViolation>,
         talkBack: Int,
+        passedChecks: Int,
     ) {
         ctx.fillRect(0f, 0f, PAGE_W, 120f, COLOR_BRAND_DARK)
         ctx.drawText("AccessScope", 40f, 52f, ctx.titlePaint, COLOR_WHITE)
@@ -74,6 +80,7 @@ class PdfReportExporter(private val context: Context) {
             "🖥️  Schermate uniche: $screens",
             "🔄  Analisi eseguite: $analyses",
             "⚠️  Problemi trovati: ${filtered.size}",
+            "✅  Controlli superati: $passedChecks",
             "🔊  Note screen reader: $talkBack",
             "⭐  Punteggio stimato: $score/100 ($scoreLabel)",
         ).forEach { line ->
@@ -83,11 +90,38 @@ class PdfReportExporter(private val context: Context) {
 
         y += 16f
         ctx.drawWrapped(
-            "Questo report elenca i problemi di accessibilità trovati mentre usavi le app selezionate. " +
-                "Ogni problema spiega cosa non va e perché conta per chi usa TalkBack o ha difficoltà visive.",
+            "Questo report elenca problemi e controlli superati durante l'uso delle app selezionate. " +
+                "Ogni problema include misure, riferimento WCAG e un suggerimento di correzione.",
             40f, y, CONTENT_W, ctx.bodyPaint, COLOR_TEXT,
         )
         ctx.y = y + 40f
+    }
+
+    private fun drawCheckCoverage(
+        ctx: PdfContext,
+        checkSummaries: List<CheckAreaSummary>,
+        violations: List<AccessibilityViolation>,
+    ) {
+        val coverage = ReportHelper.globalCheckCoverage(checkSummaries, violations)
+        if (coverage.isEmpty() && checkSummaries.isEmpty()) return
+
+        ctx.ensureSpace(60f)
+        ctx.drawText("Copertura controlli per ambito", 40f, ctx.y, ctx.headingPaint, COLOR_BRAND_DARK)
+        ctx.y += 26f
+
+        if (coverage.isEmpty()) {
+            ctx.drawText("Nessun controllo registrato in questa sessione.", 48f, ctx.y, ctx.bodyPaint, COLOR_MUTED)
+            ctx.y += 22f
+        } else {
+            coverage.forEach { (area, counts) ->
+                val (passed, failed) = counts
+                ctx.ensureSpace(22f)
+                ctx.drawText("${area.emoji} ${area.title}", 48f, ctx.y + 4f, ctx.bodyBoldPaint, COLOR_TEXT)
+                ctx.drawText("OK $passed · Problemi $failed", PAGE_W - 160f, ctx.y + 4f, ctx.bodyPaint, COLOR_OK)
+                ctx.y += 22f
+            }
+        }
+        ctx.y += 8f
     }
 
     private fun drawSummary(
@@ -134,18 +168,58 @@ class PdfReportExporter(private val context: Context) {
         ctx: PdfContext,
         violations: List<AccessibilityViolation>,
         talkBack: List<ScreenReaderFinding>,
+        checkSummaries: List<CheckAreaSummary>,
     ) {
         val talkBackBySection = ReportHelper.groupTalkBackBySection(talkBack)
-        ReportHelper.groupViolationsBySection(violations).forEach { (section, sectionViolations) ->
-            val sectionTalkBack = talkBackBySection[section].orEmpty()
-            if (sectionViolations.isEmpty() && sectionTalkBack.isEmpty()) return@forEach
+        val screensWithIssues = ReportHelper.groupViolationsBySection(violations).map { it.first.screenTitle }.toSet()
+        val screensWithChecks = checkSummaries.map { it.screenTitle }.toSet()
+        val allScreens = (screensWithIssues + screensWithChecks).toSortedSet()
+
+        allScreens.forEach { screenTitle ->
+            val sectionGroups = ReportHelper.groupViolationsBySection(violations)
+                .filter { it.first.screenTitle == screenTitle }
+            val screenChecks = ReportHelper.checksForScreen(checkSummaries, screenTitle)
+            val screenViolations = violations.filter { it.screenTitle == screenTitle }
+            if (screenViolations.isEmpty() && screenChecks.isEmpty()) return@forEach
 
             ctx.ensureSpace(80f)
             ctx.fillRect(40f, ctx.y - 8f, CONTENT_W, 34f, COLOR_BRAND_LIGHT)
-            ctx.drawText(section.screenTitle, 48f, ctx.y + 12f, ctx.areaTitlePaint, COLOR_BRAND_DARK)
+            ctx.drawText(screenTitle, 48f, ctx.y + 12f, ctx.areaTitlePaint, COLOR_BRAND_DARK)
             ctx.y += 38f
+
+            if (screenChecks.isNotEmpty()) {
+                ctx.ensureSpace(28f)
+                ctx.drawText("✅ Controlli superati", 48f, ctx.y, ctx.bodyBoldPaint, COLOR_OK)
+                ctx.y += 18f
+                screenChecks.forEach { summary ->
+                    ctx.ensureSpace(20f)
+                    ctx.drawText(
+                        "${summary.area.emoji} ${summary.area.title}: ${summary.passedCount} OK",
+                        56f, ctx.y, ctx.bodyBoldPaint, COLOR_OK,
+                    )
+                    ctx.y += 16f
+                    summary.samples.take(3).forEach { sample ->
+                        ctx.ensureSpace(18f)
+                        ctx.drawText(ReportHelper.passedCheckLine(sample), 64f, ctx.y, ctx.metaPaint, COLOR_MUTED)
+                        ctx.y += 14f
+                    }
+                }
+                ctx.y += 8f
+            }
+
+            sectionGroups.forEach { (section, sectionViolations) ->
+            val sectionTalkBack = talkBackBySection[section].orEmpty()
+            if (sectionViolations.isEmpty() && sectionTalkBack.isEmpty()) return@forEach
+
             if (section.hasSubsection) {
+                ctx.ensureSpace(24f)
                 ctx.drawText("Sezione: ${section.sectionTitle}", 48f, ctx.y, ctx.bodyBoldPaint, COLOR_BRAND)
+                ctx.y += 18f
+            }
+
+            if (sectionViolations.isNotEmpty()) {
+                ctx.ensureSpace(24f)
+                ctx.drawText("⚠️ Problemi rilevati", 48f, ctx.y, ctx.bodyBoldPaint, COLOR_BRAND)
                 ctx.y += 18f
             }
 
@@ -179,6 +253,7 @@ class PdfReportExporter(private val context: Context) {
                 }
             }
             ctx.y += 16f
+            }
         }
     }
 
@@ -191,7 +266,7 @@ class PdfReportExporter(private val context: Context) {
             "🟠 Grave — ostacolo serio, da correggere presto.",
             "🟡 Medio — miglioramento consigliato.",
             "⚪ Lieve — rifinitura, bassa priorità.",
-            "🟢 Verde (dashboard) — metriche OK, non problemi.",
+            "✅ Verde — controlli superati (contrasto, etichette, touch, ecc.).",
             "Confidenza % — quanto siamo sicuri del rilevamento (più alto = più affidabile).",
         )
         tips.forEach { tip ->
@@ -204,26 +279,24 @@ class PdfReportExporter(private val context: Context) {
 
     private fun drawViolationCard(ctx: PdfContext, v: AccessibilityViolation) {
         val type = v.type
-        ctx.ensureSpace(90f)
+        val lines = ReportHelper.violationDetailLines(v)
+        val cardHeight = 36f + lines.size * 13f
+        ctx.ensureSpace(cardHeight + 12f)
         val severityColor = severityColor(type.severity)
-        ctx.fillRect(48f, ctx.y - 6f, 6f, 52f, severityColor)
-        ctx.fillRect(54f, ctx.y - 6f, CONTENT_W - 14f, 52f, 0xFFFAFAFA.toInt())
+        ctx.fillRect(48f, ctx.y - 6f, 6f, cardHeight, severityColor)
+        ctx.fillRect(54f, ctx.y - 6f, CONTENT_W - 14f, cardHeight, 0xFFFAFAFA.toInt())
 
         val sevEmoji = severityEmoji(type.severity)
         ctx.drawText("$sevEmoji ${type.displayName}", 64f, ctx.y + 10f, ctx.bodyBoldPaint, COLOR_TEXT)
         ctx.drawText("${v.confidence.times(100).roundToInt()}%", PAGE_W - 56f, ctx.y + 10f, ctx.metaPaint, COLOR_MUTED)
         ctx.y += 22f
         ctx.drawWrapped(v.simpleExplanation, 64f, ctx.y, CONTENT_W - 32f, ctx.bodyPaint, COLOR_TEXT)
-        ctx.y += 18f
-        ctx.drawText("Dettaglio: ${v.details}", 64f, ctx.y, ctx.metaPaint, COLOR_MUTED)
-        ctx.y += 14f
-        val meta = buildList {
-            add(v.viewClassName.substringAfterLast('.'))
-            v.viewId?.let { add(it.substringAfterLast('/')) }
-            v.bounds?.let { add(it) }
-        }.joinToString("  ·  ")
-        ctx.drawText(meta, 64f, ctx.y, ctx.metaPaint, 0xFF999999.toInt())
-        ctx.y += 24f
+        ctx.y += 16f
+        lines.forEach { line ->
+            ctx.drawWrapped(line, 64f, ctx.y, CONTENT_W - 32f, ctx.metaPaint, COLOR_MUTED)
+            ctx.y += 4f
+        }
+        ctx.y += 12f
     }
 
     private fun drawGlossary(ctx: PdfContext) {
@@ -381,6 +454,7 @@ class PdfReportExporter(private val context: Context) {
         private const val COLOR_BRAND_LIGHT = 0xFFE8F5F4.toInt()
         private const val COLOR_TEXT = 0xFF1A2B2C.toInt()
         private const val COLOR_MUTED = 0xFF5C6B6C.toInt()
+        private const val COLOR_OK = 0xFF2E7D32.toInt()
         private const val COLOR_WHITE = 0xFFFFFFFF.toInt()
     }
 }

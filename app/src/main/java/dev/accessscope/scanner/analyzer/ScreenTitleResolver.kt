@@ -265,6 +265,8 @@ object ScreenTitleResolver {
         val screenBounds = android.graphics.Rect()
         root.getBoundsInScreen(screenBounds)
         val sectionBandBottom = screenBounds.top + (screenBounds.height() * 0.25f).toInt()
+        val rootIds = collectViewIdShorts(root)
+        val onHome = hasHomeMarkers(rootIds)
 
         val queue = ArrayDeque<AccessibilityNodeInfo>()
         queue.add(root)
@@ -285,12 +287,20 @@ object ScreenTitleResolver {
             if (text.isNotBlank() && bounds.top <= sectionBandBottom && text.length <= 80 &&
                 !looksLikeAmount(text)
             ) {
+                if (isHomeInsolutiWidgetTitle(text, viewId, onHome)) {
+                    for (i in 0 until node.childCount) node.getChild(i)?.let(queue::add)
+                    continue
+                }
                 if (isKnownSectionTitle(text)) {
                     return humanizeTitle(text)
                 }
                 KNOWN_NEXI_SECTION_TITLES.firstOrNull { known ->
                     normalized.contains(known) || known.contains(normalized)
-                }?.let { return humanizeTitle(it) }
+                }?.let { known ->
+                    if (!(known == "INSOLUTI" && onHome)) {
+                        return humanizeTitle(known)
+                    }
+                }
             }
 
             for (i in 0 until node.childCount) {
@@ -368,6 +378,7 @@ object ScreenTitleResolver {
         val screenBounds = android.graphics.Rect()
         root.getBoundsInScreen(screenBounds)
         val topThreshold = screenBounds.top + (screenBounds.height() * 0.28f).toInt()
+        val onHome = hasHomeMarkers(collectViewIdShorts(root))
 
         val queue = ArrayDeque<AccessibilityNodeInfo>()
         queue.add(root)
@@ -384,6 +395,10 @@ object ScreenTitleResolver {
             node.getBoundsInScreen(bounds)
             val text = node.text?.toString()?.trim().orEmpty()
             if (text.isBlank() || looksLikeAmount(text)) {
+                for (i in 0 until node.childCount) node.getChild(i)?.let(queue::add)
+                continue
+            }
+            if (isHomeInsolutiWidgetTitle(text, viewId, onHome)) {
                 for (i in 0 until node.childCount) node.getChild(i)?.let(queue::add)
                 continue
             }
@@ -445,10 +460,17 @@ object ScreenTitleResolver {
             ids.contains("recycler_distinte") && ids.contains("vop_info") -> "AUTORIZZA DISTINTE"
             ids.contains("amount_effetti") && ids.contains("causale") -> "PAGA EFFETTI"
             (ids.contains("txt_situazione") || ids.contains("amount_effetti")) &&
-                ids.contains("see_all_insolved") -> "Ultimi insoluti"
+                ids.contains("see_all_insolved") && !hasHomeMarkers(ids) -> "Ultimi insoluti"
             ids.contains("tv_custom") && ids.contains("ll_custom") -> "NUOVO PAGAMENTO"
             else -> null
         }
+    }
+
+    /** Titolo widget insoluti in home (`unpaid_last` = «Ultimi insoluti») — non sezione dedicata. */
+    private fun isHomeInsolutiWidgetTitle(text: String, viewId: String, onHome: Boolean): Boolean {
+        if (!onHome) return false
+        if (viewId.endsWith("/insoluti_title")) return true
+        return text.equals("Ultimi insoluti", ignoreCase = true)
     }
 
     private fun collectViewIdShorts(root: AccessibilityNodeInfo): Set<String> {

@@ -74,6 +74,7 @@ class AccessScopeApp : Application() {
                     scanAnalyses = current.scanAnalyses,
                     scanScopeLabel = current.scanScope.label(),
                     scannedScreens = current.visitedScreenTitles,
+                    checkSummaries = current.checkSummaries,
                 )
             }
             result.fold(
