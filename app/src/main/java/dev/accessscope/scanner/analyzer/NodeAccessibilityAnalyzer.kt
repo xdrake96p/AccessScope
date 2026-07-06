@@ -65,7 +65,9 @@ class NodeAccessibilityAnalyzer(
             checkWebViews(snapshots, packageName, screenTitle, violations)
         }
 
-        if (dynamicContentSilent && includes(ViolationArea.SCREEN_READER)) {
+        if (dynamicContentSilent && includes(ViolationArea.SCREEN_READER) &&
+            !PrecisionRules.isHomeScreenContext(snapshots)
+        ) {
             violations += AccessibilityViolation(
                 type = ViolationType.DYNAMIC_CONTENT_SILENT,
                 viewClassName = "Schermata",
@@ -124,6 +126,10 @@ class NodeAccessibilityAnalyzer(
         screenshot: Bitmap?,
         customActionEmitted: MutableSet<String>,
     ) {
+        if (PrecisionRules.shouldSkipDrawerNode(snap)) return
+        if (PrecisionRules.shouldSkipPinPadWhenNotPinScreen(snap, screenTitle)) return
+        if (PrecisionRules.shouldSkipHomeWidgetAnalysis(snap, all)) return
+
         if (includes(ViolationArea.LABELS)) {
             val missingLabel = (snap.isInteractiveClickable() || PrecisionRules.shouldReportMissingTopBarLabel(snap, all)) &&
                 !snap.hasAccessibleName() &&
@@ -237,7 +243,10 @@ class NodeAccessibilityAnalyzer(
             }
         }
 
-        if (includes(ViolationArea.SCREEN_READER) && !snap.isEnabled && snap.isInteractiveClickable() && snap.stateDescription.isNullOrBlank()) {
+        if (includes(ViolationArea.SCREEN_READER) && !snap.isEnabled && snap.isInteractiveClickable() &&
+            snap.stateDescription.isNullOrBlank() &&
+            !PrecisionRules.shouldSkipCarouselListItemAnalysis(snap, all)
+        ) {
             violations += v(ViolationType.DISABLED_WITHOUT_INDICATION, snap, packageName, screenTitle,
                 "Controllo disabilitato senza stato esposto.", 0.82f)
         }
@@ -255,6 +264,8 @@ class NodeAccessibilityAnalyzer(
         if (includes(ViolationArea.LABELS) && snap.isClickable && snap.isCustomView() &&
             !snap.hasAccessibleName() && !snap.hasStandardRole() &&
             !PrecisionRules.shouldSkipContainerLabelCheck(snap, all) &&
+            !PrecisionRules.isCarouselContentContainer(snap, all) &&
+            !PrecisionRules.shouldSkipHomeWidgetAnalysis(snap, all) &&
             !(PrecisionRules.isCtaContainer(snap) && PrecisionRules.hasTvCustomDescendant(snap, all))
         ) {
             violations += v(ViolationType.ROLE_UNDEFINED, snap, packageName, screenTitle,
@@ -373,6 +384,13 @@ class NodeAccessibilityAnalyzer(
             for (j in i + 1 until clickables.size) {
                 val a = clickables[i]
                 val b = clickables[j]
+                if (PrecisionRules.shouldSkipDrawerNode(a) || PrecisionRules.shouldSkipDrawerNode(b)) continue
+                if (PrecisionRules.shouldSkipOverlapBetween(a, b, snapshots)) continue
+                if (PrecisionRules.shouldSkipPinPadWhenNotPinScreen(a, screenTitle) ||
+                    PrecisionRules.shouldSkipPinPadWhenNotPinScreen(b, screenTitle)
+                ) {
+                    continue
+                }
                 if (a.bounds.contains(b.bounds) || b.bounds.contains(a.bounds)) continue
                 if (Rect.intersects(a.bounds, b.bounds)) {
                     val overlap = overlapArea(a.bounds, b.bounds)

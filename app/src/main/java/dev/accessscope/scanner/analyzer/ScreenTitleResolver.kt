@@ -37,7 +37,9 @@ object ScreenTitleResolver {
             ?: ""
 
         fun storeAndReturn(title: String): String {
-            if (title != "Schermata" && packageKey.isNotBlank()) {
+            if (title != "Schermata" && title != "Menu" && packageKey.isNotBlank() &&
+                shouldCacheTitle(root, title)
+            ) {
                 lastTitleByPackage[packageKey] = title
             }
             return title
@@ -69,11 +71,57 @@ object ScreenTitleResolver {
         if (activityName.isNotBlank()) return storeAndReturn(humanizeActivityName(activityName))
 
         if (packageKey.isNotBlank()) {
-            lastTitleByPackage[packageKey]?.let { return it }
+            lastTitleByPackage[packageKey]?.let { cached ->
+                if (canReuseCachedTitle(root, cached)) return cached
+            }
         }
 
         return "Schermata"
     }
+
+    /** Public: viewId corti nel sottoalbero (per filtrare drawer / home). */
+    fun rootViewIds(root: AccessibilityNodeInfo): Set<String> = collectViewIdShorts(root)
+
+    /** Finestra / sottoalbero che contiene solo il menu laterale (nessun fragment principale). */
+    fun isDrawerOnlyRoot(root: AccessibilityNodeInfo): Boolean {
+        val ids = collectViewIdShorts(root)
+        val navCount = ids.count { it.startsWith("nav_") }
+        if (navCount < 2) return false
+        return !ids.any { it in MAIN_CONTENT_MARKER_IDS }
+    }
+
+    private val MAIN_CONTENT_MARKER_IDS = setOf(
+        "scrollview_port", "card_home", "recycler_distinte", "content_pagamento",
+        "labelcontacts", "iban_account", "vop_info", "amount_effetti", "pin_pad_view",
+    )
+
+    private fun shouldCacheTitle(root: AccessibilityNodeInfo, title: String): Boolean {
+        val ids = collectViewIdShorts(root)
+        if (title.equals("Ultimi insoluti", ignoreCase = true) && hasHomeMarkers(ids)) return false
+        if (ids.any { it.startsWith("nav_") }) return false
+        return true
+    }
+
+    private fun canReuseCachedTitle(root: AccessibilityNodeInfo, cached: String): Boolean {
+        val ids = collectViewIdShorts(root)
+        if (ids.any { it.startsWith("nav_") }) return false
+        if (cached.equals("Ultimi insoluti", ignoreCase = true) && hasHomeMarkers(ids)) return false
+        if (cached.equals("Ultimi insoluti", ignoreCase = true) &&
+            (ids.contains("recycler_distinte") || ids.contains("vop_info"))
+        ) {
+            return false
+        }
+        val fresh = findSectionTitle(root) ?: findKnownNexiTitles(root) ?: findByDistinctiveIds(root)
+        if (fresh != null && !fresh.equals(cached, ignoreCase = true)) return false
+        return true
+    }
+
+    private fun hasHomeMarkers(ids: Set<String>): Boolean =
+        ids.any { it in HOME_MARKER_IDS }
+
+    private val HOME_MARKER_IDS = setOf(
+        "entrate_home", "uscite_home", "card_home", "scrollview_port", "rotate_display",
+    )
 
     fun clearTitleCache(packageName: String? = null) {
         if (packageName.isNullOrBlank()) {
@@ -388,15 +436,16 @@ object ScreenTitleResolver {
     private fun findByDistinctiveIds(root: AccessibilityNodeInfo): String? {
         val ids = collectViewIdShorts(root)
         if (ids.isEmpty()) return null
+        if (ids.any { it.startsWith("nav_") }) return null
 
         return when {
-            ids.contains("rotate_display") || ids.contains("see_all_insolved") -> "Ultimi insoluti"
+            hasHomeMarkers(ids) -> findTopBarTitle(root) ?: "Home"
             ids.contains("labelcontacts") || ids.contains("iban_account") -> "RUBRICA"
             ids.contains("content_pagamento") -> findTitleNearContentPagamento(root) ?: "NUOVO PAGAMENTO"
             ids.contains("recycler_distinte") && ids.contains("vop_info") -> "AUTORIZZA DISTINTE"
             ids.contains("amount_effetti") && ids.contains("causale") -> "PAGA EFFETTI"
-            ids.contains("entrate_home") || ids.contains("uscite_home") || ids.contains("card_home") ->
-                findTopBarTitle(root) ?: "Home"
+            (ids.contains("txt_situazione") || ids.contains("amount_effetti")) &&
+                ids.contains("see_all_insolved") -> "Ultimi insoluti"
             ids.contains("tv_custom") && ids.contains("ll_custom") -> "NUOVO PAGAMENTO"
             else -> null
         }

@@ -109,3 +109,25 @@ Baseline report: **154839** (24 problemi, score 83, precisione totale ~76%, prec
 - `PrecisionRules`: skip contrasto grafico home, CTA `tv_custom`, heading in carousel
 - `FocusOrderAnalyzer`: soglia inversioni 0.45, skip layout RecyclerView-dominant
 - Recall: contrasto micro-label `txt_data_*` con bounds espansi
+
+## Checklist accettazione — Iterazione 6
+
+Baseline regressione: **160105** (32 problemi, precisione ~50%). Target: tornare ≥154839 utile senza perdere fix iter. 5.
+
+| Criterio | Soglia |
+|----------|--------|
+| Bucket «Schermata» | 0 |
+| AZIENDA 1 home chart | 0 |
+| Ultimi insoluti (mal attribuiti) | ≤4 |
+| COMUNICAZIONI / `nav_*` FP | 0 |
+| DISTINTE `content` custom action | 0 |
+| Problemi totali | **≤20** |
+| Precisione utile | **≥70%** |
+
+### Modifiche iter. 6
+
+- Cache titolo: non riusare «Ultimi insoluti» su home (`rotate_display` ≠ insoluti)
+- `findByDistinctiveIds`: home prima di insoluti; insoluti solo con marker dedicati
+- Skip nodi `nav_*` / scroll drawer / bounds fantasma (1080×12)
+- Una finestra contenuto per scan; skip drawer-only root
+- Skip label/custom/role su `content` carousel template

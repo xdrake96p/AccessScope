@@ -380,10 +380,20 @@ private fun ScanActionBar(
             modifier = Modifier.weight(1f).height(52.dp),
             shape = RoundedCornerShape(14.dp),
             colors = ButtonDefaults.buttonColors(containerColor = BrandPrimary),
+            contentPadding = PaddingValues(horizontal = 16.dp),
         ) {
-            Icon(Icons.Outlined.PlayArrow, contentDescription = null)
-            Spacer(Modifier.width(6.dp))
-            Text("Avvia scansione")
+            Row(
+                horizontalArrangement = Arrangement.Center,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Icon(
+                    Icons.Outlined.PlayArrow,
+                    contentDescription = null,
+                    modifier = Modifier.size(22.dp),
+                )
+                Spacer(Modifier.width(8.dp))
+                Text("Avvia", style = MaterialTheme.typography.labelLarge)
+            }
         }
         Button(
             onClick = onStop,
@@ -391,10 +401,20 @@ private fun ScanActionBar(
             modifier = Modifier.weight(1f).height(52.dp),
             shape = RoundedCornerShape(14.dp),
             colors = ButtonDefaults.buttonColors(containerColor = Danger),
+            contentPadding = PaddingValues(horizontal = 16.dp),
         ) {
-            Icon(Icons.Outlined.Stop, contentDescription = null)
-            Spacer(Modifier.width(6.dp))
-            Text("Stop")
+            Row(
+                horizontalArrangement = Arrangement.Center,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Icon(
+                    Icons.Outlined.Stop,
+                    contentDescription = null,
+                    modifier = Modifier.size(22.dp),
+                )
+                Spacer(Modifier.width(8.dp))
+                Text("Stop", style = MaterialTheme.typography.labelLarge)
+            }
         }
     }
 }

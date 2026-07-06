@@ -179,7 +179,35 @@ class AccessScopeAccessibilityService : AccessibilityService() {
             }
         }
 
-        return prioritizeRoots(roots)
+        return prioritizeRoots(selectRootsToScan(roots))
+    }
+
+    /** Esclude drawer e, se possibile, analizza una sola finestra contenuto per evento. */
+    private fun selectRootsToScan(roots: List<AccessibilityNodeInfo>): List<AccessibilityNodeInfo> {
+        val withoutDrawer = roots.filter { !ScreenTitleResolver.isDrawerOnlyRoot(it) }
+        val candidates = if (withoutDrawer.isNotEmpty()) withoutDrawer else roots
+
+        val pinRoots = candidates.filter { ScreenTitleResolver.isPinScreen(it) }
+        if (pinRoots.isNotEmpty()) return pinRoots
+
+        val modalRoots = candidates.filter { root ->
+            val className = root.className?.toString().orEmpty()
+            listOf("Dialog", "BottomSheet", "Popup", "AlertDialog", "Modal")
+                .any { className.contains(it, true) }
+        }
+        if (modalRoots.isNotEmpty()) return modalRoots
+
+        val primary = candidates.maxByOrNull { root -> contentRootScore(root) } ?: return candidates
+        return listOf(primary)
+    }
+
+    private fun contentRootScore(root: AccessibilityNodeInfo): Int {
+        val ids = ScreenTitleResolver.rootViewIds(root)
+        var score = root.childCount
+        if ("scrollview_port" in ids) score += 10_000
+        if ("card_home" in ids) score += 5_000
+        if (ids.any { it.startsWith("nav_") }) score -= 10_000
+        return score
     }
 
     private fun prioritizeRoots(roots: List<AccessibilityNodeInfo>): List<AccessibilityNodeInfo> {
@@ -249,6 +277,9 @@ class AccessScopeAccessibilityService : AccessibilityService() {
         analyzer: NodeAccessibilityAnalyzer,
     ) {
         if (ScreenTitleResolver.isTransientOverlay(root)) {
+            return
+        }
+        if (ScreenTitleResolver.isDrawerOnlyRoot(root)) {
             return
         }
         val screenTitle = ScreenTitleResolver.resolve(root, event)
