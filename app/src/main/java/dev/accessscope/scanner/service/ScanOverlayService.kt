@@ -7,64 +7,38 @@ import android.app.PendingIntent
 import android.app.Service
 import android.content.Context
 import android.content.Intent
+import android.graphics.Color
 import android.graphics.PixelFormat
+import android.graphics.Typeface
 import android.os.Build
 import android.os.IBinder
+import android.content.res.ColorStateList
+import android.graphics.drawable.GradientDrawable
+import android.graphics.drawable.RippleDrawable
+import android.util.TypedValue
 import android.view.Gravity
 import android.view.WindowManager
-import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.Text
-import androidx.compose.runtime.Composable
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.ComposeView
-import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
+import android.widget.TextView
 import androidx.core.app.NotificationCompat
-import androidx.lifecycle.Lifecycle
-import androidx.lifecycle.LifecycleOwner
-import androidx.lifecycle.LifecycleRegistry
-import androidx.lifecycle.setViewTreeLifecycleOwner
-import androidx.savedstate.SavedStateRegistry
-import androidx.savedstate.SavedStateRegistryController
-import androidx.savedstate.SavedStateRegistryOwner
-import androidx.savedstate.setViewTreeSavedStateRegistryOwner
 import dev.accessscope.scanner.AccessScopeApp
 import dev.accessscope.scanner.MainActivity
 import dev.accessscope.scanner.R
-import dev.accessscope.scanner.data.ScanSessionRepository
+import dev.accessscope.scanner.util.DebugTrace
 
-class ScanOverlayService : Service(), LifecycleOwner, SavedStateRegistryOwner {
-
-    private val lifecycleRegistry = LifecycleRegistry(this)
-    private val savedStateController = SavedStateRegistryController.create(this)
+class ScanOverlayService : Service() {
 
     private var windowManager: WindowManager? = null
-    private var overlayView: ComposeView? = null
-
-    private val repository: ScanSessionRepository
-        get() = (application as AccessScopeApp).scanRepository
-
-    override val lifecycle: Lifecycle get() = lifecycleRegistry
-    override val savedStateRegistry: SavedStateRegistry
-        get() = savedStateController.savedStateRegistry
+    private var overlayView: TextView? = null
 
     override fun onCreate() {
-        savedStateController.performRestore(null)
-        lifecycleRegistry.currentState = Lifecycle.State.CREATED
         super.onCreate()
         startForeground(NOTIFICATION_ID, buildNotification())
         showOverlay()
-        lifecycleRegistry.currentState = Lifecycle.State.STARTED
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (intent?.action == ACTION_STOP) {
-            repository.requestStopFromOverlay()
+            stopScanNow("notification")
         }
         return START_STICKY
     }
@@ -73,31 +47,57 @@ class ScanOverlayService : Service(), LifecycleOwner, SavedStateRegistryOwner {
 
     override fun onDestroy() {
         removeOverlay()
-        lifecycleRegistry.currentState = Lifecycle.State.DESTROYED
         super.onDestroy()
+    }
+
+    private fun stopScanNow(source: String) {
+        // #region agent log
+        DebugTrace.log("H-STOP1", "OverlayService", "stop_$source", emptyMap())
+        // #endregion
+        (application as AccessScopeApp).stopScanSession(fromOverlay = true)
     }
 
     private fun showOverlay() {
         windowManager = getSystemService(WINDOW_SERVICE) as WindowManager
-        val composeView = ComposeView(this).apply {
-            setViewTreeLifecycleOwner(this@ScanOverlayService)
-            setViewTreeSavedStateRegistryOwner(this@ScanOverlayService)
-            setContent {
-                OverlayStopButton(
-                    onStop = {
-                        repository.requestStopFromOverlay()
-                    }
-                )
-            }
+        val density = resources.displayMetrics.density
+        val padH = (14 * density).toInt()
+        val padV = (7 * density).toInt()
+        val cornerRadius = 18 * density
+
+        val shape = GradientDrawable().apply {
+            setColor(0xFFE53935.toInt())
+            this.cornerRadius = cornerRadius
         }
-        overlayView = composeView
+        val backgroundDrawable = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+            RippleDrawable(ColorStateList.valueOf(0x33FFFFFF), shape, null)
+        } else {
+            shape
+        }
+
+        val stopButton = TextView(this).apply {
+            text = "STOP"
+            setTextColor(Color.WHITE)
+            setTypeface(typeface, Typeface.BOLD)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
+            letterSpacing = 0.08f
+            gravity = Gravity.CENTER
+            includeFontPadding = false
+            setPadding(padH, padV, padH, padV)
+            background = backgroundDrawable
+            elevation = 6f
+            isClickable = true
+            isFocusable = true
+            setOnClickListener { stopScanNow("button") }
+        }
+        overlayView = stopButton
 
         val layoutParams = WindowManager.LayoutParams(
             WindowManager.LayoutParams.WRAP_CONTENT,
             WindowManager.LayoutParams.WRAP_CONTENT,
             WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
-                WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
+                WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
+                WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL,
             PixelFormat.TRANSLUCENT,
         ).apply {
             gravity = Gravity.TOP or Gravity.END
@@ -105,7 +105,7 @@ class ScanOverlayService : Service(), LifecycleOwner, SavedStateRegistryOwner {
             y = 120
         }
 
-        windowManager?.addView(composeView, layoutParams)
+        windowManager?.addView(stopButton, layoutParams)
     }
 
     private fun removeOverlay() {
@@ -149,8 +149,7 @@ class ScanOverlayService : Service(), LifecycleOwner, SavedStateRegistryOwner {
         ).apply {
             description = getString(R.string.overlay_channel_description)
         }
-        val manager = getSystemService(NotificationManager::class.java)
-        manager.createNotificationChannel(channel)
+        getSystemService(NotificationManager::class.java).createNotificationChannel(channel)
     }
 
     companion object {
@@ -159,30 +158,11 @@ class ScanOverlayService : Service(), LifecycleOwner, SavedStateRegistryOwner {
         private const val ACTION_STOP = "dev.accessscope.scanner.STOP_SCAN"
 
         fun start(context: Context) {
-            val intent = Intent(context, ScanOverlayService::class.java)
-            context.startForegroundService(intent)
+            context.startForegroundService(Intent(context, ScanOverlayService::class.java))
         }
 
         fun stop(context: Context) {
             context.stopService(Intent(context, ScanOverlayService::class.java))
         }
-    }
-}
-
-@Composable
-private fun OverlayStopButton(onStop: () -> Unit) {
-    Button(
-        onClick = onStop,
-        modifier = Modifier
-            .background(Color.Transparent)
-            .padding(4.dp),
-        shape = RoundedCornerShape(24.dp),
-        colors = ButtonDefaults.buttonColors(
-            containerColor = Color(0xFFC62828),
-            contentColor = Color.White,
-        ),
-        elevation = ButtonDefaults.buttonElevation(defaultElevation = 6.dp),
-    ) {
-        Text(text = "STOP", fontSize = 14.sp)
     }
 }

@@ -63,6 +63,7 @@ import dev.accessscope.scanner.data.InstalledAppInfo
 import dev.accessscope.scanner.ui.components.FeatureHighlights
 import dev.accessscope.scanner.ui.components.HeroHeader
 import dev.accessscope.scanner.ui.components.PermissionsCard
+import dev.accessscope.scanner.ui.components.ScanOptionsCard
 import dev.accessscope.scanner.ui.components.ScanDashboard
 import dev.accessscope.scanner.ui.theme.BrandPrimary
 import dev.accessscope.scanner.ui.theme.Danger
@@ -104,7 +105,8 @@ fun HomeScreen(
                 modifier = Modifier.navigationBarsPadding(),
                 isScanning = uiState.scanState.isScanning,
                 canStart = uiState.selectedPackages.isNotEmpty() &&
-                    uiState.accessibilityGranted && uiState.overlayGranted,
+                    uiState.accessibilityGranted &&
+                    uiState.overlayGranted,
                 onStart = viewModel::startScan,
                 onStop = viewModel::stopScan,
             )
@@ -129,32 +131,54 @@ fun HomeScreen(
                     FeatureHighlights()
                     PermissionsCard(
                         accessibilityGranted = uiState.accessibilityGranted,
+                        accessibilityConnected = uiState.accessibilityConnected,
                         overlayGranted = uiState.overlayGranted,
                         onRefresh = viewModel::refreshPermissions,
+                    )
+                    ScanOptionsCard(
+                        autoLaunchEnabled = uiState.autoLaunchEnabled,
+                        onToggleAutoLaunch = viewModel::toggleAutoLaunch,
                     )
                 }
             }
 
-            if (uiState.scanState.isScanning || uiState.scanState.violations.isNotEmpty()) {
+            if (uiState.scanState.isScanning) {
                 item {
                     ScanDashboard(
                         violations = uiState.scanState.violations,
                         screens = uiState.scanState.scannedScreens,
                         talkBackFindings = uiState.scanState.screenReaderFindings.size,
-                        isScanning = uiState.scanState.isScanning,
+                        isScanning = true,
+                        onOpenReport = onOpenReport,
+                        modifier = Modifier.padding(horizontal = 16.dp),
+                    )
+                }
+            } else if (
+                uiState.scanState.violations.isNotEmpty() ||
+                uiState.scanState.scannedScreens > 0 ||
+                uiState.scanState.screenReaderFindings.isNotEmpty()
+            ) {
+                item {
+                    ScanDashboard(
+                        violations = uiState.scanState.violations,
+                        screens = uiState.scanState.scannedScreens,
+                        talkBackFindings = uiState.scanState.screenReaderFindings.size,
+                        isScanning = false,
                         onOpenReport = onOpenReport,
                         modifier = Modifier.padding(horizontal = 16.dp),
                     )
                 }
             }
 
-            uiState.scanState.lastPdfPath?.let { path ->
-                item {
-                    PdfResultCard(
-                        path = path,
-                        onOpenPdf = { PdfHelper.openPdf(context, path) },
-                        modifier = Modifier.padding(horizontal = 16.dp),
-                    )
+            if (!uiState.scanState.isScanning) {
+                uiState.scanState.lastPdfPath?.let { path ->
+                    item {
+                        PdfResultCard(
+                            path = path,
+                            onOpenPdf = { PdfHelper.openPdf(context, path) },
+                            modifier = Modifier.padding(horizontal = 16.dp),
+                        )
+                    }
                 }
             }
 

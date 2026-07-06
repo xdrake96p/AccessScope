@@ -7,9 +7,10 @@ import androidx.lifecycle.viewModelScope
 import dev.accessscope.scanner.AccessScopeApp
 import dev.accessscope.scanner.data.InstalledAppInfo
 import dev.accessscope.scanner.data.ScanSessionState
-import dev.accessscope.scanner.export.PdfReportExporter
 import dev.accessscope.scanner.service.AccessScopeAccessibilityService
 import dev.accessscope.scanner.service.ScanOverlayService
+import dev.accessscope.scanner.util.AppLaunchHelper
+import dev.accessscope.scanner.util.DebugTrace
 import dev.accessscope.scanner.util.PackageHelper
 import dev.accessscope.scanner.util.PermissionHelper
 import kotlinx.coroutines.Dispatchers
@@ -26,9 +27,11 @@ data class HomeUiState(
     val favoritePackages: Set<String> = emptySet(),
     val scanState: ScanSessionState = ScanSessionState(),
     val accessibilityGranted: Boolean = false,
+    val accessibilityConnected: Boolean = false,
     val overlayGranted: Boolean = false,
     val isLoadingApps: Boolean = true,
     val includeSystemApps: Boolean = false,
+    val autoLaunchEnabled: Boolean = false,
     val statusMessage: String? = null,
 )
 
@@ -36,32 +39,58 @@ class ScanViewModel(application: Application) : AndroidViewModel(application) {
 
     private val repository = (application as AccessScopeApp).scanRepository
     private val favoriteAppsStore = (application as AccessScopeApp).favoriteAppsStore
-    private val pdfExporter = PdfReportExporter(application)
+    private val scanSettingsStore = (application as AccessScopeApp).scanSettingsStore
 
     private val _uiState = MutableStateFlow(HomeUiState())
     val uiState: StateFlow<HomeUiState> = _uiState.asStateFlow()
 
     init {
-        repository.stopCallback = { stopScan() }
         val favorites = favoriteAppsStore.getFavorites()
         _uiState.update { it.copy(selectedPackages = favorites, favoritePackages = favorites) }
         viewModelScope.launch {
             repository.state.collect { scanState ->
-                _uiState.update { it.copy(scanState = scanState) }
+                _uiState.update { state ->
+                    val status = when {
+                        scanState.lastPdfPath != null && !scanState.isScanning ->
+                            "Report salvato in: ${scanState.lastPdfPath}"
+                        scanState.errorMessage != null -> scanState.errorMessage
+                        else -> state.statusMessage
+                    }
+                    state.copy(scanState = scanState, statusMessage = status)
+                }
             }
         }
         refreshPermissions()
+        _uiState.update { it.copy(autoLaunchEnabled = scanSettingsStore.autoLaunchEnabled) }
         loadApps()
+    }
+
+    fun toggleAutoLaunch() {
+        val enabled = !_uiState.value.autoLaunchEnabled
+        scanSettingsStore.autoLaunchEnabled = enabled
+        _uiState.update { it.copy(autoLaunchEnabled = enabled) }
     }
 
     fun refreshPermissions() {
         val context = getApplication<Application>()
+        val a11yEnabled = PermissionHelper.isAccessibilityServiceEnabled(
+            context,
+            AccessScopeAccessibilityService::class.java,
+        )
+        val a11yConnected = PermissionHelper.isAccessibilityServiceConnected(
+            context,
+            AccessScopeAccessibilityService::class.java,
+        )
+        // #region agent log
+        DebugTrace.log("H1", "ViewModel.refreshPermissions", "state", mapOf(
+            "enabled" to a11yEnabled,
+            "connected" to a11yConnected,
+        ))
+        // #endregion
         _uiState.update {
             it.copy(
-                accessibilityGranted = PermissionHelper.isAccessibilityServiceEnabled(
-                    context,
-                    AccessScopeAccessibilityService::class.java,
-                ),
+                accessibilityGranted = a11yEnabled,
+                accessibilityConnected = a11yConnected,
                 overlayGranted = PermissionHelper.canDrawOverlays(context),
             )
         }
@@ -149,42 +178,30 @@ class ScanViewModel(application: Application) : AndroidViewModel(application) {
 
         repository.startScan(selected)
         AccessScopeAccessibilityService.instance?.resetDynamicTracking()
+        // #region agent log
+        DebugTrace.log("H1", "ViewModel.startScan", "scan_requested", mapOf(
+            "packages" to selected.joinToString(","),
+            "serviceConnected" to (AccessScopeAccessibilityService.instance != null),
+            "accessibilityGranted" to state.accessibilityGranted,
+        ))
+        // #endregion
         ScanOverlayService.start(context)
-        _uiState.update { it.copy(statusMessage = "Scansione avviata. Apri le app selezionate e interagisci.") }
+
+        var message = "Scansione avviata. Apri le app selezionate e interagisci."
+        if (state.autoLaunchEnabled) {
+            val launched = AppLaunchHelper.launchFirstAvailable(context, selected)
+            message = if (launched != null) {
+                val label = state.apps.find { it.packageName == launched }?.label ?: launched
+                "Scansione avviata. Aperta: $label"
+            } else {
+                "Scansione avviata. Nessuna app apribile automaticamente — aprila manualmente."
+            }
+        }
+        _uiState.update { it.copy(statusMessage = message) }
     }
 
     fun stopScan() {
-        val context = getApplication<Application>()
-        if (!repository.state.value.isScanning && repository.state.value.violations.isEmpty()) return
-
-        repository.stopScan()
-        ScanOverlayService.stop(context)
-
-        viewModelScope.launch {
-            val snapshot = repository.state.value
-            val result = withContext(Dispatchers.IO) {
-                pdfExporter.export(
-                    targetPackages = snapshot.selectedPackages,
-                    violations = snapshot.violations,
-                    screenReaderFindings = snapshot.screenReaderFindings,
-                    scannedScreens = snapshot.scannedScreens,
-                )
-            }
-            result.fold(
-                onSuccess = { path ->
-                    repository.setPdfPath(path)
-                    _uiState.update {
-                        it.copy(statusMessage = "Report salvato in: $path")
-                    }
-                },
-                onFailure = { error ->
-                    repository.setError(error.message ?: "Errore export PDF")
-                    _uiState.update {
-                        it.copy(statusMessage = "Errore durante la generazione del PDF.")
-                    }
-                },
-            )
-        }
+        (getApplication<AccessScopeApp>()).stopScanSession(fromOverlay = false)
     }
 
     fun appIcon(packageName: String): android.graphics.drawable.Drawable? {

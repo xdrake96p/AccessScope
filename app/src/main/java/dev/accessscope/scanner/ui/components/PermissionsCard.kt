@@ -44,11 +44,13 @@ import dev.accessscope.scanner.util.PermissionHelper
 @Composable
 fun PermissionsCard(
     accessibilityGranted: Boolean,
+    accessibilityConnected: Boolean,
     overlayGranted: Boolean,
     onRefresh: () -> Unit,
 ) {
     val context = LocalContext.current
-    val grantedCount = listOf(accessibilityGranted, overlayGranted).count { it }
+    val a11yReady = accessibilityGranted
+    val grantedCount = listOf(a11yReady, overlayGranted).count { it }
 
     Card(
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
@@ -72,6 +74,7 @@ fun PermissionsCard(
 
             AccessibilityPermissionBlock(
                 granted = accessibilityGranted,
+                connected = accessibilityConnected,
                 onOpenSettings = {
                     context.startActivity(
                         PermissionHelper.accessibilityServiceIntent(
@@ -103,13 +106,16 @@ fun PermissionsCard(
 @Composable
 private fun AccessibilityPermissionBlock(
     granted: Boolean,
+    connected: Boolean,
     onOpenSettings: () -> Unit,
 ) {
+    val context = LocalContext.current
+    val ready = granted
     Column(
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(12.dp))
-            .background(if (granted) BrandLight.copy(alpha = 0.5f) else MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.35f))
+            .background(if (ready) BrandLight.copy(alpha = 0.5f) else MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.35f))
             .padding(12.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
@@ -119,29 +125,35 @@ private fun AccessibilityPermissionBlock(
             Column(Modifier.weight(1f)) {
                 Text("AccessScope — Servizio di accessibilità", fontWeight = FontWeight.SemiBold)
                 Text(
-                    if (granted) "Attivo ✓" else "Da attivare",
+                    when {
+                        ready -> "Attivo ✓"
+                        else -> "Da attivare"
+                    },
                     style = MaterialTheme.typography.bodySmall,
-                    color = if (granted) Success else Danger,
+                    color = if (ready) Success else Danger,
                 )
             }
             Icon(
-                imageVector = if (granted) Icons.Outlined.CheckCircle else Icons.Outlined.Warning,
+                imageVector = if (ready) Icons.Outlined.CheckCircle else Icons.Outlined.Warning,
                 contentDescription = null,
-                tint = if (granted) Success else Danger,
+                tint = if (ready) Success else Danger,
             )
         }
 
-        AnimatedVisibility(visible = !granted) {
+        AnimatedVisibility(visible = !ready) {
             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Text(
-                    "Cosa fare (in ordine):",
+                    if (granted) "Se la scansione non parte, disattiva e riattiva il servizio."
+                    else "Cosa fare (in ordine):",
                     style = MaterialTheme.typography.labelLarge,
                     fontWeight = FontWeight.SemiBold,
                 )
-                InstructionStep(1, "Tocca il pulsante qui sotto")
-                InstructionStep(2, "Cerca «AccessScope» nella lista")
-                InstructionStep(3, "Su Samsung: Accessibilità → Servizi installati → AccessScope")
-                InstructionStep(4, "Attiva «Usa AccessScope» e conferma")
+                if (!granted) {
+                    InstructionStep(1, "Tocca il pulsante qui sotto")
+                    InstructionStep(2, "Cerca «AccessScope» nella lista")
+                    InstructionStep(3, "Su Samsung: Accessibilità → Servizi installati → AccessScope")
+                    InstructionStep(4, "Attiva «Usa AccessScope» e conferma")
+                }
                 Spacer(Modifier.height(4.dp))
                 Button(
                     onClick = onOpenSettings,

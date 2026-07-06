@@ -10,6 +10,7 @@ import android.os.Build
 import android.provider.Settings
 import android.text.TextUtils
 import dev.accessscope.scanner.data.InstalledAppInfo
+import dev.accessscope.scanner.service.AccessScopeAccessibilityService
 
 object PackageHelper {
 
@@ -59,7 +60,9 @@ object PermissionHelper {
         ) == 1
         if (!enabled) return false
 
-        val expected = ComponentName(context, serviceClass).flattenToString()
+        val component = ComponentName(context, serviceClass)
+        val expectedFull = component.flattenToString()
+        val expectedShort = component.flattenToShortString()
         val setting = Settings.Secure.getString(
             context.contentResolver,
             Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES,
@@ -68,10 +71,23 @@ object PermissionHelper {
         val splitter = TextUtils.SimpleStringSplitter(':')
         splitter.setString(setting)
         while (splitter.hasNext()) {
-            if (splitter.next().equals(expected, ignoreCase = true)) return true
+            val entry = splitter.next().trim()
+            if (entry.equals(expectedFull, ignoreCase = true)) return true
+            if (entry.equals(expectedShort, ignoreCase = true)) return true
         }
         return false
     }
+
+    /** True se il servizio è collegato; se abilitato in impostazioni consideriamo pronto per evitare falsi negativi. */
+    fun isAccessibilityServiceConnected(
+        context: Context,
+        serviceClass: Class<*>,
+    ): Boolean =
+        AccessScopeAccessibilityService.instance != null ||
+            isAccessibilityServiceEnabled(context, serviceClass)
+
+    fun isAccessibilityServiceReady(context: Context, serviceClass: Class<*>): Boolean =
+        isAccessibilityServiceEnabled(context, serviceClass)
 
     fun canDrawOverlays(context: Context): Boolean = Settings.canDrawOverlays(context)
 
@@ -96,6 +112,12 @@ object PermissionHelper {
             Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
             Uri.parse("package:${context.packageName}"),
         ).apply {
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK
+        }
+
+    fun appDetailsIntent(context: Context): Intent =
+        Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+            data = Uri.parse("package:${context.packageName}")
             flags = Intent.FLAG_ACTIVITY_NEW_TASK
         }
 }

@@ -115,6 +115,15 @@ fun ScanDashboard(
                 )
             }
 
+            val hasLiveData = screens > 0 || filtered.isNotEmpty() || talkBackFindings > 0
+
+            if (isScanning && !hasLiveData) {
+                Text(
+                    "In attesa dell'app selezionata. Apri l'app e naviga tra le schermate.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = TextSecondary,
+                )
+            } else {
             SessionStatsBlock(
                 okLabel = "OK",
                 koLabel = "KO",
@@ -153,7 +162,7 @@ fun ScanDashboard(
                 }
             }
 
-            if (filtered.isNotEmpty() || talkBackFindings > 0) {
+            if (!isScanning) {
                 Button(
                     onClick = onOpenReport,
                     modifier = Modifier.fillMaxWidth(),
@@ -164,6 +173,7 @@ fun ScanDashboard(
                     Spacer(Modifier.width(8.dp))
                     Text("Vedi report completo")
                 }
+            }
             }
         }
     }

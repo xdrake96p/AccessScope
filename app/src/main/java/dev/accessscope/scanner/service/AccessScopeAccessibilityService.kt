@@ -8,18 +8,25 @@ import android.os.Build
 import android.view.Display
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
+import android.view.accessibility.AccessibilityWindowInfo
 import androidx.annotation.RequiresApi
 import dev.accessscope.scanner.AccessScopeApp
 import dev.accessscope.scanner.analyzer.DynamicContentTracker
 import dev.accessscope.scanner.analyzer.ScreenTitleResolver
 import dev.accessscope.scanner.analyzer.NodeAccessibilityAnalyzer
 import dev.accessscope.scanner.data.ScanSessionRepository
+import dev.accessscope.scanner.util.DebugTrace
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Executors
-import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 
 class AccessScopeAccessibilityService : AccessibilityService() {
+
+    init {
+        // #region agent log
+        DebugTrace.log("H1", "A11yService.<init>", "constructed", emptyMap())
+        // #endregion
+    }
 
     private val repository: ScanSessionRepository
         get() = (application as AccessScopeApp).scanRepository
@@ -28,7 +35,7 @@ class AccessScopeAccessibilityService : AccessibilityService() {
         get() = resources.displayMetrics.density
 
     private val dynamicTracker = DynamicContentTracker()
-    private val executor = Executors.newSingleThreadExecutor()
+    private var executor = Executors.newSingleThreadExecutor()
     private val lastScanByWindow = ConcurrentHashMap<String, Long>()
     private val screenshotInFlight = AtomicBoolean(false)
     private val debounceMs = 800L
@@ -37,11 +44,25 @@ class AccessScopeAccessibilityService : AccessibilityService() {
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
         if (event == null) return
-        if (!repository.state.value.isScanning) return
 
         val packageName = event.packageName?.toString() ?: return
+        val isScanning = repository.state.value.isScanning
+        val isTarget = repository.isTargetPackage(packageName)
+
+        // #region agent log
+        if (packageName != applicationContext.packageName) {
+            DebugTrace.log("H3", "A11yService.onEvent", "event_received", mapOf(
+                "pkg" to packageName,
+                "type" to event.eventType,
+                "isScanning" to isScanning,
+                "isTarget" to isTarget,
+            ))
+        }
+        // #endregion
+
+        if (!isScanning) return
         if (packageName == applicationContext.packageName) return
-        if (!repository.isTargetPackage(packageName)) return
+        if (!isTarget) return
 
         when (event.eventType) {
             AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED,
@@ -67,7 +88,22 @@ class AccessScopeAccessibilityService : AccessibilityService() {
         val analyzer = NodeAccessibilityAnalyzer.create(density, silentDynamic)
 
         executor.execute {
-            val root = rootInActiveWindow ?: event.source ?: return@execute
+            val root = obtainRootForScan(packageName, event) ?: run {
+                // #region agent log
+                DebugTrace.log("H4", "scheduleScan", "no_root", mapOf(
+                    "targetPkg" to packageName,
+                    "activePkg" to rootInActiveWindow?.packageName?.toString(),
+                ))
+                // #endregion
+                return@execute
+            }
+            // #region agent log
+            DebugTrace.log("H2", "scheduleScan", "root_obtained", mapOf(
+                "targetPkg" to packageName,
+                "rootPkg" to root.packageName?.toString(),
+                "childCount" to root.childCount,
+            ))
+            // #endregion
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
                 captureScreenshot { bitmap ->
                     try {
@@ -85,6 +121,41 @@ class AccessScopeAccessibilityService : AccessibilityService() {
                 }
             }
         }
+    }
+
+    /** Evita che l'overlay STOP rubi [rootInActiveWindow] — cerca la finestra dell'app target. */
+    private fun obtainRootForScan(
+        targetPackage: String,
+        event: AccessibilityEvent,
+    ): AccessibilityNodeInfo? {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+            windows?.forEach { window ->
+                if (window.type == AccessibilityWindowInfo.TYPE_ACCESSIBILITY_OVERLAY) return@forEach
+                val windowRoot = window.root ?: return@forEach
+                try {
+                    if (windowRoot.packageName?.toString() == targetPackage) {
+                        return AccessibilityNodeInfo.obtain(windowRoot)
+                    }
+                } finally {
+                    windowRoot.recycle()
+                }
+            }
+        }
+
+        event.source?.let { source ->
+            return AccessibilityNodeInfo.obtain(source)
+        }
+
+        rootInActiveWindow?.let { active ->
+            try {
+                if (active.packageName?.toString() == targetPackage) {
+                    return AccessibilityNodeInfo.obtain(active)
+                }
+            } finally {
+                active.recycle()
+            }
+        }
+        return null
     }
 
     private fun captureScreenshot(onResult: (Bitmap?) -> Unit) {
@@ -136,18 +207,23 @@ class AccessScopeAccessibilityService : AccessibilityService() {
         repository.addViolations(result.violations)
         repository.addScreenReaderFindings(result.screenReaderFindings)
         repository.incrementScreenCount()
+        // #region agent log
+        DebugTrace.log("H5", "scanRoot", "analyzed", mapOf(
+            "pkg" to packageName,
+            "screen" to screenTitle,
+            "violations" to result.violations.size,
+            "talkback" to result.screenReaderFindings.size,
+            "hasScreenshot" to (screenshot != null),
+        ))
+        // #endregion
     }
 
     override fun onInterrupt() = Unit
 
     override fun onDestroy() {
         dynamicTracker.reset()
-        executor.shutdown()
-        try {
-            executor.awaitTermination(2, TimeUnit.SECONDS)
-        } catch (_: InterruptedException) {
-            executor.shutdownNow()
-        }
+        lastScanByWindow.clear()
+        instance = null
         super.onDestroy()
     }
 
@@ -160,10 +236,20 @@ class AccessScopeAccessibilityService : AccessibilityService() {
     override fun onServiceConnected() {
         super.onServiceConnected()
         instance = this
+        // #region agent log
+        DebugTrace.log("H1", "onServiceConnected", "service_bound", emptyMap())
+        // #endregion
+        if (executor.isShutdown) {
+            executor = Executors.newSingleThreadExecutor()
+        }
+        lastScanByWindow.clear()
     }
 
     override fun onUnbind(intent: android.content.Intent?): Boolean {
         instance = null
+        // #region agent log
+        DebugTrace.log("H1", "onUnbind", "service_unbound", emptyMap())
+        // #endregion
         return super.onUnbind(intent)
     }
 }
