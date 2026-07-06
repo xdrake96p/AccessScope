@@ -5,7 +5,7 @@
 **Repository:** [github.com/xdrake96p/AccessScope](https://github.com/xdrake96p/AccessScope)  
 **Package:** `dev.accessscope.scanner`  
 **Branch principale sviluppo:** `develop`  
-**Ultimo aggiornamento:** 6 luglio 2026 (v1.2.3 scroll + overlay drag)
+**Ultimo aggiornamento:** 6 luglio 2026 (v1.3.0 dedupe + cronologia)
 
 ---
 
@@ -15,6 +15,16 @@ A **fine di ogni task**, obbligatorio (regola Cursor: `.cursor/rules/project-mai
 
 1. **Aggiornare questo file** (`docs/PROJECT.md`) — cronologia, architettura, benchmark, changelog.
 2. **Aggiornare la KDoc** (JavaDoc Kotlin) su tutti i file `.kt` modificati o creati: blocco file, tipi pubblici, funzioni con `@param` / `@return`, descrizioni in italiano.
+
+---
+
+## TODO
+
+Epic **v1.3.0** (completato):
+
+- [x] **Dedupe rigorosa** — `ViolationDedupeRules`: chiavi viewId-first, bounds quantizzati 32dp; `CheckCollector.merge` usa max
+- [x] **Cronologia sessioni** — `ScanHistoryStore` JSON, max 20 sessioni per app
+- [x] **UI confronto** — `SessionComparisonCard`, pulsante «Cronologia scansioni», `ScanHistoryScreen`
 
 ---
 
@@ -32,8 +42,9 @@ AccessScope è un'app Android che monitora l'accessibilità di altre app mentre 
 Utente → HomeScreen (selezione app) → Avvia scan
     → AccessScopeAccessibilityService (eventi a11y + screenshot)
     → NodeAccessibilityAnalyzer + PrecisionRules + ScreenTitleResolver
-    → ScanSessionRepository (violazioni, check OK, schermate)
-    → Stop → PdfReportExporter + ReportScreen
+    → ScanSessionRepository (violazioni dedupe via ViolationDedupeRules, check OK, schermate)
+    → Stop → ScanHistoryStore (archivio) + PdfReportExporter + ReportScreen
+    → ScanHistoryScreen (cronologia per app, max 20 sessioni)
 ```
 
 | Modulo | Ruolo |
@@ -44,8 +55,11 @@ Utente → HomeScreen (selezione app) → Avvia scan
 | `AppPrecisionProfiles` | Marker opzionali per app note (Nexi) |
 | `ScreenTitleResolver` | Titolo schermata da topbar, heading, viewId |
 | `CheckCollector` | Registra controlli superati per report |
+| `ViolationDedupeRules` | Chiavi dedupe stabili in scroll (viewId, bounds quantizzati) |
+| `ScanHistoryStore` | Persistenza JSON cronologia sessioni (20 per package) |
+| `SessionComparisonHelper` | Confronto +N/−M risolti tra sessioni |
 | `PdfReportExporter` | PDF con problemi dettagliati + sezione OK |
-| `ScanSessionRepository` | Stato sessione, dedupe, fingerprint schermate |
+| `ScanSessionRepository` | Stato sessione live, dedupe in-memory, fingerprint schermate |
 
 ---
 
@@ -65,6 +79,14 @@ Utente → HomeScreen (selezione app) → Avvia scan
 ---
 
 ## Cronologia sviluppo
+
+### v1.3.0 — Dedupe rigorosa + cronologia sessioni (6 luglio 2026)
+
+- `ViolationDedupeRules`: dedupe viewId-first (ignora fingerprint in scroll), bounds quantizzati 32dp
+- `CheckCollector.merge`: `passedCount` = max per chiave (non somma)
+- `ScanHistoryStore`: archivio JSON `filesDir/scan_history/`, FIFO 20 sessioni per package
+- UI: `SessionComparisonCard` (+N nuovi, −M risolti, delta punteggio), `ScanHistoryScreen`
+- Test JVM: `ViolationDedupeRulesTest` (7 casi)
 
 ### v1.0.0 — Release iniziale (`b7273d5`)
 
@@ -106,6 +128,28 @@ Utente → HomeScreen (selezione app) → Avvia scan
 - `AppPrecisionProfiles`: regole generiche multi-app
 - Profilo Nexi opzionale isolato
 - Skip off-screen, bounds anomali, list row overlap
+
+### v1.2.2 — Prompt AI per fix accessibilità (6 luglio 2026)
+
+- **`AiPromptBuilder`:** genera prompt markdown strutturato (contesto, WCAG, problemi per schermata, TalkBack, istruzioni output)
+- **`CopyAiPromptButton`:** copia negli appunti sotto «Vedi report completo» (Home) e nel report dettagliato
+- **`ClipboardHelper`:** utility clipboard Android
+
+| Commit | Descrizione |
+|--------|-------------|
+| *pending* | v1.2.2 prompt AI |
+
+### v1.2.1 — Polish UI pre-presentazione (6 luglio 2026)
+
+- **Scroll:** `appListUiState` / `scanDashboardUiState` isolano lista e dashboard dal tick live della scansione
+- **AppListRow:** callback stabili (`viewModel::toggleApp`), meno recomposition in scroll
+- **AppIconAsync:** `produceState` + `AppIconCache.peek` per hit istantaneo in cache
+- **Motion:** transizioni navigazione con spring Material (`navSpring`)
+- **ScanDashboard:** `AccessScopeCard`, pulse più morbido (FastOutSlowIn)
+
+| Commit | Descrizione |
+|--------|-------------|
+| *pending* | v1.2.1 polish UI presentazione |
 
 ### v1.2.3 — Scroll fluido e overlay trascinabile (6 luglio 2026)
 

@@ -55,6 +55,7 @@ import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -73,6 +74,7 @@ import dev.accessscope.scanner.ui.components.HeroHeader
 import dev.accessscope.scanner.ui.components.LiveDebugPanel
 import dev.accessscope.scanner.ui.components.PermissionsCard
 import dev.accessscope.scanner.ui.components.ScanDashboard
+import dev.accessscope.scanner.ui.components.ScanHistoryEntryButton
 import dev.accessscope.scanner.ui.theme.AccessScopeMotion
 import dev.accessscope.scanner.ui.theme.BrandPrimary
 import dev.accessscope.scanner.ui.theme.CodeTextStyle
@@ -80,10 +82,12 @@ import dev.accessscope.scanner.ui.theme.ControlShape
 import dev.accessscope.scanner.ui.theme.Danger
 import dev.accessscope.scanner.ui.theme.Success
 import dev.accessscope.scanner.ui.theme.contentSecondary
-import dev.accessscope.scanner.ui.viewmodel.HomeUiState
+import dev.accessscope.scanner.ui.viewmodel.AppListUiState
+import dev.accessscope.scanner.ui.viewmodel.ScanDashboardUiState
 import dev.accessscope.scanner.ui.viewmodel.ScanViewModel
 import dev.accessscope.scanner.util.PdfHelper
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 private val WideLayoutBreakpoint = 720.dp
 
@@ -96,18 +100,21 @@ fun HomeScreen(
     viewModel: ScanViewModel,
     onOpenReport: () -> Unit,
     onOpenSettings: () -> Unit = {},
+    onOpenHistory: (String) -> Unit = {},
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val appListState by viewModel.appListUiState.collectAsStateWithLifecycle()
+    val scanUi by viewModel.scanDashboardUiState.collectAsStateWithLifecycle()
     val snackbarHost = remember { SnackbarHostState() }
+    val scope = rememberCoroutineScope()
     var query by remember { mutableStateOf("") }
     var debouncedQuery by remember { mutableStateOf("") }
     var showLiveDebug by remember { mutableStateOf(false) }
-    val appListState = rememberLazyListState()
-    val selectedPackages by remember { derivedStateOf { uiState.selectedPackages } }
-    val packageLabels = remember(uiState.apps) {
-        uiState.apps.associate { it.packageName to it.label }
-    }
+    val listState = rememberLazyListState()
+    val secondaryTextColor = contentSecondary()
+    val toggleApp = viewModel::toggleApp
+    val toggleFavorite = viewModel::toggleFavorite
 
     LaunchedEffect(query) {
         if (query.isBlank()) {
@@ -127,30 +134,33 @@ fun HomeScreen(
 
     val filteredApps by remember {
         derivedStateOf {
-            if (debouncedQuery.isBlank()) uiState.apps
-            else uiState.apps.filter {
+            if (debouncedQuery.isBlank()) appListState.apps
+            else appListState.apps.filter {
                 it.label.contains(debouncedQuery, ignoreCase = true) ||
                     it.packageName.contains(debouncedQuery, ignoreCase = true)
             }
         }
     }
 
-    val showDashboard = uiState.scanState.isScanning ||
-        uiState.scanState.violations.isNotEmpty() ||
-        uiState.scanState.uniqueScreens > 0 ||
-        uiState.scanState.screenReaderFindings.isNotEmpty()
+    val packageLabels = remember(appListState.apps) {
+        appListState.apps.associate { it.packageName to it.label }
+    }
+
+    val showDashboard = scanUi.scanState.isScanning ||
+        scanUi.scanState.violations.isNotEmpty() ||
+        scanUi.scanState.uniqueScreens > 0 ||
+        scanUi.scanState.screenReaderFindings.isNotEmpty()
+
+    val historyPackage = appListState.selectedPackages.firstOrNull()
+    val historyAppLabel = historyPackage?.let { packageLabels[it] }
 
     Scaffold(
         modifier = Modifier.background(MaterialTheme.colorScheme.background),
         snackbarHost = { SnackbarHost(snackbarHost) },
         bottomBar = {
-            ScanActionBar(
+            HomeScanActionBar(
+                scanUi = scanUi,
                 modifier = Modifier.navigationBarsPadding(),
-                isScanning = uiState.scanState.isScanning,
-                liveDebugEnabled = uiState.liveDebugPanelEnabled,
-                canStart = uiState.selectedPackages.isNotEmpty() &&
-                    uiState.accessibilityGranted &&
-                    uiState.overlayGranted,
                 onStart = viewModel::startScan,
                 onStop = viewModel::stopScan,
                 onOpenLiveDebug = { showLiveDebug = true },
@@ -167,7 +177,7 @@ fun HomeScreen(
 
             LazyColumn(
                 modifier = Modifier.fillMaxSize(),
-                state = appListState,
+                state = listState,
                 contentPadding = PaddingValues(bottom = 16.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
@@ -185,8 +195,8 @@ fun HomeScreen(
                                 verticalArrangement = Arrangement.spacedBy(12.dp),
                             ) {
                                 HeroHeader(
-                                    selectedCount = uiState.selectedPackages.size,
-                                    isScanning = uiState.scanState.isScanning,
+                                    selectedCount = appListState.selectedPackages.size,
+                                    isScanning = scanUi.scanState.isScanning,
                                     onOpenSettings = onOpenSettings,
                                 )
                                 FeatureHighlights()
@@ -209,7 +219,7 @@ fun HomeScreen(
                                 AppSelectionPanel(
                                     query = query,
                                     onQueryChange = { query = it },
-                                    uiState = uiState,
+                                    appListState = appListState,
                                     viewModel = viewModel,
                                 )
                             }
@@ -218,8 +228,8 @@ fun HomeScreen(
                 } else {
                     item(key = "hero") {
                         HeroHeader(
-                            selectedCount = uiState.selectedPackages.size,
-                            isScanning = uiState.scanState.isScanning,
+                            selectedCount = appListState.selectedPackages.size,
+                            isScanning = scanUi.scanState.isScanning,
                             onOpenSettings = onOpenSettings,
                         )
                     }
@@ -239,24 +249,42 @@ fun HomeScreen(
                     }
                 }
 
+                item(key = "scan_history_button") {
+                    ScanHistoryEntryButton(
+                        enabled = historyPackage != null,
+                        appLabel = historyAppLabel,
+                        onClick = { historyPackage?.let(onOpenHistory) },
+                        modifier = Modifier.padding(horizontal = if (isWide) horizontalPad else 16.dp),
+                    )
+                }
+
                 if (showDashboard) {
                     item(key = "dashboard") {
                         ScanDashboard(
-                            violations = uiState.scanState.violations,
-                            screens = uiState.scanState.uniqueScreens,
-                            scanAnalyses = uiState.scanState.scanAnalyses,
-                            talkBackFindings = uiState.scanState.screenReaderFindings.size,
-                            isPartialScan = !uiState.scanState.scanScope.isFullScan,
-                            scanScopeLabel = uiState.scanState.scanScope.label(),
-                            isScanning = uiState.scanState.isScanning,
+                            violations = scanUi.scanState.violations,
+                            screens = scanUi.scanState.uniqueScreens,
+                            scanAnalyses = scanUi.scanState.scanAnalyses,
+                            talkBackFindings = scanUi.scanState.screenReaderFindings.size,
+                            screenReaderFindings = scanUi.scanState.screenReaderFindings,
+                            targetPackages = scanUi.scanState.selectedPackages,
+                            packageLabels = packageLabels,
+                            isPartialScan = !scanUi.scanState.scanScope.isFullScan,
+                            scanScopeLabel = scanUi.scanState.scanScope.label(),
+                            isScanning = scanUi.scanState.isScanning,
                             onOpenReport = onOpenReport,
+                            onAiPromptCopied = {
+                                scope.launch {
+                                    snackbarHost.showSnackbar("Prompt AI copiato negli appunti")
+                                }
+                            },
+                            sessionComparison = scanUi.sessionComparison,
                             modifier = Modifier.padding(horizontal = if (isWide) horizontalPad else 16.dp),
                         )
                     }
                 }
 
-                if (!uiState.scanState.isScanning) {
-                    uiState.scanState.lastPdfPath?.let { path ->
+                if (!scanUi.scanState.isScanning) {
+                    scanUi.scanState.lastPdfPath?.let { path ->
                         item(key = "pdf_$path") {
                             PdfResultCard(
                                 path = path,
@@ -272,7 +300,7 @@ fun HomeScreen(
                         AppSelectionPanel(
                             query = query,
                             onQueryChange = { query = it },
-                            uiState = uiState,
+                            appListState = appListState,
                             viewModel = viewModel,
                             modifier = Modifier.padding(horizontal = 16.dp),
                         )
@@ -288,17 +316,17 @@ fun HomeScreen(
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Text(
-                            "Elenco app (${uiState.selectedPackages.size}/${uiState.apps.size})",
+                            "Elenco app (${appListState.selectedPackages.size}/${appListState.apps.size})",
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.SemiBold,
                         )
-                        if (uiState.isLoadingApps) {
+                        if (appListState.isLoadingApps) {
                             CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
                         }
                     }
                 }
 
-                if (filteredApps.isEmpty() && !uiState.isLoadingApps) {
+                if (filteredApps.isEmpty() && !appListState.isLoadingApps) {
                     item(key = "empty") {
                         Box(
                             Modifier
@@ -318,9 +346,10 @@ fun HomeScreen(
                 ) { app ->
                     AppListRow(
                         app = app,
-                        selected = app.packageName in selectedPackages,
-                        onToggle = { viewModel.toggleApp(app.packageName) },
-                        onToggleFavorite = { viewModel.toggleFavorite(app.packageName) },
+                        selected = app.packageName in appListState.selectedPackages,
+                        onTogglePackage = toggleApp,
+                        onToggleFavoritePackage = toggleFavorite,
+                        secondaryTextColor = secondaryTextColor,
                         modifier = Modifier
                             .padding(horizontal = if (isWide) horizontalPad else 16.dp),
                     )
@@ -328,13 +357,13 @@ fun HomeScreen(
             }
         }
 
-        if (showLiveDebug && uiState.liveDebugPanelEnabled && uiState.scanState.isScanning) {
+        if (showLiveDebug && scanUi.liveDebugPanelEnabled && scanUi.scanState.isScanning) {
             ModalBottomSheet(
                 onDismissRequest = { showLiveDebug = false },
                 sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
             ) {
                 LiveDebugPanel(
-                    scanState = uiState.scanState,
+                    scanState = scanUi.scanState,
                     packageLabels = packageLabels,
                 )
             }
@@ -346,7 +375,7 @@ fun HomeScreen(
 private fun AppSelectionPanel(
     query: String,
     onQueryChange: (String) -> Unit,
-    uiState: HomeUiState,
+    appListState: AppListUiState,
     viewModel: ScanViewModel,
     modifier: Modifier = Modifier,
 ) {
@@ -359,7 +388,7 @@ private fun AppSelectionPanel(
         )
         AppSearchField(query = query, onQueryChange = onQueryChange)
         AppSelectionInfoBanner(
-            autoLaunchEnabled = uiState.autoLaunchEnabled,
+            autoLaunchEnabled = appListState.autoLaunchEnabled,
             maxWithAutoLaunch = ScanViewModel.MAX_APPS_WITH_AUTO_LAUNCH,
         )
         Row(
@@ -369,7 +398,7 @@ private fun AppSelectionPanel(
         ) {
             Text("Mostra app di sistema", style = MaterialTheme.typography.bodyMedium)
             Switch(
-                checked = uiState.includeSystemApps,
+                checked = appListState.includeSystemApps,
                 onCheckedChange = { viewModel.toggleIncludeSystemApps() },
             )
         }
@@ -377,7 +406,7 @@ private fun AppSelectionPanel(
             TextButton(onClick = viewModel::selectAllVisible) {
                 Icon(Icons.Outlined.SelectAll, contentDescription = null, modifier = Modifier.size(18.dp))
                 Spacer(Modifier.width(4.dp))
-                Text(if (uiState.autoLaunchEnabled) "Prima" else "Tutte")
+                Text(if (appListState.autoLaunchEnabled) "Prima" else "Tutte")
             }
             TextButton(onClick = viewModel::clearSelection) {
                 Text("Nessuna")
@@ -405,6 +434,29 @@ private fun PdfResultCard(
             Text("Apri file PDF")
         }
     }
+}
+
+@Composable
+private fun HomeScanActionBar(
+    scanUi: ScanDashboardUiState,
+    modifier: Modifier = Modifier,
+    onStart: () -> Unit,
+    onStop: () -> Unit,
+    onOpenLiveDebug: () -> Unit,
+) {
+    val isScanning = scanUi.scanState.isScanning
+    val canStart = scanUi.selectedPackages.isNotEmpty() &&
+        scanUi.accessibilityGranted &&
+        scanUi.overlayGranted
+    ScanActionBar(
+        modifier = modifier,
+        isScanning = isScanning,
+        liveDebugEnabled = scanUi.liveDebugPanelEnabled,
+        canStart = canStart,
+        onStart = onStart,
+        onStop = onStop,
+        onOpenLiveDebug = onOpenLiveDebug,
+    )
 }
 
 @Composable
@@ -449,7 +501,7 @@ private fun ScanActionBar(
             targetState = isScanning,
             modifier = Modifier.weight(1f),
             transitionSpec = {
-                fadeIn(AccessScopeMotion.fadeInTween) togetherWith fadeOut(AccessScopeMotion.screenExitTween)
+                fadeIn(AccessScopeMotion.screenEnterTween) togetherWith fadeOut(AccessScopeMotion.screenExitTween)
             },
             label = "scan_primary_action",
         ) { scanning ->

@@ -82,8 +82,8 @@ class CheckCollector {
         private const val MAX_SAMPLES_PER_KEY = 4
 
         /**
-         * Unisce più liste di riepiloghi (es. da scansioni multiple) sommando i conteggi
-         * e deduplicando i campioni.
+         * Unisce più liste di riepiloghi prendendo il massimo conteggio per chiave
+         * (evita gonfiaggio durante re-analisi della stessa schermata in scroll).
          *
          * @param summaries Liste di riepiloghi da fondere.
          * @return Lista unificata ordinata per titolo schermata e area.
@@ -98,7 +98,7 @@ class CheckCollector {
                         area = first.area,
                         screenTitle = first.screenTitle,
                         packageName = first.packageName,
-                        passedCount = items.sumOf { it.passedCount },
+                        passedCount = items.maxOf { it.passedCount },
                         samples = items.flatMap { it.samples }
                             .distinctBy { "${it.viewId}|${it.bounds}|${it.checkLabel}" }
                             .take(MAX_SAMPLES_PER_KEY),

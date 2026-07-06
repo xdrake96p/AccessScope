@@ -19,11 +19,14 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
+import androidx.navigation.navArgument
 import dev.accessscope.scanner.ui.screen.HomeScreen
 import dev.accessscope.scanner.ui.screen.ReportScreen
+import dev.accessscope.scanner.ui.screen.ScanHistoryScreen
 import dev.accessscope.scanner.ui.screen.SettingsScreen
 import dev.accessscope.scanner.ui.theme.AccessScopeMotion
 import dev.accessscope.scanner.ui.theme.AccessScopeTheme
@@ -77,14 +80,13 @@ class MainActivity : ComponentActivity() {
 private fun AccessScopeNavHost(viewModel: ScanViewModel) {
     val navController = rememberNavController()
     val context = LocalContext.current
-    val enter = slideInHorizontally(animationSpec = AccessScopeMotion.navSlideTween) { it } +
-        fadeIn(animationSpec = AccessScopeMotion.screenEnterTween)
-    val exit = slideOutHorizontally(animationSpec = AccessScopeMotion.navSlideExitTween) { it } +
-        fadeOut(animationSpec = AccessScopeMotion.screenExitTween)
-    val popEnter = slideInHorizontally(animationSpec = AccessScopeMotion.navSlideTween) { -it } +
-        fadeIn(animationSpec = AccessScopeMotion.screenEnterTween)
-    val popExit = slideOutHorizontally(animationSpec = AccessScopeMotion.navSlideExitTween) { -it } +
-        fadeOut(animationSpec = AccessScopeMotion.screenExitTween)
+    val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val fadeInSpec = fadeIn(animationSpec = AccessScopeMotion.screenEnterTween)
+    val fadeOutSpec = fadeOut(animationSpec = AccessScopeMotion.screenExitTween)
+    val enter = slideInHorizontally(animationSpec = AccessScopeMotion.navSpring) { it } + fadeInSpec
+    val exit = slideOutHorizontally(animationSpec = AccessScopeMotion.navSpring) { it } + fadeOutSpec
+    val popEnter = slideInHorizontally(animationSpec = AccessScopeMotion.navSpring) { -it } + fadeInSpec
+    val popExit = slideOutHorizontally(animationSpec = AccessScopeMotion.navSpring) { -it } + fadeOutSpec
 
     NavHost(navController = navController, startDestination = "home") {
         composable("home") {
@@ -92,6 +94,9 @@ private fun AccessScopeNavHost(viewModel: ScanViewModel) {
                 viewModel = viewModel,
                 onOpenReport = { navController.navigate("report") },
                 onOpenSettings = { navController.navigate("settings") },
+                onOpenHistory = { packageName ->
+                    navController.navigate("history/$packageName")
+                },
             )
         }
         composable(
@@ -114,6 +119,24 @@ private fun AccessScopeNavHost(viewModel: ScanViewModel) {
             popExitTransition = { popExit },
         ) {
             ReportScreen(
+                viewModel = viewModel,
+                onBack = { navController.popBackStack() },
+                onOpenPdf = { path -> PdfHelper.openPdf(context, path) },
+            )
+        }
+        composable(
+            route = "history/{packageName}",
+            arguments = listOf(navArgument("packageName") { type = NavType.StringType }),
+            enterTransition = { enter },
+            exitTransition = { exit },
+            popEnterTransition = { popEnter },
+            popExitTransition = { popExit },
+        ) { backStackEntry ->
+            val packageName = backStackEntry.arguments?.getString("packageName").orEmpty()
+            val appLabel = uiState.apps.find { it.packageName == packageName }?.label ?: packageName
+            ScanHistoryScreen(
+                packageName = packageName,
+                appLabel = appLabel,
                 viewModel = viewModel,
                 onBack = { navController.popBackStack() },
                 onOpenPdf = { path -> PdfHelper.openPdf(context, path) },

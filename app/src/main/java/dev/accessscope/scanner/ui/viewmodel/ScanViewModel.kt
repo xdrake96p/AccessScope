@@ -10,10 +10,13 @@ import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import dev.accessscope.scanner.AccessScopeApp
+import dev.accessscope.scanner.data.ArchivedScanSession
 import dev.accessscope.scanner.data.InstalledAppInfo
 import dev.accessscope.scanner.data.ScanScope
 import dev.accessscope.scanner.data.ScanSessionState
 import dev.accessscope.scanner.data.ViolationArea
+import dev.accessscope.scanner.report.SessionComparison
+import dev.accessscope.scanner.report.SessionComparisonHelper
 import dev.accessscope.scanner.service.AccessScopeAccessibilityService
 import dev.accessscope.scanner.service.ScanOverlayService
 import dev.accessscope.scanner.util.AppIconCache
@@ -25,8 +28,12 @@ import dev.accessscope.scanner.util.ThemePreferencesStore
 import dev.accessscope.scanner.ui.theme.AppThemeMode
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -48,6 +55,9 @@ import kotlinx.coroutines.withContext
  * @param statusMessage Messaggio temporaneo da mostrare all'utente (es. errori, conferme); null se assente.
  * @param themeMode Preferenza tema interfaccia (chiaro, scuro o sistema).
  * @param liveDebugPanelEnabled Se true, mostra il pannello debug live durante la scansione.
+ * @param latestArchivedSession Ultima sessione archiviata per l'app principale selezionata.
+ * @param sessionComparison Confronto numerico ultima vs penultima sessione archiviata.
+ * @param historyPackageName Package usato per cronologia e confronto.
  */
 data class HomeUiState(
     val apps: List<InstalledAppInfo> = emptyList(),
@@ -64,6 +74,34 @@ data class HomeUiState(
     val statusMessage: String? = null,
     val themeMode: AppThemeMode = AppThemeMode.SYSTEM,
     val liveDebugPanelEnabled: Boolean = false,
+    val latestArchivedSession: ArchivedScanSession? = null,
+    val sessionComparison: SessionComparison? = null,
+    val historyPackageName: String? = null,
+)
+
+/**
+ * Slice UI per l'elenco app — non include [ScanSessionState] per evitare recomposition durante la scansione.
+ */
+data class AppListUiState(
+    val apps: List<InstalledAppInfo> = emptyList(),
+    val selectedPackages: Set<String> = emptySet(),
+    val isLoadingApps: Boolean = true,
+    val includeSystemApps: Boolean = false,
+    val autoLaunchEnabled: Boolean = false,
+)
+
+/**
+ * Slice UI per dashboard e barra azioni legata alla sessione di scansione.
+ */
+data class ScanDashboardUiState(
+    val scanState: ScanSessionState = ScanSessionState(),
+    val liveDebugPanelEnabled: Boolean = false,
+    val selectedPackages: Set<String> = emptySet(),
+    val accessibilityGranted: Boolean = false,
+    val overlayGranted: Boolean = false,
+    val latestArchivedSession: ArchivedScanSession? = null,
+    val sessionComparison: SessionComparison? = null,
+    val historyPackageName: String? = null,
 )
 
 /**
@@ -82,16 +120,53 @@ class ScanViewModel(application: Application) : AndroidViewModel(application) {
     private val favoriteAppsStore = (application as AccessScopeApp).favoriteAppsStore
     private val scanSettingsStore = (application as AccessScopeApp).scanSettingsStore
     private val themePreferencesStore = (application as AccessScopeApp).themePreferencesStore
+    private val scanHistoryStore = (application as AccessScopeApp).scanHistoryStore
 
     private val _uiState = MutableStateFlow(HomeUiState())
     /** Flusso osservabile dello stato UI della Home; aggiornato da repository, permessi e azioni utente. */
     val uiState: StateFlow<HomeUiState> = _uiState.asStateFlow()
+
+    /**
+     * Stato elenco app isolato dalla sessione di scansione — riduce jank in scroll durante scan live.
+     */
+    val appListUiState: StateFlow<AppListUiState> = _uiState
+        .map {
+            AppListUiState(
+                apps = it.apps,
+                selectedPackages = it.selectedPackages,
+                isLoadingApps = it.isLoadingApps,
+                includeSystemApps = it.includeSystemApps,
+                autoLaunchEnabled = it.autoLaunchEnabled,
+            )
+        }
+        .distinctUntilChanged()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), AppListUiState())
+
+    /**
+     * Stato dashboard/barra scansione — aggiornato frequentemente durante la sessione live.
+     */
+    val scanDashboardUiState: StateFlow<ScanDashboardUiState> = _uiState
+        .map {
+            ScanDashboardUiState(
+                scanState = it.scanState,
+                liveDebugPanelEnabled = it.liveDebugPanelEnabled,
+                selectedPackages = it.selectedPackages,
+                accessibilityGranted = it.accessibilityGranted,
+                overlayGranted = it.overlayGranted,
+                latestArchivedSession = it.latestArchivedSession,
+                sessionComparison = it.sessionComparison,
+                historyPackageName = it.historyPackageName,
+            )
+        }
+        .distinctUntilChanged()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), ScanDashboardUiState())
 
     init {
         val favorites = favoriteAppsStore.getFavorites()
         _uiState.update { it.copy(selectedPackages = favorites, favoritePackages = favorites) }
         viewModelScope.launch {
             repository.state.collect { scanState ->
+                val wasScanning = _uiState.value.scanState.isScanning
                 _uiState.update { state ->
                     val status = when {
                         scanState.lastPdfPath != null && !scanState.isScanning ->
@@ -101,8 +176,12 @@ class ScanViewModel(application: Application) : AndroidViewModel(application) {
                     }
                     state.copy(scanState = scanState, statusMessage = status)
                 }
+                if (wasScanning && !scanState.isScanning) {
+                    refreshScanHistory(scanState.selectedPackages)
+                }
             }
         }
+        refreshScanHistory(_uiState.value.selectedPackages)
         refreshPermissions()
         _uiState.update {
             it.copy(
@@ -323,6 +402,7 @@ class ScanViewModel(application: Application) : AndroidViewModel(application) {
             }
             state.copy(selectedPackages = updated)
         }
+        refreshScanHistory(_uiState.value.selectedPackages)
     }
 
     /**
@@ -412,6 +492,7 @@ class ScanViewModel(application: Application) : AndroidViewModel(application) {
     /** Deseleziona tutte le app dal monitoraggio. */
     fun clearSelection() {
         _uiState.update { it.copy(selectedPackages = emptySet()) }
+        refreshScanHistory(emptySet())
     }
 
     /** Azzera il messaggio di stato temporaneo mostrato all'utente. */
@@ -428,4 +509,53 @@ class ScanViewModel(application: Application) : AndroidViewModel(application) {
         themePreferencesStore.setThemeMode(mode)
         _uiState.update { it.copy(themeMode = mode) }
     }
+
+    /**
+     * Carica cronologia e confronto per il package principale tra quelli selezionati.
+     *
+     * @param packages Package attualmente selezionati; usa il primo come chiave cronologia.
+     */
+    fun refreshScanHistory(packages: Set<String> = _uiState.value.selectedPackages) {
+        val primary = packages.firstOrNull()
+        if (primary == null) {
+            _uiState.update {
+                it.copy(
+                    latestArchivedSession = null,
+                    sessionComparison = null,
+                    historyPackageName = null,
+                )
+            }
+            return
+        }
+        viewModelScope.launch(Dispatchers.IO) {
+            val latest = scanHistoryStore.getLatest(primary)
+            val previous = scanHistoryStore.getPrevious(primary)
+            val comparison = SessionComparisonHelper.compareLatestWithPrevious(latest, previous)
+            withContext(Dispatchers.Main) {
+                _uiState.update {
+                    it.copy(
+                        latestArchivedSession = latest,
+                        sessionComparison = comparison,
+                        historyPackageName = primary,
+                    )
+                }
+            }
+        }
+    }
+
+    /**
+     * Restituisce la cronologia archiviata per un package (max 20 sessioni).
+     *
+     * @param packageName Package Android da consultare.
+     */
+    fun getScanHistory(packageName: String): List<ArchivedScanSession> =
+        scanHistoryStore.getHistory(packageName)
+
+    /**
+     * Carica una sessione archiviata per ID.
+     *
+     * @param sessionId Identificatore univoco della sessione.
+     */
+    fun getArchivedSession(sessionId: String): ArchivedScanSession? =
+        scanHistoryStore.getSession(sessionId)
 }

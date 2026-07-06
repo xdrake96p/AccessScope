@@ -6,11 +6,11 @@
  */
 package dev.accessscope.scanner.ui.components
 
-import androidx.compose.animation.core.LinearEasing
-import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -53,14 +53,16 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import dev.accessscope.scanner.data.AccessibilityViolation
+import dev.accessscope.scanner.data.ScreenReaderFinding
 import dev.accessscope.scanner.data.ViolationSeverity
 import dev.accessscope.scanner.data.ViolationType
+import dev.accessscope.scanner.report.AiPromptInput
 import dev.accessscope.scanner.report.ReportHelper
+import dev.accessscope.scanner.report.SessionComparison
 import dev.accessscope.scanner.ui.theme.BrandPrimary
 import dev.accessscope.scanner.ui.theme.Danger
 import dev.accessscope.scanner.ui.theme.Success
 import dev.accessscope.scanner.ui.theme.Warning
-import dev.accessscope.scanner.ui.theme.contentSecondary
 import dev.accessscope.scanner.ui.theme.contentSecondary
 import dev.accessscope.scanner.ui.theme.severityColor
 
@@ -76,6 +78,11 @@ import dev.accessscope.scanner.ui.theme.severityColor
  * @param scanAnalyses Numero totale di analisi eseguite; mostrato se supera [screens].
  * @param isPartialScan True se la scansione non copre tutti gli ambiti.
  * @param scanScopeLabel Etichetta leggibile degli ambiti attivi.
+ * @param screenReaderFindings Elenco note TalkBack per il prompt AI.
+ * @param targetPackages Package analizzati nella sessione.
+ * @param packageLabels Mappa package → nome app per il prompt.
+ * @param onAiPromptCopied Callback dopo copia prompt negli appunti.
+ * @param sessionComparison Confronto con la sessione precedente archiviata.
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -89,13 +96,18 @@ fun ScanDashboard(
     scanAnalyses: Int = 0,
     isPartialScan: Boolean = false,
     scanScopeLabel: String = "Completa",
+    screenReaderFindings: List<ScreenReaderFinding> = emptyList(),
+    targetPackages: Set<String> = emptySet(),
+    packageLabels: Map<String, String> = emptyMap(),
+    onAiPromptCopied: () -> Unit = {},
+    sessionComparison: SessionComparison? = null,
 ) {
     val transition = rememberInfiniteTransition(label = "pulse")
     val pulse by transition.animateFloat(
         initialValue = 0.55f,
         targetValue = 1f,
         animationSpec = infiniteRepeatable(
-            animation = tween(900, easing = LinearEasing),
+            animation = tween(1000, easing = FastOutSlowInEasing),
             repeatMode = RepeatMode.Reverse,
         ),
         label = "pulseAlpha",
@@ -110,50 +122,61 @@ fun ScanDashboard(
         .sortedByDescending { it.value.size }
         .take(6)
 
-    Card(
-        modifier = modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(
-            containerColor = BrandPrimary.copy(alpha = if (isScanning) 0.10f else 0.06f),
-        ),
-        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+    val aiPromptInput = remember(
+        violations,
+        screenReaderFindings,
+        targetPackages,
+        packageLabels,
+        screens,
+        scanScopeLabel,
     ) {
-        Column(
-            Modifier.padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
+        AiPromptInput(
+            violations = violations,
+            screenReaderFindings = screenReaderFindings,
+            targetPackageNames = targetPackages,
+            packageLabels = packageLabels,
+            uniqueScreens = screens,
+            scanScopeLabel = scanScopeLabel,
+        )
+    }
+    val canExportAiPrompt = filtered.isNotEmpty() || screenReaderFindings.isNotEmpty()
+
+    AccessScopeCard(
+        modifier = modifier.fillMaxWidth(),
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                Box(
-                    Modifier
-                        .size(10.dp)
-                        .alpha(if (isScanning) pulse else 1f)
-                        .clip(RoundedCornerShape(50))
-                        .background(if (isScanning) Success else contentSecondary()),
-                )
+            Box(
+                Modifier
+                    .size(10.dp)
+                    .alpha(if (isScanning) pulse else 1f)
+                    .clip(RoundedCornerShape(50))
+                    .background(if (isScanning) Success else contentSecondary()),
+            )
+            Text(
+                if (isScanning) "Scansione in corso" else "Ultima sessione",
+                fontWeight = FontWeight.SemiBold,
+            )
+            if (isPartialScan) {
                 Text(
-                    if (isScanning) "Scansione in corso" else "Ultima sessione",
-                    fontWeight = FontWeight.SemiBold,
+                    "Parziale: $scanScopeLabel",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = Warning,
                 )
-                if (isPartialScan) {
-                    Text(
-                        "Parziale: $scanScopeLabel",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = Warning,
-                    )
-                }
             }
+        }
 
-            val hasLiveData = screens > 0 || filtered.isNotEmpty() || talkBackFindings > 0
+        val hasLiveData = screens > 0 || filtered.isNotEmpty() || talkBackFindings > 0
 
-            if (isScanning && !hasLiveData) {
-                Text(
-                    "In attesa dell'app selezionata. Apri l'app e naviga tra le schermate.",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = contentSecondary(),
-                )
-            } else {
+        if (isScanning && !hasLiveData) {
+            Text(
+                "In attesa dell'app selezionata. Apri l'app e naviga tra le schermate.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = contentSecondary(),
+            )
+        } else {
             SessionStatsBlock(
                 okLabel = "OK",
                 koLabel = "KO",
@@ -200,6 +223,10 @@ fun ScanDashboard(
             }
 
             if (!isScanning) {
+                SessionComparisonCard(
+                    comparison = sessionComparison,
+                    modifier = Modifier.fillMaxWidth(),
+                )
                 Button(
                     onClick = onOpenReport,
                     modifier = Modifier.fillMaxWidth(),
@@ -210,7 +237,18 @@ fun ScanDashboard(
                     Spacer(Modifier.width(8.dp))
                     Text("Vedi report completo")
                 }
-            }
+                CopyAiPromptButton(
+                    input = aiPromptInput,
+                    enabled = canExportAiPrompt,
+                    onCopied = onAiPromptCopied,
+                )
+                if (canExportAiPrompt) {
+                    Text(
+                        "Incolla il prompt in ChatGPT, Claude, Gemini o altro assistente per ottenere fix mirati.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = contentSecondary(),
+                    )
+                }
             }
         }
     }

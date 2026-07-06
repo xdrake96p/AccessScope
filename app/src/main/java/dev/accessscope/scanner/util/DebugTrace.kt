@@ -8,6 +8,9 @@ package dev.accessscope.scanner.util
 
 import android.util.Log
 import org.json.JSONObject
+import java.net.HttpURLConnection
+import java.net.URL
+import java.util.concurrent.Executors
 
 /**
  * Logger di debug che emette eventi strutturati in formato JSON su Logcat.
@@ -17,6 +20,9 @@ import org.json.JSONObject
  */
 object DebugTrace {
     private const val TAG = "ASDBG_90548f"
+    private const val INGEST_URL =
+        "http://127.0.0.1:7931/ingest/ec3129d3-eabf-4d44-91e4-790542799950"
+    private val executor = Executors.newSingleThreadExecutor()
 
     /**
      * Registra un evento di tracciamento strutturato.
@@ -28,14 +34,14 @@ object DebugTrace {
      * @param location Posizione nel codice (es. «Classe.metodo:42»).
      * @param message Messaggio descrittivo dell'evento.
      * @param data Mappa di valori contestuali opzionali.
-     * @param runId Identificativo dell'esecuzione (default «pre-fix»).
+     * @param runId Identificativo dell'esecuzione (default «scroll-debug»).
      */
     fun log(
         hypothesisId: String,
         location: String,
         message: String,
         data: Map<String, Any?> = emptyMap(),
-        runId: String = "pre-fix",
+        runId: String = "scroll-debug",
     ) {
         // #region agent log
         try {
@@ -48,9 +54,30 @@ object DebugTrace {
                 put("timestamp", System.currentTimeMillis())
                 put("data", JSONObject(data))
             }
-            Log.i(TAG, payload.toString())
+            val line = payload.toString()
+            Log.i(TAG, line)
+            postToIngest(line)
         } catch (_: Exception) {
         }
         // #endregion
+    }
+
+    private fun postToIngest(jsonLine: String) {
+        executor.execute {
+            try {
+                val conn = (URL(INGEST_URL).openConnection() as HttpURLConnection).apply {
+                    requestMethod = "POST"
+                    setRequestProperty("Content-Type", "application/json")
+                    setRequestProperty("X-Debug-Session-Id", "90548f")
+                    doOutput = true
+                    connectTimeout = 1500
+                    readTimeout = 1500
+                }
+                conn.outputStream.use { it.write(jsonLine.toByteArray(Charsets.UTF_8)) }
+                conn.inputStream.close()
+                conn.disconnect()
+            } catch (_: Exception) {
+            }
+        }
     }
 }

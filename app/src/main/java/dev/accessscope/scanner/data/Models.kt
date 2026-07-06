@@ -321,16 +321,7 @@ data class AccessibilityViolation(
      * Combina tipo, package, ambito schermata e identità dell'elemento.
      */
     val dedupeKey: String
-        get() {
-            val identity = viewId?.takeIf { it.isNotBlank() }
-                ?: "${viewClassName}@${bounds?.hashCode()?.and(0xFFFF)}"
-            val scope = when {
-                type == ViolationType.DYNAMIC_CONTENT_SILENT -> "global"
-                isGlobalWidget(viewId) -> "global"
-                else -> screenFingerprint?.takeIf { it.isNotBlank() } ?: screenTitle
-            }
-            return "${type.name}|$packageName|$scope|$identity"
-        }
+        get() = ViolationDedupeRules.keyFor(this)
 
     companion object {
         /**
@@ -419,6 +410,35 @@ data class ScreenReaderFinding(
     val reportSection: String
         get() = sectionTitle?.takeIf { it.isNotBlank() } ?: screenTitle
 }
+
+/**
+ * Sessione di scansione archiviata su disco per cronologia e confronto tra sessioni.
+ *
+ * @property id Identificatore univoco (UUID).
+ * @property completedAtMs Timestamp Unix di completamento.
+ * @property targetPackages Package analizzati nella sessione.
+ * @property violations Elenco violazioni deduplicate della sessione.
+ * @property screenReaderFindings Note TalkBack raccolte.
+ * @property uniqueScreens Numero di schermate distinte visitate.
+ * @property scanAnalyses Contatore analisi eseguite.
+ * @property scanScopeLabel Etichetta leggibile dell'ambito di scansione.
+ * @property score Punteggio accessibilità calcolato al termine.
+ * @property pdfPath Percorso del report PDF, se generato.
+ * @property violationKeys Snapshot delle chiavi dedupe per confronto rapido.
+ */
+data class ArchivedScanSession(
+    val id: String,
+    val completedAtMs: Long,
+    val targetPackages: Set<String>,
+    val violations: List<AccessibilityViolation>,
+    val screenReaderFindings: List<ScreenReaderFinding>,
+    val uniqueScreens: Int,
+    val scanAnalyses: Int,
+    val scanScopeLabel: String,
+    val score: Int,
+    val pdfPath: String?,
+    val violationKeys: Set<String>,
+)
 
 /**
  * Metadati di un'applicazione installata sul dispositivo.

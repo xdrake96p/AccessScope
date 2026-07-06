@@ -44,6 +44,8 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
@@ -51,6 +53,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -67,7 +70,10 @@ import dev.accessscope.scanner.data.PassedCheck
 import dev.accessscope.scanner.data.ScreenReaderFinding
 import dev.accessscope.scanner.data.ViolationArea
 import dev.accessscope.scanner.data.ViolationSeverity
+import dev.accessscope.scanner.report.AiPromptInput
 import dev.accessscope.scanner.report.ReportHelper
+import dev.accessscope.scanner.ui.components.CopyAiPromptButton
+import dev.accessscope.scanner.ui.components.SessionComparisonCard
 import dev.accessscope.scanner.report.ReportSectionGroup
 import dev.accessscope.scanner.ui.theme.AccessScopeMotion
 import dev.accessscope.scanner.ui.theme.BrandDark
@@ -78,6 +84,7 @@ import dev.accessscope.scanner.ui.theme.brandHighlightContainer
 import dev.accessscope.scanner.ui.theme.contentSecondary
 import dev.accessscope.scanner.ui.theme.severityColor
 import dev.accessscope.scanner.ui.viewmodel.ScanViewModel
+import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -123,6 +130,18 @@ fun ReportScreen(
         uiState.apps.associate { it.packageName to it.label }
     }
     var expandedSections by rememberSaveable { mutableStateOf(setOf<String>()) }
+    val snackbarHost = remember { SnackbarHostState() }
+    val scope = rememberCoroutineScope()
+    val aiPromptInput = remember(scan, violations, packageLabels) {
+        AiPromptInput(
+            violations = scan.violations,
+            screenReaderFindings = scan.screenReaderFindings,
+            targetPackageNames = scan.selectedPackages,
+            packageLabels = packageLabels,
+            uniqueScreens = scan.uniqueScreens,
+            scanScopeLabel = scan.scanScope.label(),
+        )
+    }
 
     fun sectionKey(section: ReportSectionGroup) = "${section.screenTitle}|${section.sectionTitle}"
     fun toggleSection(section: ReportSectionGroup) {
@@ -131,6 +150,7 @@ fun ReportScreen(
     }
 
     Scaffold(
+        snackbarHost = { SnackbarHost(snackbarHost) },
         topBar = {
             TopAppBar(
                 title = { Text("Report accessibilità") },
@@ -182,6 +202,24 @@ fun ReportScreen(
                     violationCount = violations.size,
                     talkBackCount = scan.screenReaderFindings.size,
                     passedCheckCount = passedTotal,
+                )
+            }
+
+            uiState.sessionComparison?.let { comparison ->
+                item(key = "session_comparison") {
+                    SessionComparisonCard(comparison = comparison)
+                }
+            }
+
+            item(key = "copy_ai_prompt") {
+                CopyAiPromptButton(
+                    input = aiPromptInput,
+                    enabled = violations.isNotEmpty() || scan.screenReaderFindings.isNotEmpty(),
+                    onCopied = {
+                        scope.launch {
+                            snackbarHost.showSnackbar("Prompt AI copiato negli appunti")
+                        }
+                    },
                 )
             }
 

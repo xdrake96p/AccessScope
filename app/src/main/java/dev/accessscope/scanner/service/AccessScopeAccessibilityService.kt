@@ -394,6 +394,19 @@ class AccessScopeAccessibilityService : AccessibilityService() {
             seenFingerprintsThisSession.add(fingerprint)
             repository.registerUniqueScreen(fingerprint, screenTitle)
         }
+        // #region agent log
+        DebugTrace.log("H-PASS", "scanRoot", "pass_summary", mapOf(
+            "screen" to screenTitle,
+            "fingerprintPrefix" to fingerprint.take(80),
+            "isNewScreen" to isNewScreen,
+            "violationsInPass" to result.violations.size,
+            "talkBackInPass" to result.screenReaderFindings.size,
+            "uniqueScreens" to repository.state.value.uniqueScreens,
+            "sessionViolations" to repository.state.value.violations.size,
+            "sessionTalkBack" to repository.state.value.screenReaderFindings.size,
+            "analyses" to repository.state.value.scanAnalyses,
+        ))
+        // #endregion
         val recentFindings = result.violations.takeLast(6).map { v ->
             LiveDebugFinding(
                 title = v.type.displayName,

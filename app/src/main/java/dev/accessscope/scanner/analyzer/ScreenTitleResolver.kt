@@ -19,7 +19,7 @@ import java.util.concurrent.ConcurrentHashMap
  * Risolve titoli di schermata umanamente leggibili dall'albero di accessibilità.
  *
  * Applica una catena di strategie in ordine di priorità: testo dell'evento, pane title,
- * schermata PIN, modali, titoli di sezione, titoli Nexi noti, viewId distintivi, top bar,
+ * schermata PIN, modali, top bar (stabile in scroll), titoli di sezione, profilo Nexi opzionale,
  * heading prominenti, descrizione contenuto, nome activity e infine cache per pacchetto.
  * Espone anche helper per distinguere drawer, overlay transitori e schermate PIN.
  */
@@ -91,10 +91,13 @@ object ScreenTitleResolver {
 
         findPinScreen(root)?.let { return storeAndReturn(it) }
         findModalTitle(root)?.let { return storeAndReturn(it) }
+
+        // Toolbar/topbar prima dei titoli di sezione: stabile durante scroll (qualsiasi app).
+        findTopBarTitle(root)?.let { return storeAndReturn(it) }
+
         findSectionTitle(root)?.let { return storeAndReturn(it) }
         findKnownNexiTitles(root)?.let { return storeAndReturn(it) }
         findByDistinctiveIds(root)?.let { return storeAndReturn(it) }
-        findTopBarTitle(root)?.let { return storeAndReturn(it) }
         findProminentHeading(root)?.let { return storeAndReturn(it) }
 
         event.contentDescription?.toString()?.trim()?.takeIf { it.isNotBlank() }?.let {
@@ -181,10 +184,46 @@ object ScreenTitleResolver {
         ) {
             return false
         }
+        // Scroll nella stessa activity: riusa il titolo in cache se il chrome strutturale è presente.
+        if (hasScrollableContent(root) && hasActivityChrome(ids)) {
+            findTopBarTitle(root)?.let { top ->
+                return top.equals(cached, ignoreCase = true)
+            }
+            return true
+        }
         val fresh = findSectionTitle(root) ?: findKnownNexiTitles(root) ?: findByDistinctiveIds(root)
         if (fresh != null && !fresh.equals(cached, ignoreCase = true)) return false
         return true
     }
+
+    /** True se l'albero contiene contenuto scrollabile (lista, scroll view). */
+    private fun hasScrollableContent(root: AccessibilityNodeInfo): Boolean {
+        val queue = ArrayDeque<AccessibilityNodeInfo>()
+        queue.add(root)
+        while (queue.isNotEmpty()) {
+            val node = queue.removeFirst()
+            val cls = node.className?.toString().orEmpty()
+            if (cls.contains("ScrollView", true) ||
+                cls.contains("RecyclerView", true) ||
+                cls.contains("NestedScroll", true) ||
+                cls.contains("ViewPager", true)
+            ) {
+                return true
+            }
+            for (i in 0 until node.childCount) {
+                node.getChild(i)?.let(queue::add)
+            }
+        }
+        return false
+    }
+
+    /** Chrome strutturale dell'activity (toolbar, tab, bottom nav) — pattern generici Android. */
+    private fun hasActivityChrome(ids: Set<String>): Boolean =
+        ids.any { id ->
+            id.contains("topbar") || id.contains("toolbar") || id.contains("tab_") ||
+                id.contains("bottom_nav") || id.contains("navigation") || id.contains("nav_host") ||
+                id.contains("action_bar") || id.contains("appbar") || id == "content"
+        }
 
     /**
      * Controlla se l'insieme di viewId include marker tipici della schermata Home Nexi.

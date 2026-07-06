@@ -1,9 +1,8 @@
 /**
- * Calcolo dell'impronta digitale di una schermata per il raggruppamento e il deduplicamento
- * delle violazioni di accessibilità nello stesso contesto visivo.
+ * Calcolo dell'impronta digitale di una schermata per il raggruppamento delle visite.
  *
- * L'impronta combina package, titolo schermata e gli identificatori delle view interattive
- * visibili, producendo una stringa stabile utilizzabile come chiave di correlazione.
+ * Usa titolo schermata e chrome strutturale (toolbar, tab bar) — non i viewId del
+ * contenuto scrollabile, che cambiano a ogni scroll.
  */
 package dev.accessscope.scanner.analyzer
 
@@ -11,38 +10,34 @@ import android.view.accessibility.AccessibilityNodeInfo
 import java.util.ArrayDeque
 
 /**
- * Utility per generare un'impronta sintetica di una schermata a partire dall'albero
- * di accessibilità.
+ * Utility per generare un'impronta sintetica stabile durante lo scroll.
  */
 object ScreenFingerprint {
 
     /**
-     * Calcola l'impronta univoca di una schermata.
+     * Calcola l'impronta di una schermata logica (non del viewport scrollato).
      *
      * @param root Nodo radice dell'albero di accessibilità della finestra corrente.
      * @param packageName Nome del package dell'applicazione in analisi.
      * @param screenTitle Titolo umano della schermata, già risolto da [ScreenTitleResolver].
-     * @return Stringa composta da package, titolo, view ID interattivi ordinati e conteggio figli della radice.
+     * @return Stringa `package::titolo` con eventuali id chrome strutturali ordinati.
      */
     fun compute(
         root: AccessibilityNodeInfo,
         packageName: String,
         screenTitle: String,
     ): String {
-        val viewIds = mutableListOf<String>()
-        collectInteractiveIds(root, viewIds, limit = 20)
-        val sortedIds = viewIds.sorted().joinToString("|")
-        return "$packageName::$screenTitle::$sortedIds::${root.childCount}"
+        val title = screenTitle.trim().ifBlank { "unknown" }
+        val chromeIds = mutableListOf<String>()
+        collectStructuralChromeIds(root, chromeIds, limit = 12)
+        val chrome = chromeIds.sorted().distinct().joinToString("|")
+        return if (chrome.isNotEmpty()) "$packageName::$title::$chrome" else "$packageName::$title"
     }
 
     /**
-     * Raccoglie ricorsivamente gli ID risorsa delle view interattive visibili.
-     *
-     * @param node Nodo corrente in visita depth-first.
-     * @param output Lista mutabile in cui accumulare gli ID raccolti.
-     * @param limit Numero massimo di ID da raccogliere prima di interrompere la scansione.
+     * Raccoglie viewId di chrome UI stabile (toolbar, tab, bottom nav) — generico multi-app.
      */
-    private fun collectInteractiveIds(
+    private fun collectStructuralChromeIds(
         node: AccessibilityNodeInfo,
         output: MutableList<String>,
         limit: Int,
@@ -51,15 +46,29 @@ object ScreenFingerprint {
         if (!node.isVisibleToUser) return
 
         val id = node.viewIdResourceName
-        val interactive = node.isClickable || node.isFocusable || node.isEditable
-        if (interactive && !id.isNullOrBlank()) {
-            output.add(id)
+        if (!id.isNullOrBlank()) {
+            val short = id.substringAfterLast('/').lowercase()
+            val className = node.className?.toString().orEmpty().lowercase()
+            val isChrome = STRUCTURAL_ID_PATTERN.containsMatchIn(short) ||
+                className.contains("toolbar", true) ||
+                className.contains("tablayout", true) ||
+                className.contains("bottomnavigation", true) ||
+                className.contains("navigationbar", true)
+            if (isChrome) {
+                output.add(short)
+            }
         }
 
         for (i in 0 until node.childCount) {
             val child = node.getChild(i) ?: continue
-            collectInteractiveIds(child, output, limit)
+            collectStructuralChromeIds(child, output, limit)
             child.recycle()
         }
     }
+
+    /** Pattern generico per id risorsa del chrome (non contenuto lista/scroll). */
+    private val STRUCTURAL_ID_PATTERN = Regex(
+        """(topbar|toolbar|action_bar|appbar|tab_|bottom_nav|navigation|nav_host|coordinator)""",
+        RegexOption.IGNORE_CASE,
+    )
 }

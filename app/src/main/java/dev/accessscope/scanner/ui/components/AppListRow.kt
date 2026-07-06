@@ -1,5 +1,5 @@
 /**
- * Riga ottimizzata dell'elenco app — icone async e layer hardware per scroll fluido.
+ * Riga ottimizzata dell'elenco app — callback stabili e layer GPU per scroll fluido.
  */
 package dev.accessscope.scanner.ui.components
 
@@ -29,42 +29,34 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import dev.accessscope.scanner.data.InstalledAppInfo
-import dev.accessscope.scanner.ui.theme.BrandPrimary
 import dev.accessscope.scanner.ui.theme.CodeTextStyle
 import dev.accessscope.scanner.ui.theme.ControlShape
-import dev.accessscope.scanner.ui.theme.contentSecondary
 
 private val AppRowHeight = 64.dp
+private val FavoriteTint = Color(0xFFFFB300)
 
 /**
  * Riga compatta per la lista app installate.
  *
- * @param app Metadati app.
- * @param selected Se inclusa nel monitoraggio.
- * @param onToggle Inverte la selezione.
- * @param onToggleFavorite Aggiunge/rimuove dai preferiti.
+ * @param onTogglePackage Callback stabile (es. `viewModel::toggleApp`) invocato con il package.
+ * @param onToggleFavoritePackage Callback stabile per i preferiti.
  */
 @Composable
 fun AppListRow(
     app: InstalledAppInfo,
     selected: Boolean,
-    onToggle: () -> Unit,
-    onToggleFavorite: () -> Unit,
+    onTogglePackage: (String) -> Unit,
+    onToggleFavoritePackage: (String) -> Unit,
     modifier: Modifier = Modifier,
+    secondaryTextColor: Color = MaterialTheme.colorScheme.onSurfaceVariant,
 ) {
     val context = LocalContext.current
     val packageManager = remember(context) { context.packageManager }
-    val isDark = MaterialTheme.colorScheme.background.luminance() < 0.5f
-    val bg = if (selected) {
-        MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.35f)
-    } else {
-        Color.Transparent
-    }
+    val selectedBg = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.32f)
     val interactionSource = remember { MutableInteractionSource() }
 
     Row(
@@ -73,23 +65,23 @@ fun AppListRow(
             .height(AppRowHeight)
             .graphicsLayer { clip = true }
             .clip(ControlShape)
-            .background(bg)
+            .background(if (selected) selectedBg else Color.Transparent)
             .clickable(
                 interactionSource = interactionSource,
                 indication = null,
-                onClick = onToggle,
+                onClick = { onTogglePackage(app.packageName) },
             )
             .padding(horizontal = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         IconButton(
-            onClick = onToggleFavorite,
+            onClick = { onToggleFavoritePackage(app.packageName) },
             modifier = Modifier.size(40.dp),
         ) {
             Icon(
                 imageVector = if (app.isFavorite) Icons.Filled.Star else Icons.Outlined.StarOutline,
                 contentDescription = if (app.isFavorite) "Rimuovi dai preferiti" else "Aggiungi ai preferiti",
-                tint = if (app.isFavorite) Color(0xFFFFB300) else contentSecondary(),
+                tint = if (app.isFavorite) FavoriteTint else secondaryTextColor,
                 modifier = Modifier.size(22.dp),
             )
         }
@@ -104,13 +96,13 @@ fun AppListRow(
             Text(
                 app.packageName,
                 style = CodeTextStyle,
-                color = contentSecondary(),
+                color = secondaryTextColor,
                 maxLines = 1,
             )
         }
         Switch(
             checked = selected,
-            onCheckedChange = { onToggle() },
+            onCheckedChange = { onTogglePackage(app.packageName) },
         )
     }
 }

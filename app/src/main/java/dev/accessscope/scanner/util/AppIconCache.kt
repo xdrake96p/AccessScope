@@ -48,6 +48,14 @@ object AppIconCache {
     }
 
     /**
+     * Restituisce l'icona già in cache, senza decode aggiuntivo.
+     *
+     * @param packageName Package dell'app.
+     * @return Bitmap in cache o `null`.
+     */
+    fun peek(packageName: String): ImageBitmap? = synchronized(cache) { cache[packageName] }
+
+    /**
      * Precarica in cache le icone per un insieme di package.
      *
      * @param packageManager Gestore package per il recupero delle icone.

@@ -52,6 +52,7 @@ fun HeroHeader(
     onOpenSettings: () -> Unit = {},
 ) {
     val isDark = MaterialTheme.colorScheme.background.luminance() < 0.5f
+    val gradient = headerGradient()
     val onHero = if (isDark) Color.White else Color(0xFF0F172A)
     val onHeroMuted = onHero.copy(alpha = 0.78f)
     val chipBg = if (isDark) Color.White.copy(alpha = 0.14f) else Color.White.copy(alpha = 0.55f)
@@ -61,7 +62,7 @@ fun HeroHeader(
         modifier = Modifier
             .fillMaxWidth()
             .clip(HeroShape)
-            .background(headerGradient())
+            .background(gradient)
             .padding(horizontal = 20.dp, vertical = 22.dp),
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {

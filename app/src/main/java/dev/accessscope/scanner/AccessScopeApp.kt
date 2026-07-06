@@ -12,8 +12,10 @@ import dev.accessscope.scanner.export.PdfReportExporter
 import dev.accessscope.scanner.service.ScanOverlayService
 import dev.accessscope.scanner.util.DebugTrace
 import dev.accessscope.scanner.util.FavoriteAppsStore
+import dev.accessscope.scanner.util.ScanHistoryStore
 import dev.accessscope.scanner.util.ScanSettingsStore
 import dev.accessscope.scanner.util.ThemePreferencesStore
+import dev.accessscope.scanner.report.ReportHelper
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -41,7 +43,11 @@ class AccessScopeApp : Application() {
     /** Store persistente per la preferenza tema (chiaro / scuro / sistema). */
     val themePreferencesStore: ThemePreferencesStore by lazy { ThemePreferencesStore(this) }
 
+    /** Store file-based per la cronologia delle sessioni di scansione (max 20 per app). */
+    val scanHistoryStore: ScanHistoryStore by lazy { ScanHistoryStore(this) }
+
     private val pdfExporter by lazy { PdfReportExporter(this) }
+    private var lastArchivedSessionId: String? = null
     private val applicationScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
 
     /**
@@ -92,6 +98,22 @@ class AccessScopeApp : Application() {
         ))
         // #endregion
 
+        if (hadActiveSession) {
+            val filtered = ReportHelper.filterViolations(snapshot.violations)
+            val score = ReportHelper.computeScore(filtered, snapshot.uniqueScreens.coerceAtLeast(1))
+            val archived = scanHistoryStore.buildArchivedSession(
+                targetPackages = snapshot.selectedPackages,
+                violations = filtered,
+                screenReaderFindings = snapshot.screenReaderFindings,
+                uniqueScreens = snapshot.uniqueScreens,
+                scanAnalyses = snapshot.scanAnalyses,
+                scanScopeLabel = snapshot.scanScope.label(),
+                score = score,
+            )
+            lastArchivedSessionId = archived.id
+            scanHistoryStore.archive(archived)
+        }
+
         scanRepository.stopScan()
 
         if (!hadActiveSession) return
@@ -113,6 +135,7 @@ class AccessScopeApp : Application() {
             result.fold(
                 onSuccess = { path ->
                     scanRepository.setPdfPath(path)
+                    lastArchivedSessionId?.let { scanHistoryStore.updateSessionPdfPath(it, path) }
                     DebugTrace.log("H-STOP2", "stopScanSession", "pdf_ok", mapOf("path" to path))
                 },
                 onFailure = { error ->

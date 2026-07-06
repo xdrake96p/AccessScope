@@ -85,6 +85,20 @@ Percorrere i 7 flussi scope su device con Nexi + AccessScope:
 - **Schermate uniche**: fingerprint distinti (non ogni scroll)
 - **Analisi eseguite**: scan debounced totali
 - **Punteggio**: pesato per severità WCAG, non solo conteggio grezzo
+- **Violazioni uniche**: dedupe tramite `ViolationDedupeRules` (v1.3.0) — stesso `viewId` non conta due volte durante scroll prolungato sulla stessa lista
+
+## Dedupe v1.3.0 (validazione)
+
+Durante scroll sulla stessa schermata (es. lista distinte Nexi), il conteggio violazioni **non deve crescere linearmente** con il tempo di scroll: la chiave ignora `screenFingerprint` e normalizza suffissi RecyclerView (`_0`, `_1`).
+
+| Scenario | Comportamento atteso |
+|----------|---------------------|
+| Stesso `viewId`, fingerprint diversa | 1 violazione |
+| Elemento senza viewId, bounds ±15px | 1 violazione (quantize 32dp) |
+| `topbar_icon_*` cross-screen | 1 violazione globale |
+| N17 topbar | Invariato (dedupe global) |
+
+Eseguire i 7 flussi Nexi e confrontare conteggio vs sessione precedente v1.2.x.
 
 ## Checklist accettazione — Iterazione 5
 

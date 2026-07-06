@@ -73,10 +73,12 @@ object ReportHelper {
      * Filtra le violazioni la cui confidenza supera la soglia specifica per il tipo.
      *
      * @param violations Elenco completo delle violazioni rilevate in sessione.
-     * @return Sottoinsieme di violazioni con confidenza sufficiente per il report.
+     * @return Sottoinsieme di violazioni con confidenza sufficiente per il report, deduplicate per [AccessibilityViolation.dedupeKey].
      */
     fun filterViolations(violations: List<AccessibilityViolation>): List<AccessibilityViolation> =
-        violations.filter { it.confidence >= confidenceThreshold(it.type) }
+        violations
+            .filter { it.confidence >= confidenceThreshold(it.type) }
+            .distinctBy { it.dedupeKey }
 
     /**
      * Calcola un punteggio di accessibilità stimato (0–100) in base a violazioni e schermate.
