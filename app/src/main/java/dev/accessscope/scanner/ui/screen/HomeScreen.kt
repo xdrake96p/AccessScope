@@ -1,0 +1,311 @@
+package dev.accessscope.scanner.ui.screen
+
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.PictureAsPdf
+import androidx.compose.material.icons.outlined.PlayArrow
+import androidx.compose.material.icons.outlined.Search
+import androidx.compose.material.icons.outlined.SelectAll
+import androidx.compose.material.icons.outlined.Stop
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import androidx.core.graphics.drawable.toBitmap
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import dev.accessscope.scanner.data.InstalledAppInfo
+import dev.accessscope.scanner.ui.components.FeatureHighlights
+import dev.accessscope.scanner.ui.components.HeroHeader
+import dev.accessscope.scanner.ui.components.PermissionsCard
+import dev.accessscope.scanner.ui.components.ScanDashboard
+import dev.accessscope.scanner.ui.theme.BrandPrimary
+import dev.accessscope.scanner.ui.theme.Danger
+import dev.accessscope.scanner.ui.theme.SurfaceLight
+import dev.accessscope.scanner.ui.theme.TextSecondary
+import dev.accessscope.scanner.ui.viewmodel.ScanViewModel
+
+@Composable
+fun HomeScreen(viewModel: ScanViewModel) {
+    val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val snackbarHost = remember { SnackbarHostState() }
+    var query by remember { mutableStateOf("") }
+
+    LaunchedEffect(uiState.statusMessage) {
+        uiState.statusMessage?.let { message ->
+            snackbarHost.showSnackbar(message)
+            viewModel.clearStatus()
+        }
+    }
+
+    val filteredApps = remember(uiState.apps, query) {
+        if (query.isBlank()) uiState.apps
+        else uiState.apps.filter {
+            it.label.contains(query, ignoreCase = true) ||
+                it.packageName.contains(query, ignoreCase = true)
+        }
+    }
+
+    Scaffold(
+        modifier = Modifier.background(SurfaceLight),
+        snackbarHost = { SnackbarHost(snackbarHost) },
+        bottomBar = {
+            ScanActionBar(
+                isScanning = uiState.scanState.isScanning,
+                canStart = uiState.selectedPackages.isNotEmpty() &&
+                    uiState.accessibilityGranted && uiState.overlayGranted,
+                onStart = viewModel::startScan,
+                onStop = viewModel::stopScan,
+            )
+        },
+    ) { padding ->
+        LazyColumn(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(padding),
+            contentPadding = PaddingValues(bottom = 16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            item {
+                HeroHeader(
+                    selectedCount = uiState.selectedPackages.size,
+                    isScanning = uiState.scanState.isScanning,
+                )
+            }
+
+            item {
+                Column(Modifier.padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    FeatureHighlights()
+                    PermissionsCard(
+                        accessibilityGranted = uiState.accessibilityGranted,
+                        overlayGranted = uiState.overlayGranted,
+                        onRefresh = viewModel::refreshPermissions,
+                    )
+                }
+            }
+
+            if (uiState.scanState.isScanning || uiState.scanState.violations.isNotEmpty()) {
+                item {
+                    ScanDashboard(
+                        violations = uiState.scanState.violations,
+                        screens = uiState.scanState.scannedScreens,
+                        talkBackFindings = uiState.scanState.screenReaderFindings.size,
+                        isScanning = uiState.scanState.isScanning,
+                        modifier = Modifier.padding(horizontal = 16.dp),
+                    )
+                }
+            }
+
+            uiState.scanState.lastPdfPath?.let { path ->
+                item {
+                    PdfResultCard(path = path, modifier = Modifier.padding(horizontal = 16.dp))
+                }
+            }
+
+            item {
+                Column(Modifier.padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedTextField(
+                        value = query,
+                        onValueChange = { query = it },
+                        modifier = Modifier.fillMaxWidth(),
+                        leadingIcon = { Icon(Icons.Outlined.Search, contentDescription = "Cerca") },
+                        placeholder = { Text("Cerca app per nome o package…") },
+                        singleLine = true,
+                        shape = RoundedCornerShape(14.dp),
+                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(
+                            "App (${uiState.selectedPackages.size}/${uiState.apps.size})",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.SemiBold,
+                        )
+                        Row {
+                            TextButton(onClick = viewModel::selectAllVisible) {
+                                Icon(Icons.Outlined.SelectAll, contentDescription = null, modifier = Modifier.size(18.dp))
+                                Spacer(Modifier.width(4.dp))
+                                Text("Tutte")
+                            }
+                            TextButton(onClick = viewModel::clearSelection) {
+                                Text("Nessuna")
+                            }
+                            if (uiState.isLoadingApps) {
+                                CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
+                            }
+                        }
+                    }
+                }
+            }
+
+            if (filteredApps.isEmpty() && !uiState.isLoadingApps) {
+                item {
+                    Box(
+                        Modifier
+                            .fillMaxWidth()
+                            .padding(32.dp),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Text("Nessuna app trovata", color = TextSecondary)
+                    }
+                }
+            }
+
+            items(filteredApps, key = { it.packageName }) { app ->
+                AppRow(
+                    app = app,
+                    selected = app.packageName in uiState.selectedPackages,
+                    viewModel = viewModel,
+                    onToggle = { viewModel.toggleApp(app.packageName) },
+                    modifier = Modifier.padding(horizontal = 16.dp),
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun PdfResultCard(path: String, modifier: Modifier = Modifier) {
+    Card(
+        modifier = modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer),
+        shape = RoundedCornerShape(16.dp),
+    ) {
+        Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+            Icon(Icons.Outlined.PictureAsPdf, contentDescription = null, tint = BrandPrimary)
+            Spacer(Modifier.width(12.dp))
+            Column {
+                Text("Report PDF pronto", fontWeight = FontWeight.SemiBold)
+                Text(path, style = MaterialTheme.typography.bodySmall, color = TextSecondary)
+            }
+        }
+    }
+}
+
+@Composable
+private fun AppRow(
+    app: InstalledAppInfo,
+    selected: Boolean,
+    viewModel: ScanViewModel,
+    onToggle: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Card(
+        modifier = modifier
+            .fillMaxWidth()
+            .clickable(onClick = onToggle),
+        colors = CardDefaults.cardColors(
+            containerColor = if (selected) BrandPrimary.copy(alpha = 0.12f) else MaterialTheme.colorScheme.surface,
+        ),
+        shape = RoundedCornerShape(14.dp),
+        elevation = CardDefaults.cardElevation(defaultElevation = if (selected) 2.dp else 0.dp),
+    ) {
+        Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+            val drawable = remember(app.packageName) { viewModel.appIcon(app.packageName) }
+            if (drawable != null) {
+                Image(
+                    bitmap = drawable.toBitmap(width = 96, height = 96).asImageBitmap(),
+                    contentDescription = "Icona ${app.label}",
+                    modifier = Modifier.size(44.dp).clip(CircleShape),
+                )
+            } else {
+                Box(
+                    Modifier.size(44.dp).clip(CircleShape).background(BrandPrimary.copy(alpha = 0.2f)),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(app.label.take(1).uppercase(), fontWeight = FontWeight.Bold, color = BrandPrimary)
+                }
+            }
+            Spacer(Modifier.width(12.dp))
+            Column(Modifier.weight(1f)) {
+                Text(app.label, fontWeight = FontWeight.Medium)
+                Text(app.packageName, style = MaterialTheme.typography.bodySmall, color = TextSecondary)
+            }
+            FilterChip(
+                selected = selected,
+                onClick = onToggle,
+                label = { Text(if (selected) "Monitorata" else "Esclusa") },
+            )
+        }
+    }
+}
+
+@Composable
+private fun ScanActionBar(
+    isScanning: Boolean,
+    canStart: Boolean,
+    onStart: () -> Unit,
+    onStop: () -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(MaterialTheme.colorScheme.surface)
+            .padding(horizontal = 16.dp, vertical = 12.dp),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Button(
+            onClick = onStart,
+            enabled = !isScanning && canStart,
+            modifier = Modifier.weight(1f).height(52.dp),
+            shape = RoundedCornerShape(14.dp),
+            colors = ButtonDefaults.buttonColors(containerColor = BrandPrimary),
+        ) {
+            Icon(Icons.Outlined.PlayArrow, contentDescription = null)
+            Spacer(Modifier.width(6.dp))
+            Text("Avvia scansione")
+        }
+        Button(
+            onClick = onStop,
+            enabled = isScanning,
+            modifier = Modifier.weight(1f).height(52.dp),
+            shape = RoundedCornerShape(14.dp),
+            colors = ButtonDefaults.buttonColors(containerColor = Danger),
+        ) {
+            Icon(Icons.Outlined.Stop, contentDescription = null)
+            Spacer(Modifier.width(6.dp))
+            Text("Stop")
+        }
+    }
+}

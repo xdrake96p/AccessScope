@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">AccessScope</string>
+    <string name="accessibility_service_description">AccessScope analizza in tempo reale l\'accessibilità delle app selezionate per generare report WCAG per sviluppatori.</string>
+    <string name="overlay_channel_name">Scansione attiva</string>
+    <string name="overlay_channel_description">Notifica e overlay durante la scansione di accessibilità</string>
+    <string name="overlay_notification_title">AccessScope — scansione in corso</string>
+    <string name="overlay_notification_text">Tocca STOP nell\'overlay o nell\'app per terminare e generare il PDF.</string>
+    <string name="overlay_stop">STOP</string>
+</resources>

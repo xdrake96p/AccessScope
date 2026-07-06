@@ -1,0 +1,187 @@
+package dev.accessscope.scanner.service
+
+import android.accessibilityservice.AccessibilityService
+import android.graphics.Bitmap
+import android.graphics.ColorSpace
+import android.hardware.HardwareBuffer
+import android.os.Build
+import android.view.Display
+import android.view.accessibility.AccessibilityEvent
+import android.view.accessibility.AccessibilityNodeInfo
+import androidx.annotation.RequiresApi
+import dev.accessscope.scanner.AccessScopeApp
+import dev.accessscope.scanner.analyzer.NodeAccessibilityAnalyzer
+import dev.accessscope.scanner.data.ScanSessionRepository
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
+
+class AccessScopeAccessibilityService : AccessibilityService() {
+
+    private val repository: ScanSessionRepository
+        get() = (application as AccessScopeApp).scanRepository
+
+    private val density: Float
+        get() = resources.displayMetrics.density
+
+    private val analyzer: NodeAccessibilityAnalyzer by lazy {
+        NodeAccessibilityAnalyzer.create(density)
+    }
+
+    private val executor = Executors.newSingleThreadExecutor()
+    private val lastScanByWindow = ConcurrentHashMap<String, Long>()
+    private val screenshotInFlight = AtomicBoolean(false)
+    private val debounceMs = 800L
+
+    override fun onAccessibilityEvent(event: AccessibilityEvent?) {
+        if (event == null) return
+        if (!repository.state.value.isScanning) return
+
+        val packageName = event.packageName?.toString() ?: return
+        if (packageName == applicationContext.packageName) return
+        if (!repository.isTargetPackage(packageName)) return
+
+        when (event.eventType) {
+            AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED,
+            AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED,
+            -> scheduleScan(packageName, event)
+        }
+    }
+
+    private fun scheduleScan(packageName: String, event: AccessibilityEvent) {
+        val windowKey = "${packageName}_${event.windowId}_${event.className}"
+        val now = System.currentTimeMillis()
+        val last = lastScanByWindow[windowKey] ?: 0L
+        if (now - last < debounceMs) return
+        lastScanByWindow[windowKey] = now
+
+        executor.execute {
+            val root = rootInActiveWindow ?: event.source ?: return@execute
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                captureScreenshot { bitmap ->
+                    try {
+                        scanRoot(root, packageName, event, bitmap)
+                    } finally {
+                        bitmap?.recycle()
+                        root.recycle()
+                    }
+                }
+            } else {
+                try {
+                    scanRoot(root, packageName, event, null)
+                } finally {
+                    root.recycle()
+                }
+            }
+        }
+    }
+
+    private fun captureScreenshot(onResult: (Bitmap?) -> Unit) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
+            onResult(null)
+            return
+        }
+        if (!screenshotInFlight.compareAndSet(false, true)) {
+            onResult(null)
+            return
+        }
+        takeScreenshot(
+            Display.DEFAULT_DISPLAY,
+            mainExecutor,
+            object : TakeScreenshotCallback {
+                override fun onSuccess(result: ScreenshotResult) {
+                    screenshotInFlight.set(false)
+                    val bitmap = result.hardwareBuffer.toBitmap(result.colorSpace)
+                    onResult(bitmap)
+                }
+
+                override fun onFailure(errorCode: Int) {
+                    screenshotInFlight.set(false)
+                    onResult(null)
+                }
+            },
+        )
+    }
+
+    @RequiresApi(Build.VERSION_CODES.R)
+    private fun HardwareBuffer.toBitmap(colorSpace: ColorSpace): Bitmap {
+        val bitmap = Bitmap.wrapHardwareBuffer(this, colorSpace)
+            ?: Bitmap.createBitmap(1, 1, Bitmap.Config.ARGB_8888)
+        return if (bitmap.config == Bitmap.Config.HARDWARE) {
+            bitmap.copy(Bitmap.Config.ARGB_8888, false) ?: bitmap
+        } else {
+            bitmap
+        }
+    }
+
+    private fun scanRoot(
+        root: AccessibilityNodeInfo,
+        packageName: String,
+        event: AccessibilityEvent,
+        screenshot: Bitmap?,
+    ) {
+        val screenTitle = resolveScreenTitle(root, event)
+        val result = analyzer.analyzeTree(root, packageName, screenTitle, screenshot)
+        repository.addViolations(result.violations)
+        repository.addScreenReaderFindings(result.screenReaderFindings)
+        repository.incrementScreenCount()
+    }
+
+    private fun resolveScreenTitle(root: AccessibilityNodeInfo, event: AccessibilityEvent): String {
+        event.text?.firstOrNull()?.toString()?.takeIf { it.isNotBlank() }?.let { return it }
+        val titleNode = findFirstHeadingOrToolbar(root)
+        titleNode?.text?.toString()?.takeIf { it.isNotBlank() }?.let { return it }
+        event.className?.toString()?.substringAfterLast('.')?.let { return it }
+        return "Schermata"
+    }
+
+    private fun findFirstHeadingOrToolbar(root: AccessibilityNodeInfo): AccessibilityNodeInfo? {
+        val queue = ArrayDeque<AccessibilityNodeInfo>()
+        queue.add(root)
+        while (queue.isNotEmpty()) {
+            val node = queue.removeFirst()
+            val className = node.className?.toString().orEmpty()
+            if (className.contains("Toolbar", ignoreCase = true) && !node.text.isNullOrBlank()) {
+                return node
+            }
+            if (node.collectionItemInfo?.heading == true && !node.text.isNullOrBlank()) {
+                return node
+            }
+            for (i in 0 until node.childCount) {
+                node.getChild(i)?.let(queue::add)
+            }
+        }
+        return null
+    }
+
+    override fun onInterrupt() = Unit
+
+    override fun onDestroy() {
+        executor.shutdown()
+        try {
+            executor.awaitTermination(2, TimeUnit.SECONDS)
+        } catch (_: InterruptedException) {
+            executor.shutdownNow()
+        }
+        super.onDestroy()
+    }
+
+    companion object {
+        @Volatile
+        var instance: AccessScopeAccessibilityService? = null
+            private set
+
+        fun isRunning(): Boolean = instance != null
+    }
+
+    override fun onServiceConnected() {
+        super.onServiceConnected()
+        instance = this
+    }
+
+    override fun onUnbind(intent: android.content.Intent?): Boolean {
+        instance = null
+        return super.onUnbind(intent)
+    }
+}
