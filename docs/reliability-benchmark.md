@@ -131,3 +131,25 @@ Baseline regressione: **160105** (32 problemi, precisione ~50%). Target: tornare
 - Skip nodi `nav_*` / scroll drawer / bounds fantasma (1080×12)
 - Una finestra contenuto per scan; skip drawer-only root
 - Skip label/custom/role su `content` carousel template
+
+## Checklist accettazione — Iterazione 8 (generico multi-app)
+
+Baseline: **162358** (13 prob, precisione ~88%, score 81).
+
+| Criterio | Soglia |
+|----------|--------|
+| Problemi totali | **≤10** |
+| Precisione utile | **≥90%** |
+| `nome_filiale` / off-screen FP | 0 |
+| `multiple_slection` overlap FP | 0 |
+| `topbar_icon_right` contrast FP | 0 |
+| TP `vop_info`, `causale`, `labelContacts` | mantenuti |
+| Regole Nexi isolate in `AppPrecisionProfiles` | sì |
+
+### Modifiche iter. 8
+
+- `AppPrecisionProfiles`: profilo Nexi opzionale, euristiche generiche per tutte le app
+- Skip nodi off-screen, bounds anomali, righe lista full-width
+- Skip contrasto icona toolbar in fascia alta
+- Pattern generici field label (`iban`, `label`, `data_*`, `amount`)
+- Drawer `nav_` / `menu_` / `drawer_` per qualsiasi app

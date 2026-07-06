@@ -37,18 +37,21 @@ class NodeAccessibilityAnalyzer(
         var traversalIndex = 0
         collectSnapshots(root, snapshots, ArrayDeque(), { traversalIndex++ })
         val customActionEmitted = mutableSetOf<String>()
+        val viewport = PrecisionRules.estimateViewport(snapshots)
+        val screenWidth = viewport.width()
 
         snapshots.forEach { snap ->
             if (!snap.isAccessibilityExcluded) {
                 checkSingleNode(
                     snap, snapshots, packageName, screenTitle,
                     violations, screenshot, customActionEmitted,
+                    viewport, screenWidth,
                 )
             }
         }
 
         if (includes(ViolationArea.LABELS) || includes(ViolationArea.TOUCH)) {
-            checkCrossNodeIssues(snapshots, packageName, screenTitle, violations)
+            checkCrossNodeIssues(snapshots, packageName, screenTitle, violations, screenWidth)
         }
         if (includes(ViolationArea.STRUCTURE)) {
             checkModalTitle(root, packageName, screenTitle, violations)
@@ -66,7 +69,7 @@ class NodeAccessibilityAnalyzer(
         }
 
         if (dynamicContentSilent && includes(ViolationArea.SCREEN_READER) &&
-            !PrecisionRules.isHomeScreenContext(snapshots)
+            !PrecisionRules.isHomeScreenContext(snapshots, packageName)
         ) {
             violations += AccessibilityViolation(
                 type = ViolationType.DYNAMIC_CONTENT_SILENT,
@@ -125,23 +128,26 @@ class NodeAccessibilityAnalyzer(
         violations: MutableList<AccessibilityViolation>,
         screenshot: Bitmap?,
         customActionEmitted: MutableSet<String>,
+        viewport: Rect,
+        screenWidth: Int,
     ) {
         if (PrecisionRules.shouldSkipDrawerNode(snap)) return
-        if (PrecisionRules.shouldSkipPinPadWhenNotPinScreen(snap, screenTitle)) return
-        if (PrecisionRules.shouldSkipHomeWidgetAnalysis(snap, all)) return
+        if (PrecisionRules.shouldSkipPinPadWhenNotPinScreen(snap, screenTitle, packageName)) return
+        if (PrecisionRules.shouldSkipHomeWidgetAnalysis(snap, all, packageName)) return
+        if (PrecisionRules.shouldSkipStructuralNoise(snap, viewport, screenWidth)) return
 
         if (includes(ViolationArea.LABELS)) {
             val missingLabel = (snap.isInteractiveClickable() || PrecisionRules.shouldReportMissingTopBarLabel(snap, all)) &&
                 !snap.hasAccessibleName() &&
                 !PrecisionRules.isIconInsideLabeledButton(snap, all) &&
-                !PrecisionRules.shouldSkipContainerLabelCheck(snap, all)
+                !PrecisionRules.shouldSkipContainerLabelCheck(snap, all, packageName)
             if (missingLabel) {
                 violations += v(ViolationType.MISSING_LABEL, snap, packageName, screenTitle,
                     "Nessuna etichetta (testo, descrizione o hint).", 0.95f)
             }
         }
         if (snap.isInteractiveClickable() && includes(ViolationArea.TOUCH)) {
-            if (!PrecisionRules.shouldSkipTouchTargetCheck(snap, all)) {
+            if (!PrecisionRules.shouldSkipTouchTargetCheck(snap, all, packageName)) {
                 if (snap.bounds.width() < minTouchTargetPx || snap.bounds.height() < minTouchTargetPx) {
                     violations += v(ViolationType.SMALL_TOUCH_TARGET, snap, packageName, screenTitle,
                         "Misura ${snap.bounds.width()}×${snap.bounds.height()} px, minimo ${minTouchTargetPx} px.", 0.92f)
@@ -179,7 +185,7 @@ class NodeAccessibilityAnalyzer(
             snap.looksLikeStructuralHeading() &&
             !snap.isHeading &&
             !PrecisionRules.shouldSkipHeadingCheck(snap) &&
-            !PrecisionRules.isInsideCarouselOrListItem(snap, all) &&
+            !PrecisionRules.isInsideCarouselOrListItem(snap, all, packageName) &&
             !snap.className.contains("Toolbar", true) &&
             snap.bounds.height() >= (minTextHeightPx * 1.5).toInt() &&
             (snap.text?.length ?: 0) in 4..60
@@ -188,7 +194,9 @@ class NodeAccessibilityAnalyzer(
                 "Titolo visibile non marcato come heading.", 0.85f)
         }
 
-        if (includes(ViolationArea.TEXT) && snap.hasVisibleText() && !PrecisionRules.shouldSkipSmallTextCheck(snap)) {
+        if (includes(ViolationArea.TEXT) && snap.hasVisibleText() && !PrecisionRules.shouldSkipSmallTextCheck(snap) &&
+            !PrecisionRules.isOffScreenOrMarginalNode(snap, viewport)
+        ) {
             if (snap.bounds.height() < minTextHeightPx) {
                 violations += v(ViolationType.TEXT_TOO_SMALL, snap, packageName, screenTitle,
                     "Altezza ~${snap.bounds.height()} px (< ${minTextHeightPx} px, circa 12sp).", 0.88f)
@@ -237,7 +245,7 @@ class NodeAccessibilityAnalyzer(
 
         if (includes(ViolationArea.STRUCTURE) && snap.isScrollable && !snap.hasAccessibleName()) {
             val screenArea = screenshot?.let { it.width * it.height } ?: estimateScreenArea(all)
-            if (!PrecisionRules.shouldSkipScrollWithoutLabel(snap, all, screenArea)) {
+            if (!PrecisionRules.shouldSkipScrollWithoutLabel(snap, all, screenArea, packageName)) {
                 violations += v(ViolationType.SCROLLABLE_WITHOUT_LABEL, snap, packageName, screenTitle,
                     "Area scrollabile senza nome.", 0.88f)
             }
@@ -245,7 +253,7 @@ class NodeAccessibilityAnalyzer(
 
         if (includes(ViolationArea.SCREEN_READER) && !snap.isEnabled && snap.isInteractiveClickable() &&
             snap.stateDescription.isNullOrBlank() &&
-            !PrecisionRules.shouldSkipCarouselListItemAnalysis(snap, all)
+            !PrecisionRules.shouldSkipCarouselListItemAnalysis(snap, all, packageName)
         ) {
             violations += v(ViolationType.DISABLED_WITHOUT_INDICATION, snap, packageName, screenTitle,
                 "Controllo disabilitato senza stato esposto.", 0.82f)
@@ -263,10 +271,10 @@ class NodeAccessibilityAnalyzer(
 
         if (includes(ViolationArea.LABELS) && snap.isClickable && snap.isCustomView() &&
             !snap.hasAccessibleName() && !snap.hasStandardRole() &&
-            !PrecisionRules.shouldSkipContainerLabelCheck(snap, all) &&
-            !PrecisionRules.isCarouselContentContainer(snap, all) &&
-            !PrecisionRules.shouldSkipHomeWidgetAnalysis(snap, all) &&
-            !(PrecisionRules.isCtaContainer(snap) && PrecisionRules.hasTvCustomDescendant(snap, all))
+            !PrecisionRules.shouldSkipContainerLabelCheck(snap, all, packageName) &&
+            !PrecisionRules.isCarouselContentContainer(snap, all, packageName) &&
+            !PrecisionRules.shouldSkipHomeWidgetAnalysis(snap, all, packageName) &&
+            !(PrecisionRules.isCtaContainer(snap, packageName) && PrecisionRules.hasTvCustomDescendant(snap, all))
         ) {
             violations += v(ViolationType.ROLE_UNDEFINED, snap, packageName, screenTitle,
                 "View custom cliccabile senza ruolo semantico.", 0.85f)
@@ -287,7 +295,7 @@ class NodeAccessibilityAnalyzer(
                 "Tooltip \"${snap.tooltipText}\" non accessibile a TalkBack.", 0.8f)
         }
 
-        if (includes(ViolationArea.SCREEN_READER) && PrecisionRules.shouldReportCustomAction(snap, all)) {
+        if (includes(ViolationArea.SCREEN_READER) && PrecisionRules.shouldReportCustomAction(snap, all, packageName)) {
             val actionKey = snap.viewId?.takeIf { it.isNotBlank() }
                 ?: "${snap.className}@${snap.bounds.hashCode()}"
             if (customActionEmitted.add(actionKey)) {
@@ -302,7 +310,7 @@ class NodeAccessibilityAnalyzer(
         }
 
         if (includes(ViolationArea.COLOR)) {
-            screenshot?.let { checkContrast(snap, packageName, screenTitle, violations, it, all) }
+            screenshot?.let { checkContrast(snap, packageName, screenTitle, violations, it, all, viewport) }
         }
     }
 
@@ -313,16 +321,18 @@ class NodeAccessibilityAnalyzer(
         violations: MutableList<AccessibilityViolation>,
         bitmap: Bitmap,
         all: List<NodeSnapshot>,
+        viewport: Rect,
     ) {
         if (PrecisionRules.isLayoutContainer(snap.className)) return
         if (PrecisionRules.isLikelyStatusBadge(snap)) return
-        if (PrecisionRules.isHomeChartDecorativeText(snap, all)) return
-        if (PrecisionRules.isBrandedCtaText(snap, all)) return
+        if (PrecisionRules.isHomeChartDecorativeText(snap, all, packageName)) return
+        if (PrecisionRules.isBrandedCtaText(snap, all, packageName)) return
+        if (PrecisionRules.shouldSkipTopBarIconContrast(snap, all, viewport)) return
         val screenArea = bitmap.width * bitmap.height
         if (screenArea > 0 && snap.area() > screenArea * 0.6) return
 
         if (snap.hasVisibleText()) {
-            val isFieldLabel = PrecisionRules.isKnownContrastFieldLabel(snap)
+            val isFieldLabel = PrecisionRules.isKnownContrastFieldLabel(snap, packageName)
             val sampleBounds = if (isFieldLabel) expandBoundsForMicroLabel(snap.bounds) else snap.bounds
             val large = WcagContrast.isLargeText(snap.bounds.height(), density) || isFieldLabel
             val result = WcagContrast.measureTextContrast(bitmap, sampleBounds, large) ?: return
@@ -348,6 +358,7 @@ class NodeAccessibilityAnalyzer(
                     result.confidence)
             }
         } else if (snap.isInteractiveClickable() || snap.isImageClass()) {
+            if (PrecisionRules.shouldSkipTopBarIconContrast(snap, all, viewport)) return
             val result = WcagContrast.measureUiContrast(bitmap, snap.bounds) ?: return
             if (!WcagContrast.isReliableMeasurement(result)) return
             if (result.confidence < 0.72f) return
@@ -364,6 +375,7 @@ class NodeAccessibilityAnalyzer(
         packageName: String,
         screenTitle: String,
         violations: MutableList<AccessibilityViolation>,
+        screenWidth: Int,
     ) {
         val clickables = snapshots.filter { it.isInteractiveClickable() }
 
@@ -385,9 +397,9 @@ class NodeAccessibilityAnalyzer(
                 val a = clickables[i]
                 val b = clickables[j]
                 if (PrecisionRules.shouldSkipDrawerNode(a) || PrecisionRules.shouldSkipDrawerNode(b)) continue
-                if (PrecisionRules.shouldSkipOverlapBetween(a, b, snapshots)) continue
-                if (PrecisionRules.shouldSkipPinPadWhenNotPinScreen(a, screenTitle) ||
-                    PrecisionRules.shouldSkipPinPadWhenNotPinScreen(b, screenTitle)
+                if (PrecisionRules.shouldSkipOverlapBetween(a, b, snapshots, packageName, screenWidth)) continue
+                if (PrecisionRules.shouldSkipPinPadWhenNotPinScreen(a, screenTitle, packageName) ||
+                    PrecisionRules.shouldSkipPinPadWhenNotPinScreen(b, screenTitle, packageName)
                 ) {
                     continue
                 }
@@ -454,7 +466,7 @@ class NodeAccessibilityAnalyzer(
             .groupBy({ it.first }, { it.second })
             .filter { it.value.size > 1 }
             .forEach { (id, nodes) ->
-                if (isListItemTemplate(id, nodes)) return@forEach
+                if (isListItemTemplate(id, nodes, packageName)) return@forEach
                 val representative = nodes.minByOrNull { it.traversalIndex } ?: return@forEach
                 violations += v(
                     ViolationType.DUPLICATE_VIEW_ID,
@@ -467,10 +479,9 @@ class NodeAccessibilityAnalyzer(
             }
     }
 
-    private fun isListItemTemplate(viewId: String, nodes: List<NodeSnapshot>): Boolean {
+    private fun isListItemTemplate(viewId: String, nodes: List<NodeSnapshot>, packageName: String): Boolean {
         if (nodes.size < 2) return false
-        // Carousel Nexi: stesso viewId in item con classi wrapper diverse (SwipeLayout vs RelativeLayout)
-        if (PrecisionRules.isKnownListTemplateId(viewId)) return true
+        if (PrecisionRules.isKnownListTemplateId(viewId, packageName)) return true
         val sameClass = nodes.map { it.className }.distinct().size == 1
         if (!sameClass) return false
         val heights = nodes.map { it.bounds.height() }

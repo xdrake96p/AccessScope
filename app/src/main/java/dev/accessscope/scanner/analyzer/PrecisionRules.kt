@@ -7,6 +7,78 @@ object PrecisionRules {
     fun viewIdShort(snap: NodeSnapshot): String =
         snap.viewId?.substringAfterLast('/')?.lowercase().orEmpty()
 
+    fun estimateViewport(snapshots: List<NodeSnapshot>): Rect {
+        if (snapshots.isEmpty()) return Rect()
+        var left = Int.MAX_VALUE
+        var top = Int.MAX_VALUE
+        var right = 0
+        var bottom = 0
+        snapshots.forEach { snap ->
+            left = minOf(left, snap.bounds.left)
+            top = minOf(top, snap.bounds.top)
+            right = maxOf(right, snap.bounds.right)
+            bottom = maxOf(bottom, snap.bounds.bottom)
+        }
+        return Rect(left, top, right, bottom)
+    }
+
+    /** Nodo fuori viewport o micro-testo in fondo schermo (layout nascosto). */
+    fun isOffScreenOrMarginalNode(snap: NodeSnapshot, viewport: Rect): Boolean {
+        if (viewport.isEmpty) return false
+        if (!Rect.intersects(snap.bounds, viewport)) return true
+        val belowFold = snap.bounds.top > viewport.top + (viewport.height() * 0.90f).toInt()
+        val tiny = snap.bounds.height() < snap.minTextHeightPx * 0.75f
+        if (belowFold && tiny) return true
+        if (snap.bounds.left < viewport.left - snap.minTouchTargetPx) return true
+        if (snap.bounds.right > viewport.right + snap.minTouchTargetPx) return true
+        return false
+    }
+
+    /** Bounds anomali: striscia verticale/orizzontale non tappabile (es. 79×698 px). */
+    fun isAnomalousTouchBounds(snap: NodeSnapshot): Boolean {
+        val w = snap.bounds.width()
+        val h = snap.bounds.height()
+        val min = snap.minTouchTargetPx
+        val thinVertical = w < (min * 0.75f).toInt() && h > min * 4
+        val thinHorizontal = h < min / 3 && w > min * 4
+        return thinVertical || thinHorizontal
+    }
+
+    /** Riga selezione lista a tutta larghezza — overlap intenzionale col container. */
+    fun isFullWidthListRow(snap: NodeSnapshot, screenWidth: Int): Boolean {
+        if (screenWidth <= 0) return false
+        if (snap.bounds.width() < screenWidth * 0.80f) return false
+        val id = viewIdShort(snap)
+        return snap.isCheckable ||
+            id.contains("select") ||
+            id.contains("check") ||
+            id.contains("selection") ||
+            id.contains("checkbox")
+    }
+
+    fun shouldSkipStructuralNoise(
+        snap: NodeSnapshot,
+        viewport: Rect,
+        screenWidth: Int,
+    ): Boolean {
+        if (isOffScreenOrMarginalNode(snap, viewport)) return true
+        if (isAnomalousTouchBounds(snap)) return true
+        if (isFullWidthListRow(snap, screenWidth)) return true
+        return false
+    }
+
+    /** Icona toolbar in fascia alta — contrasto UI spesso FP se c'è CD o parent etichettato. */
+    fun shouldSkipTopBarIconContrast(snap: NodeSnapshot, all: List<NodeSnapshot>, viewport: Rect): Boolean {
+        if (!snap.isImageClass()) return false
+        if (viewport.isEmpty) return isTopBarControl(snap)
+        val topBand = viewport.top + (viewport.height() * 0.20f).toInt()
+        if (snap.bounds.bottom > topBand) return false
+        if (isTopBarControl(snap)) return true
+        val id = viewIdShort(snap)
+        if (id.contains("topbar") || id.contains("toolbar") || id.contains("action")) return true
+        return hasLabeledClickableAncestor(snap, all) || !snap.contentDescription.isNullOrBlank()
+    }
+
     /** Link inline in un blocco di testo: esentato da touch target 48dp se il testo è leggibile. */
     fun isInlineTextLink(snap: NodeSnapshot): Boolean {
         if (!snap.isClickable && !snap.isLongClickable) return false
@@ -22,8 +94,11 @@ object PrecisionRules {
         return id in TOPBAR_CONTROL_IDS || id.startsWith("layout_topbar_icon")
     }
 
-    /** Voce menu laterale Nexi (`nav_home`, `nav_insoluti`, …). */
-    fun isDrawerNavItem(snap: NodeSnapshot): Boolean = viewIdShort(snap).startsWith("nav_")
+    /** Voce menu laterale (`nav_*`, `menu_*`, `drawer_*`). */
+    fun isDrawerNavItem(snap: NodeSnapshot): Boolean {
+        val id = viewIdShort(snap)
+        return AppPrecisionProfiles.drawerNavPrefixes.any { id.startsWith(it) }
+    }
 
     /** Scroll stretto del drawer (`scroll` ~13px) — non area principale. */
     fun isDrawerScroll(snap: NodeSnapshot): Boolean {
@@ -42,10 +117,11 @@ object PrecisionRules {
         isDrawerNavItem(snap) || isDrawerScroll(snap) || isPhantomClickableBounds(snap)
 
     /** Container `content` ripetuto nel carousel distinte/effetti. */
-    fun isCarouselContentContainer(snap: NodeSnapshot, all: List<NodeSnapshot>): Boolean {
-        if (viewIdShort(snap) != "content") return false
-        if (isKnownListTemplateId(snap.viewId)) return true
-        return all.count { viewIdShort(it) == "content" } >= 2 || isRecyclerListItem(snap, all)
+    fun isCarouselContentContainer(snap: NodeSnapshot, all: List<NodeSnapshot>, packageName: String): Boolean {
+        val id = viewIdShort(snap)
+        if (id != "content" && id != "layout_content") return false
+        if (all.count { viewIdShort(it) == id } >= 2) return true
+        return isRecyclerListItem(snap, all)
     }
 
     private val TOPBAR_CONTROL_IDS = setOf(
@@ -136,70 +212,81 @@ object PrecisionRules {
                 other.hasAccessibleName()
         }
 
-    private val HOME_SCREEN_MARKER_IDS = setOf(
-        "card_home", "scrollview_port", "entrate_home", "uscite_home", "ll_ultimi_dati",
-    )
+    private val HOME_SCREEN_MARKER_IDS = emptySet<String>() // use AppPrecisionProfiles
 
-    private val PIN_PAD_KEY_IDS = setOf(
-        "cancell", "confirm", "zero", "uno", "due", "tre", "quattro",
-        "cinque", "sei", "sette", "otto", "nove",
-    )
-
-    fun isHomeScreenContext(all: List<NodeSnapshot>): Boolean =
-        all.any { viewIdShort(it) in HOME_SCREEN_MARKER_IDS }
-
-    fun isPinPadKey(snap: NodeSnapshot): Boolean = viewIdShort(snap) in PIN_PAD_KEY_IDS
-
-    fun shouldSkipPinPadWhenNotPinScreen(snap: NodeSnapshot, screenTitle: String): Boolean {
-        if (screenTitle.contains("PIN", ignoreCase = true)) return false
-        return isPinPadKey(snap)
+    fun isHomeScreenContext(all: List<NodeSnapshot>, packageName: String = ""): Boolean {
+        val markers = AppPrecisionProfiles.homeScreenMarkers(packageName)
+        if (markers.isEmpty()) return false
+        return all.any { viewIdShort(it) in markers }
     }
 
-    /**
-     * Widget home Nexi (grafico entrate/uscite, CTA CustomViewButtonCta): rumore su label/role/touch.
-     * Solo quando il fragment home è nel tree — non su distinte/rubrica.
-     */
-    fun shouldSkipHomeWidgetAnalysis(snap: NodeSnapshot, all: List<NodeSnapshot>): Boolean {
-        if (!isHomeScreenContext(all)) return false
+    fun isPinPadKey(snap: NodeSnapshot, packageName: String = ""): Boolean {
         val id = viewIdShort(snap)
-        if (id in HOME_CHART_CONTAINER_IDS || isHomeChartOrCtaWidget(snap) || isCtaContainer(snap)) return true
-        if (id in HOME_CHART_TEXT_IDS) return true
+        if (id in AppPrecisionProfiles.pinPadKeyIds(packageName)) return true
+        val digit = snap.text?.trim()
+        return snap.isInteractiveClickable() &&
+            digit?.length == 1 &&
+            digit[0].isDigit()
+    }
+
+    fun shouldSkipPinPadWhenNotPinScreen(snap: NodeSnapshot, screenTitle: String, packageName: String = ""): Boolean {
+        if (screenTitle.contains("PIN", ignoreCase = true)) return false
+        return isPinPadKey(snap, packageName)
+    }
+
+    fun shouldSkipHomeWidgetAnalysis(snap: NodeSnapshot, all: List<NodeSnapshot>, packageName: String): Boolean {
+        if (!isHomeScreenContext(all, packageName)) return false
+        val id = viewIdShort(snap)
+        val chartContainers = AppPrecisionProfiles.homeChartContainerIds(packageName)
+        val chartText = AppPrecisionProfiles.homeChartTextIds(packageName)
+        if (id in chartContainers || isHomeChartOrCtaWidget(snap, packageName) || isCtaContainer(snap, packageName)) {
+            return true
+        }
+        if (id in chartText) return true
         return false
     }
 
-    fun shouldSkipOverlapBetween(a: NodeSnapshot, b: NodeSnapshot, all: List<NodeSnapshot>): Boolean {
+    fun shouldSkipOverlapBetween(
+        a: NodeSnapshot,
+        b: NodeSnapshot,
+        all: List<NodeSnapshot>,
+        packageName: String = "",
+        screenWidth: Int = 0,
+    ): Boolean {
         if (shouldSkipTouchSpacingBetween(a, b)) return true
-        if (!isHomeScreenContext(all)) return false
-        return shouldSkipHomeWidgetAnalysis(a, all) || shouldSkipHomeWidgetAnalysis(b, all)
+        if (screenWidth > 0 && (isFullWidthListRow(a, screenWidth) || isFullWidthListRow(b, screenWidth))) {
+            return true
+        }
+        if (!isHomeScreenContext(all, packageName)) return false
+        return shouldSkipHomeWidgetAnalysis(a, all, packageName) ||
+            shouldSkipHomeWidgetAnalysis(b, all, packageName)
     }
 
-    fun shouldSkipCarouselListItemAnalysis(snap: NodeSnapshot, all: List<NodeSnapshot>): Boolean {
-        if (isCarouselContentContainer(snap, all)) return true
-        if (viewIdShort(snap) == "multiple_slection" &&
-            all.count { viewIdShort(it) == "multiple_slection" } >= 2
+    fun shouldSkipCarouselListItemAnalysis(snap: NodeSnapshot, all: List<NodeSnapshot>, packageName: String): Boolean {
+        if (isCarouselContentContainer(snap, all, packageName)) return true
+        val id = viewIdShort(snap)
+        if ((id.contains("select") || id.contains("selection")) &&
+            all.count { viewIdShort(it) == id } >= 1 &&
+            snap.bounds.width() > estimateViewport(all).width() * 0.75f
         ) {
             return true
         }
         return false
     }
 
-    fun isMainContentScroll(snap: NodeSnapshot, screenArea: Int): Boolean {
+    fun isMainContentScroll(snap: NodeSnapshot, screenArea: Int, packageName: String = ""): Boolean {
         if (!snap.isScrollable) return false
-        if (viewIdShort(snap) !in MAIN_CONTENT_SCROLL_IDS) return false
+        if (viewIdShort(snap) !in AppPrecisionProfiles.mainContentScrollIds(packageName)) return false
         if (screenArea <= 0) return true
         val snapArea = snap.bounds.width() * snap.bounds.height()
         return snapArea > screenArea * 0.35f
     }
 
-    fun isCtaContainer(snap: NodeSnapshot): Boolean {
+    fun isCtaContainer(snap: NodeSnapshot, packageName: String = ""): Boolean {
         val id = viewIdShort(snap)
-        return id in setOf(
-            "see_all_insolved",
-            "show_more",
-            "tv_see_account_movements",
-            "container_custom_cta",
-            "ll_custom",
-        ) || snap.className.contains("CustomViewButtonCta", true)
+        if (id in AppPrecisionProfiles.ctaContainerIds(packageName)) return true
+        return snap.className.contains("CustomViewButtonCta", true) ||
+            snap.className.contains("ButtonCta", true)
     }
 
     fun hasTvCustomDescendant(snap: NodeSnapshot, all: List<NodeSnapshot>): Boolean =
@@ -211,10 +298,10 @@ object PrecisionRules {
         }
 
     /** Container cliccabile il cui figlio espone già il nome (es. CustomViewButtonCta). */
-    fun shouldSkipContainerLabelCheck(snap: NodeSnapshot, all: List<NodeSnapshot>): Boolean {
-        if (shouldSkipHomeWidgetAnalysis(snap, all)) return true
-        if (isCarouselContentContainer(snap, all)) return true
-        if (isCtaContainer(snap) && hasTvCustomDescendant(snap, all)) return true
+    fun shouldSkipContainerLabelCheck(snap: NodeSnapshot, all: List<NodeSnapshot>, packageName: String = ""): Boolean {
+        if (shouldSkipHomeWidgetAnalysis(snap, all, packageName)) return true
+        if (isCarouselContentContainer(snap, all, packageName)) return true
+        if (isCtaContainer(snap, packageName) && hasTvCustomDescendant(snap, all)) return true
         if (!snap.hasAccessibleName()) {
             if (hasLabeledDescendant(snap, all) || hasLabeledDescendantInScroll(snap, all)) return true
             if (isLayoutContainer(snap.className) || snap.isCustomView()) {
@@ -267,20 +354,29 @@ object PrecisionRules {
         return false
     }
 
-    /** Label di campo in card/lista (causale, date, importi) — non heading. */
-    fun isListFieldLabel(snap: NodeSnapshot): Boolean {
+    /** Label di campo in card/lista — pattern generici + profilo app. */
+    fun isListFieldLabel(snap: NodeSnapshot, packageName: String = ""): Boolean {
         val id = viewIdShort(snap)
         if (id.isEmpty()) return false
-        val fieldIds = setOf(
-            "causale", "nome_banca", "data_creazione", "data_esecuzione",
-            "txt_data_creazione", "txt_data_esecuzione", "amount_dist", "amount_effetti",
-            "beneficiario", "numero", "desc_breve", "scadenza", "iban", "ragione_sociale",
-            "currency", "currency_symbol", "data_scadenza", "banca", "iban_account",
-        )
-        return id in fieldIds || id.startsWith("txt_data_") || id.startsWith("data_")
+        if (id in AppPrecisionProfiles.fieldLabelIds(packageName)) return true
+        return isGenericFieldLabelPattern(id)
     }
 
-    fun isKnownContrastFieldLabel(snap: NodeSnapshot): Boolean = isListFieldLabel(snap)
+    private fun isGenericFieldLabelPattern(id: String): Boolean =
+        id.startsWith("txt_data_") ||
+            id.startsWith("data_") ||
+            id.contains("label") ||
+            id.contains("iban") ||
+            id.contains("amount") ||
+            id.contains("email") ||
+            id.contains("phone") ||
+            id.contains("causale") ||
+            id.contains("description") ||
+            id.contains("subtitle") ||
+            id.contains("hint")
+
+    fun isKnownContrastFieldLabel(snap: NodeSnapshot, packageName: String = ""): Boolean =
+        isListFieldLabel(snap, packageName)
 
     fun isCurrencyOrAmountText(text: String): Boolean {
         val t = text.trim()
@@ -289,73 +385,56 @@ object PrecisionRules {
         return t.matches(Regex("""^\d{1,3}(\.\d{3})*,\d{2}\s*€?$"""))
     }
 
-    /** ViewId tipici di item template Nexi (carousel distinte/effetti, RecyclerView). */
-    private val KNOWN_LIST_TEMPLATE_IDS = setOf(
-        "content", "layout_content", "amount_dist", "amount_effetti", "causale",
-        "vop_info", "data_creazione", "data_esecuzione", "txt_data_creazione",
-        "txt_data_esecuzione", "nome_banca", "state",
-        "check_multiple_selection", "multiple_slection", "beneficiario", "numero",
-        "scadenza", "recycler_distinte", "currency_symbol", "layout_content",
-    )
-
-    private val MAIN_CONTENT_SCROLL_IDS = setOf("scrollview_port", "scroll", "card_home")
-
-    fun isKnownListTemplateId(viewId: String?): Boolean {
+    fun isKnownListTemplateId(viewId: String?, packageName: String = ""): Boolean {
         if (viewId.isNullOrBlank()) return false
-        return viewId.substringAfterLast('/').lowercase() in KNOWN_LIST_TEMPLATE_IDS
+        return viewId.substringAfterLast('/').lowercase() in AppPrecisionProfiles.listTemplateIds(packageName)
     }
 
-    fun isHomeChartOrCtaWidget(snap: NodeSnapshot): Boolean {
+    fun isHomeChartOrCtaWidget(snap: NodeSnapshot, packageName: String = ""): Boolean {
         val id = viewIdShort(snap)
-        return id in setOf(
-            "entrate_home", "uscite_home", "tv_see_account_movements",
-            "see_all_insolved", "show_more", "last_30", "last_30_negative",
-            "import_positive", "import_negative", "currency_incom", "currency_outcom",
-            "currency_symbol",
-        )
+        return id in AppPrecisionProfiles.homeChartTextIds(packageName) ||
+            id in AppPrecisionProfiles.homeChartContainerIds(packageName) ||
+            id in AppPrecisionProfiles.ctaContainerIds(packageName)
     }
 
-    private val HOME_CHART_TEXT_IDS = setOf(
-        "last_30", "last_30_negative", "import_positive", "import_negative",
-        "currency_incom", "currency_outcom", "currency_symbol",
-    )
+    private val HOME_CHART_TEXT_IDS = emptySet<String>()
+    private val HOME_CHART_CONTAINER_IDS = emptySet<String>()
 
-    private val HOME_CHART_CONTAINER_IDS = setOf("entrate_home", "uscite_home")
-
-    /** Testo decorativo del widget entrate/uscite in home — contrasto basso intenzionale su sfondo brand. */
-    fun isHomeChartDecorativeText(snap: NodeSnapshot, all: List<NodeSnapshot>): Boolean {
+    fun isHomeChartDecorativeText(snap: NodeSnapshot, all: List<NodeSnapshot>, packageName: String = ""): Boolean {
         if (!snap.hasVisibleText()) return false
         if (snap.isFocusable || snap.isInteractiveClickable()) return false
         val id = viewIdShort(snap)
+        val chartText = AppPrecisionProfiles.homeChartTextIds(packageName)
         if (id == "last_30" || id == "last_30_negative") {
             if (!snap.contentDescription.isNullOrBlank()) return true
-            if (isHomeScreenContext(all)) return true
+            if (isHomeScreenContext(all, packageName)) return true
         }
-        if (id !in HOME_CHART_TEXT_IDS) return false
-        if (isInsideHomeChartContainer(snap, all)) return true
-        return isHomeScreenContext(all)
+        if (id !in chartText) return false
+        if (isInsideHomeChartContainer(snap, all, packageName)) return true
+        return isHomeScreenContext(all, packageName)
     }
 
-    fun isInsideHomeChartContainer(snap: NodeSnapshot, all: List<NodeSnapshot>): Boolean =
-        all.any { other ->
+    fun isInsideHomeChartContainer(snap: NodeSnapshot, all: List<NodeSnapshot>, packageName: String = ""): Boolean {
+        val containers = AppPrecisionProfiles.homeChartContainerIds(packageName)
+        return all.any { other ->
             other != snap &&
-                viewIdShort(other) in HOME_CHART_CONTAINER_IDS &&
+                viewIdShort(other) in containers &&
                 other.bounds.contains(snap.bounds)
         }
+    }
 
-    /** CTA brand Nexi: testo bianco su sfondo colorato — non contrasto campo form. */
-    fun isBrandedCtaText(snap: NodeSnapshot, all: List<NodeSnapshot>): Boolean {
+    fun isBrandedCtaText(snap: NodeSnapshot, all: List<NodeSnapshot>, packageName: String = ""): Boolean {
         if (viewIdShort(snap) != "tv_custom") return false
         if (!snap.hasVisibleText()) return false
         return all.any { other ->
             other != snap &&
-                (isCtaContainer(other) || viewIdShort(other) == "ll_custom") &&
+                (isCtaContainer(other, packageName) || viewIdShort(other) == "ll_custom") &&
                 other.bounds.contains(snap.bounds)
         }
     }
 
     /** TextView in item RecyclerView/carousel — non heading strutturale di pagina. */
-    fun isInsideCarouselOrListItem(snap: NodeSnapshot, all: List<NodeSnapshot>): Boolean {
+    fun isInsideCarouselOrListItem(snap: NodeSnapshot, all: List<NodeSnapshot>, packageName: String = ""): Boolean {
         if (snap.className.contains("RecyclerView", true)) return false
         return all.any { other ->
             other != snap &&
@@ -368,7 +447,7 @@ object PrecisionRules {
                             "recycler_distinte", "recycler_effetti", "recycler",
                             "content", "layout_content",
                         ) ||
-                        (isKnownListTemplateId(other.viewId) && other.bounds.area() > snap.bounds.area() * 2)
+                        (isKnownListTemplateId(other.viewId, packageName) && other.bounds.area() > snap.bounds.area() * 2)
                     )
         }
     }
@@ -414,10 +493,10 @@ object PrecisionRules {
             )
     }
 
-    fun shouldSkipScrollWithoutLabel(snap: NodeSnapshot, all: List<NodeSnapshot>, screenArea: Int): Boolean {
+    fun shouldSkipScrollWithoutLabel(snap: NodeSnapshot, all: List<NodeSnapshot>, screenArea: Int, packageName: String = ""): Boolean {
         if (isDrawerScroll(snap)) return true
         if (!snap.isScrollable) return false
-        if (isMainContentScroll(snap, screenArea)) return true
+        if (isMainContentScroll(snap, screenArea, packageName)) return true
         val cls = snap.className.lowercase()
         val isKnownContainer = isScrollContainer(snap) ||
             cls.contains("recyclerview") ||
@@ -436,16 +515,17 @@ object PrecisionRules {
         return false
     }
 
-    fun shouldReportCustomAction(snap: NodeSnapshot, all: List<NodeSnapshot>): Boolean {
+    fun shouldReportCustomAction(snap: NodeSnapshot, all: List<NodeSnapshot>, packageName: String = ""): Boolean {
         if (snap.unlabeledActionCount <= 0) return false
         if (snap.hasAccessibleName()) return false
         if (!snap.isInteractiveClickable() && !snap.isFocusable) return false
         if (isRecyclerListItem(snap, all)) return false
-        if (isCarouselContentContainer(snap, all)) return false
-        if (isHomeChartOrCtaWidget(snap)) return false
+        if (isCarouselContentContainer(snap, all, packageName)) return false
+        if (isHomeChartOrCtaWidget(snap, packageName)) return false
         val id = viewIdShort(snap)
+        if (id.contains("select") || id.contains("selection")) return false
         if (id in setOf("multiple_slection", "checkbox_all") && snap.hasAccessibleName()) return false
-        if (isCtaContainer(snap) && (hasTvCustomDescendant(snap, all) || hasLabeledDescendant(snap, all))) {
+        if (isCtaContainer(snap, packageName) && (hasTvCustomDescendant(snap, all) || hasLabeledDescendant(snap, all))) {
             return false
         }
         val cls = snap.className.lowercase()
@@ -455,7 +535,7 @@ object PrecisionRules {
         }
         if (viewIdShort(snap) in setOf("scrollview_port", "scroll", "card_home")) return false
         if (viewIdShort(snap) == "tv_custom") return false
-        if (isBrandedCtaText(snap, all)) return false
+        if (isBrandedCtaText(snap, all, packageName)) return false
         if (snap.isScrollable && hasLabeledDescendant(snap, all)) return false
         if (isLayoutContainer(snap.className) && hasLabeledDescendant(snap, all)) return false
         return true
@@ -479,13 +559,13 @@ object PrecisionRules {
         return false
     }
 
-    fun shouldSkipTouchTargetCheck(snap: NodeSnapshot, all: List<NodeSnapshot>): Boolean =
+    fun shouldSkipTouchTargetCheck(snap: NodeSnapshot, all: List<NodeSnapshot>, packageName: String = ""): Boolean =
         shouldSkipDrawerNode(snap) ||
-            shouldSkipHomeWidgetAnalysis(snap, all) ||
+            shouldSkipHomeWidgetAnalysis(snap, all, packageName) ||
             isInlineTextLink(snap) ||
             isIconInsideLabeledButton(snap, all) ||
             isWideTapTarget(snap) ||
-            isCtaContainer(snap)
+            isCtaContainer(snap, packageName)
 
     fun shouldSkipSmallTextCheck(snap: NodeSnapshot): Boolean {
         if (shouldSkipDrawerNode(snap)) return true
