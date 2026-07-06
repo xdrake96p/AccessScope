@@ -31,6 +31,8 @@ Ground truth annotato dal codice sorgente Nexi per validare precision/recall di 
 | N16 | `vop_info` in `carousel_distinte_item_swipable.xml` | Etichette + Touch | VIOLATION | `@null` + icona piccola |
 | N17 | `topbar_icon_left` / `topbar_icon_right` `@null` | Etichette | VIOLATION | Se CD runtime assente; dedupe global |
 | N18 | Schermata PIN (`pin_pad_view.xml`) | Copertura | SCAN | Sezione «Inserisci PIN» in panorama |
+| N19 | `fragment_homepage_titolare.xml` — `last_30` / `import_positive` su sfondo brand | Contrasto | OK | Testo decorativo widget entrate/uscite |
+| N20 | `green_dot` + `importantForAccessibility=no` — `dot_filter` | Etichette | LIMITAZIONE | Fuori albero a11y: non rilevabile via TalkBack tree |
 
 ## Flusso benchmark (manuale)
 
@@ -83,3 +85,27 @@ Percorrere i 7 flussi scope su device con Nexi + AccessScope:
 - **Schermate uniche**: fingerprint distinti (non ogni scroll)
 - **Analisi eseguite**: scan debounced totali
 - **Punteggio**: pesato per severità WCAG, non solo conteggio grezzo
+
+## Checklist accettazione — Iterazione 5
+
+Baseline report: **154839** (24 problemi, score 83, precisione totale ~76%, precisione utile ~57%).
+
+| Criterio | Soglia |
+|----------|--------|
+| Bucket «Schermata» nel panorama | **0** problemi |
+| Sezione AZIENDA 1 (home chart FP) | ≤3 problemi |
+| Heading FP (`totale_distinte`, `rotate_display`, `logo`) | 0 |
+| N02 `txt_data_*` / `causale` contrasto | TP |
+| N16 `vop_info` | TP |
+| N17 topbar | TP se CD assente, OK se CD runtime |
+| N19 home chart decorativo | OK (non segnalare) |
+| Problemi totali | **14–18** |
+| Precisione utile | **≥75%** |
+| Precisione totale | **≥80%** |
+
+### Modifiche iter. 5
+
+- `ScreenTitleResolver`: fingerprint viewId, cache titolo per package, skip overlay splash (`logo`)
+- `PrecisionRules`: skip contrasto grafico home, CTA `tv_custom`, heading in carousel
+- `FocusOrderAnalyzer`: soglia inversioni 0.45, skip layout RecyclerView-dominant
+- Recall: contrasto micro-label `txt_data_*` con bounds espansi

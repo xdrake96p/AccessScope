@@ -4,8 +4,11 @@ import android.os.Build
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
 import java.util.ArrayDeque
+import java.util.concurrent.ConcurrentHashMap
 
 object ScreenTitleResolver {
+
+    private val lastTitleByPackage = ConcurrentHashMap<String, String>()
 
     private val KNOWN_NEXI_SECTION_TITLES = setOf(
         "DISTINTE",
@@ -29,31 +32,66 @@ object ScreenTitleResolver {
     )
 
     fun resolve(root: AccessibilityNodeInfo, event: AccessibilityEvent): String {
+        val packageKey = root.packageName?.toString()
+            ?: event.packageName?.toString()
+            ?: ""
+
+        fun storeAndReturn(title: String): String {
+            if (title != "Schermata" && packageKey.isNotBlank()) {
+                lastTitleByPackage[packageKey] = title
+            }
+            return title
+        }
+
         event.text?.firstOrNull()?.toString()?.trim()?.takeIf { it.isNotBlank() }?.let {
-            if (!looksLikeAmount(it)) return humanizeTitle(it)
+            if (!looksLikeAmount(it)) return storeAndReturn(humanizeTitle(it))
         }
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
             root.paneTitle?.toString()?.trim()?.takeIf { it.isNotBlank() }?.let {
-                return humanizeTitle(it)
+                return storeAndReturn(humanizeTitle(it))
             }
         }
 
-        findPinScreen(root)?.let { return it }
-        findModalTitle(root)?.let { return it }
-        findSectionTitle(root)?.let { return it }
-        findKnownNexiTitles(root)?.let { return it }
-        findTopBarTitle(root)?.let { return it }
-        findProminentHeading(root)?.let { return it }
+        findPinScreen(root)?.let { return storeAndReturn(it) }
+        findModalTitle(root)?.let { return storeAndReturn(it) }
+        findSectionTitle(root)?.let { return storeAndReturn(it) }
+        findKnownNexiTitles(root)?.let { return storeAndReturn(it) }
+        findByDistinctiveIds(root)?.let { return storeAndReturn(it) }
+        findTopBarTitle(root)?.let { return storeAndReturn(it) }
+        findProminentHeading(root)?.let { return storeAndReturn(it) }
 
         event.contentDescription?.toString()?.trim()?.takeIf { it.isNotBlank() }?.let {
-            if (!looksLikeAmount(it)) return humanizeTitle(it)
+            if (!looksLikeAmount(it)) return storeAndReturn(humanizeTitle(it))
         }
 
         val activityName = event.className?.toString()?.substringAfterLast('.').orEmpty()
-        if (activityName.isNotBlank()) return humanizeActivityName(activityName)
+        if (activityName.isNotBlank()) return storeAndReturn(humanizeActivityName(activityName))
+
+        if (packageKey.isNotBlank()) {
+            lastTitleByPackage[packageKey]?.let { return it }
+        }
 
         return "Schermata"
+    }
+
+    fun clearTitleCache(packageName: String? = null) {
+        if (packageName.isNullOrBlank()) {
+            lastTitleByPackage.clear()
+        } else {
+            lastTitleByPackage.remove(packageName)
+        }
+    }
+
+    /** Splash / brand screen senza navigazione — non creare sezione «Schermata» nel report. */
+    fun isTransientOverlay(root: AccessibilityNodeInfo): Boolean {
+        val ids = collectViewIdShorts(root)
+        val hasLogo = "logo" in ids
+        val hasNav = ids.any { it in NAV_HINT_IDS }
+        val hasKnownTitle = findSectionTitle(root) != null ||
+            findKnownNexiTitles(root) != null ||
+            findByDistinctiveIds(root) != null
+        return hasLogo && !hasNav && !hasKnownTitle
     }
 
     /** Public helper for multi-window prioritization. */
@@ -339,4 +377,42 @@ object ScreenTitleResolver {
 
     private fun humanizeTitle(title: String): String =
         title.trim().replace(Regex("\\s+"), " ")
+
+    private val NAV_HINT_IDS = setOf(
+        "topbar_title", "layout_topbar_icon_left", "layout_topbar_icon_right",
+        "content_pagamento", "entrate_home", "uscite_home", "recycler_distinte",
+        "labelcontacts", "rotate_display", "scrollview_port",
+    )
+
+    /** Risolve titolo da viewId distintivi Nexi quando heading/topbar assenti. */
+    private fun findByDistinctiveIds(root: AccessibilityNodeInfo): String? {
+        val ids = collectViewIdShorts(root)
+        if (ids.isEmpty()) return null
+
+        return when {
+            ids.contains("rotate_display") || ids.contains("see_all_insolved") -> "Ultimi insoluti"
+            ids.contains("labelcontacts") || ids.contains("iban_account") -> "RUBRICA"
+            ids.contains("content_pagamento") -> findTitleNearContentPagamento(root) ?: "NUOVO PAGAMENTO"
+            ids.contains("recycler_distinte") && ids.contains("vop_info") -> "AUTORIZZA DISTINTE"
+            ids.contains("amount_effetti") && ids.contains("causale") -> "PAGA EFFETTI"
+            ids.contains("entrate_home") || ids.contains("uscite_home") || ids.contains("card_home") ->
+                findTopBarTitle(root) ?: "Home"
+            ids.contains("tv_custom") && ids.contains("ll_custom") -> "NUOVO PAGAMENTO"
+            else -> null
+        }
+    }
+
+    private fun collectViewIdShorts(root: AccessibilityNodeInfo): Set<String> {
+        val ids = mutableSetOf<String>()
+        val queue = ArrayDeque<AccessibilityNodeInfo>()
+        queue.add(root)
+        while (queue.isNotEmpty()) {
+            val node = queue.removeFirst()
+            node.viewIdResourceName?.substringAfterLast('/')?.lowercase()?.let { ids.add(it) }
+            for (i in 0 until node.childCount) {
+                node.getChild(i)?.let(queue::add)
+            }
+        }
+        return ids
+    }
 }

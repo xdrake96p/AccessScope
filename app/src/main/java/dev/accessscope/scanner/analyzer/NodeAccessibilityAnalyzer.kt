@@ -173,9 +173,10 @@ class NodeAccessibilityAnalyzer(
             snap.looksLikeStructuralHeading() &&
             !snap.isHeading &&
             !PrecisionRules.shouldSkipHeadingCheck(snap) &&
+            !PrecisionRules.isInsideCarouselOrListItem(snap, all) &&
             !snap.className.contains("Toolbar", true) &&
-            snap.bounds.height() >= (minTextHeightPx * 1.2).toInt() &&
-            (snap.text?.length ?: 0) <= 60
+            snap.bounds.height() >= (minTextHeightPx * 1.5).toInt() &&
+            (snap.text?.length ?: 0) in 4..60
         ) {
             violations += v(ViolationType.HEADING_HIERARCHY, snap, packageName, screenTitle,
                 "Titolo visibile non marcato come heading.", 0.85f)
@@ -290,7 +291,7 @@ class NodeAccessibilityAnalyzer(
         }
 
         if (includes(ViolationArea.COLOR)) {
-            screenshot?.let { checkContrast(snap, packageName, screenTitle, violations, it) }
+            screenshot?.let { checkContrast(snap, packageName, screenTitle, violations, it, all) }
         }
     }
 
@@ -300,18 +301,22 @@ class NodeAccessibilityAnalyzer(
         screenTitle: String,
         violations: MutableList<AccessibilityViolation>,
         bitmap: Bitmap,
+        all: List<NodeSnapshot>,
     ) {
         if (PrecisionRules.isLayoutContainer(snap.className)) return
         if (PrecisionRules.isLikelyStatusBadge(snap)) return
+        if (PrecisionRules.isHomeChartDecorativeText(snap, all)) return
+        if (PrecisionRules.isBrandedCtaText(snap, all)) return
         val screenArea = bitmap.width * bitmap.height
         if (screenArea > 0 && snap.area() > screenArea * 0.6) return
 
         if (snap.hasVisibleText()) {
-            val large = WcagContrast.isLargeText(snap.bounds.height(), density)
-            val result = WcagContrast.measureTextContrast(bitmap, snap.bounds, large) ?: return
-            if (!WcagContrast.isReliableMeasurement(result)) return
             val isFieldLabel = PrecisionRules.isKnownContrastFieldLabel(snap)
-            val minConfidence = if (isFieldLabel) 0.55f else 0.72f
+            val sampleBounds = if (isFieldLabel) expandBoundsForMicroLabel(snap.bounds) else snap.bounds
+            val large = WcagContrast.isLargeText(snap.bounds.height(), density) || isFieldLabel
+            val result = WcagContrast.measureTextContrast(bitmap, sampleBounds, large) ?: return
+            if (!WcagContrast.isReliableMeasurement(result)) return
+            val minConfidence = if (isFieldLabel) 0.50f else 0.72f
             if (result.confidence < minConfidence) return
             if (!isFieldLabel &&
                 WcagContrast.relativeLuminance(result.foreground) > 0.80 &&
@@ -556,6 +561,16 @@ class NodeAccessibilityAnalyzer(
         )
 
     private fun NodeSnapshot.area() = bounds.width() * bounds.height()
+
+    private fun expandBoundsForMicroLabel(bounds: Rect): Rect {
+        val pad = (3 * density).toInt().coerceAtLeast(3)
+        return Rect(
+            bounds.left - pad,
+            bounds.top - pad,
+            bounds.right + pad,
+            bounds.bottom + pad,
+        )
+    }
 
     private fun estimateScreenArea(snapshots: List<NodeSnapshot>): Int {
         if (snapshots.isEmpty()) return 0

@@ -47,6 +47,7 @@ class AccessScopeAccessibilityService : AccessibilityService() {
     fun resetDynamicTracking() {
         dynamicTracker.reset()
         seenFingerprintsThisSession.clear()
+        ScreenTitleResolver.clearTitleCache()
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
@@ -247,6 +248,9 @@ class AccessScopeAccessibilityService : AccessibilityService() {
         screenshot: Bitmap?,
         analyzer: NodeAccessibilityAnalyzer,
     ) {
+        if (ScreenTitleResolver.isTransientOverlay(root)) {
+            return
+        }
         val screenTitle = ScreenTitleResolver.resolve(root, event)
         val fingerprint = ScreenFingerprint.compute(root, packageName, screenTitle)
         val result = analyzer.analyzeTree(root, packageName, screenTitle, screenshot, fingerprint)

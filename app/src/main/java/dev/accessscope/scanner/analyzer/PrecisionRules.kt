@@ -36,6 +36,9 @@ object PrecisionRules {
         if (id == "layout_topbar_icon_left" || id == "layout_topbar_icon_right") {
             if (!snap.isInteractiveClickable()) return false
             if (snap.hasAccessibleName()) return false
+            val iconId = if (id.contains("left")) "topbar_icon_left" else "topbar_icon_right"
+            val icon = all.firstOrNull { viewIdShort(it) == iconId && snap.bounds.contains(it.bounds) }
+            if (icon?.hasAccessibleName() == true) return false
             return !hasLabeledDescendant(snap, all)
         }
         if (id == "topbar_icon_left" || id == "topbar_icon_right") {
@@ -173,7 +176,7 @@ object PrecisionRules {
                 "last_access", "name_account", "labelcontacts", "enroll_user",
                 "tv_custom", "topbar_title", "no_result", "filtri_attivi",
                 "totale_distinte", "total_amount_ins", "user_type", "currency",
-                "multiple_slection", "checkbox_all",
+                "multiple_slection", "checkbox_all", "rotate_display", "logo",
             )
         ) {
             return true
@@ -231,9 +234,66 @@ object PrecisionRules {
         return id in setOf(
             "entrate_home", "uscite_home", "tv_see_account_movements",
             "see_all_insolved", "show_more", "last_30", "last_30_negative",
-            "import_positive", "currency_incom", "currency_symbol",
+            "import_positive", "import_negative", "currency_incom", "currency_outcom",
+            "currency_symbol",
         )
     }
+
+    private val HOME_CHART_TEXT_IDS = setOf(
+        "last_30", "last_30_negative", "import_positive", "import_negative",
+        "currency_incom", "currency_outcom", "currency_symbol",
+    )
+
+    private val HOME_CHART_CONTAINER_IDS = setOf("entrate_home", "uscite_home")
+
+    /** Testo decorativo del widget entrate/uscite in home — contrasto basso intenzionale su sfondo brand. */
+    fun isHomeChartDecorativeText(snap: NodeSnapshot, all: List<NodeSnapshot>): Boolean {
+        if (!snap.hasVisibleText()) return false
+        if (snap.isFocusable || snap.isInteractiveClickable()) return false
+        if (snap.hasAccessibleName() && !snap.contentDescription.isNullOrBlank()) return false
+        val id = viewIdShort(snap)
+        if (id !in HOME_CHART_TEXT_IDS) return false
+        return isInsideHomeChartContainer(snap, all)
+    }
+
+    fun isInsideHomeChartContainer(snap: NodeSnapshot, all: List<NodeSnapshot>): Boolean =
+        all.any { other ->
+            other != snap &&
+                viewIdShort(other) in HOME_CHART_CONTAINER_IDS &&
+                other.bounds.contains(snap.bounds)
+        }
+
+    /** CTA brand Nexi: testo bianco su sfondo colorato — non contrasto campo form. */
+    fun isBrandedCtaText(snap: NodeSnapshot, all: List<NodeSnapshot>): Boolean {
+        if (viewIdShort(snap) != "tv_custom") return false
+        if (!snap.hasVisibleText()) return false
+        return all.any { other ->
+            other != snap &&
+                (isCtaContainer(other) || viewIdShort(other) == "ll_custom") &&
+                other.bounds.contains(snap.bounds)
+        }
+    }
+
+    /** TextView in item RecyclerView/carousel — non heading strutturale di pagina. */
+    fun isInsideCarouselOrListItem(snap: NodeSnapshot, all: List<NodeSnapshot>): Boolean {
+        if (snap.className.contains("RecyclerView", true)) return false
+        return all.any { other ->
+            other != snap &&
+                other.bounds.contains(snap.bounds) &&
+                other.bounds.height() > snap.bounds.height() * 1.5 &&
+                (
+                    other.className.contains("RecyclerView", true) ||
+                        other.className.contains("ViewPager", true) ||
+                        viewIdShort(other) in setOf(
+                            "recycler_distinte", "recycler_effetti", "recycler",
+                            "content", "layout_content",
+                        ) ||
+                        (isKnownListTemplateId(other.viewId) && other.bounds.area() > snap.bounds.area() * 2)
+                    )
+        }
+    }
+
+    private fun Rect.area(): Int = width() * height()
 
     fun shouldSkipTouchSpacingBetween(a: NodeSnapshot, b: NodeSnapshot): Boolean {
         if (isTopBarControl(a) || isTopBarControl(b)) return true
@@ -311,6 +371,8 @@ object PrecisionRules {
             return false
         }
         if (viewIdShort(snap) in setOf("scrollview_port", "scroll", "card_home")) return false
+        if (viewIdShort(snap) == "tv_custom") return false
+        if (isBrandedCtaText(snap, all)) return false
         if (snap.isScrollable && hasLabeledDescendant(snap, all)) return false
         if (isLayoutContainer(snap.className) && hasLabeledDescendant(snap, all)) return false
         return true

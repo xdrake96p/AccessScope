@@ -25,7 +25,13 @@ object FocusOrderAnalyzer {
         val maxInversions = focusable.size * (focusable.size - 1) / 2
         val inversionRate = if (maxInversions > 0) inversions.toFloat() / maxInversions else 0f
 
-        if (inversionRate < 0.35f) return emptyList()
+        if (inversionRate < 0.45f) return emptyList()
+
+        val inRecycler = snapshots.count {
+            it.className.contains("RecyclerView", true) ||
+                PrecisionRules.viewIdShort(it) in setOf("recycler_distinte", "recycler_effetti", "recycler")
+        }
+        if (inRecycler > 0 && inRecycler.toFloat() / snapshots.size > 0.5f) return emptyList()
 
         val confidence = (0.6f + inversionRate * 0.35f).coerceAtMost(0.95f)
         return listOf(
