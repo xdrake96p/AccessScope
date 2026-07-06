@@ -1,3 +1,9 @@
+/**
+ * Schermata del report di accessibilità con riepilogo, filtri e dettaglio violazioni.
+ *
+ * Presenta punteggio, copertura controlli, sezioni espandibili per schermata
+ * e glossario dei termini usati nel report.
+ */
 package dev.accessscope.scanner.ui.screen
 
 import androidx.compose.animation.AnimatedVisibility
@@ -65,11 +71,11 @@ import dev.accessscope.scanner.report.ReportHelper
 import dev.accessscope.scanner.report.ReportSectionGroup
 import dev.accessscope.scanner.ui.theme.AccessScopeMotion
 import dev.accessscope.scanner.ui.theme.BrandDark
-import dev.accessscope.scanner.ui.theme.BrandLight
 import dev.accessscope.scanner.ui.theme.BrandPrimary
 import dev.accessscope.scanner.ui.theme.BrandSecondary
 import dev.accessscope.scanner.ui.theme.Success
-import dev.accessscope.scanner.ui.theme.TextSecondary
+import dev.accessscope.scanner.ui.theme.brandHighlightContainer
+import dev.accessscope.scanner.ui.theme.contentSecondary
 import dev.accessscope.scanner.ui.theme.severityColor
 import dev.accessscope.scanner.ui.viewmodel.ScanViewModel
 import java.text.SimpleDateFormat
@@ -77,6 +83,13 @@ import java.util.Date
 import java.util.Locale
 import kotlin.math.roundToInt
 
+/**
+ * Schermata completa del report di accessibilità della sessione corrente.
+ *
+ * @param viewModel ViewModel con lo stato della scansione e l'elenco app per le etichette.
+ * @param onBack Callback per tornare alla schermata precedente.
+ * @param onOpenPdf Callback che riceve il percorso del PDF e lo apre nel viewer di sistema.
+ */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ReportScreen(
@@ -147,7 +160,7 @@ fun ReportScreen(
                     .padding(padding),
                 contentAlignment = Alignment.Center,
             ) {
-                Text("Nessun problema rilevato nella sessione.", color = TextSecondary)
+                Text("Nessun problema rilevato nella sessione.", color = contentSecondary())
             }
             return@Scaffold
         }
@@ -260,6 +273,18 @@ fun ReportScreen(
     }
 }
 
+/**
+ * Card di riepilogo con punteggio, gradiente brand e metriche della sessione.
+ *
+ * @param score Punteggio stimato di accessibilità (0–100).
+ * @param scannedScreens Numero di schermate uniche analizzate.
+ * @param scanAnalyses Numero totale di analisi eseguite (può superare le schermate uniche).
+ * @param scanScopeLabel Etichetta leggibile degli ambiti analizzati.
+ * @param appCount Numero di app monitorate nella sessione.
+ * @param violationCount Numero totale di violazioni rilevate.
+ * @param talkBackCount Numero di note dalla simulazione TalkBack.
+ * @param passedCheckCount Numero di controlli superati con successo.
+ */
 @Composable
 private fun ReportSummaryCard(
     score: Int,
@@ -320,14 +345,27 @@ private fun ReportSummaryCard(
     }
 }
 
+/**
+ * Riga etichetta-valore nel riepilogo del report.
+ *
+ * @param label Etichetta descrittiva della metrica.
+ * @param value Valore formattato da mostrare a destra.
+ */
 @Composable
 private fun SummaryRow(label: String, value: String) {
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-        Text(label, color = TextSecondary, style = MaterialTheme.typography.bodyMedium)
+        Text(label, color = contentSecondary(), style = MaterialTheme.typography.bodyMedium)
         Text(value, fontWeight = FontWeight.Medium)
     }
 }
 
+/**
+ * Fila di chip per filtrare le violazioni per livello di gravità.
+ *
+ * @param selected Gravità attualmente selezionata; null mostra tutte le violazioni.
+ * @param counts Mappa gravità → conteggio violazioni per popolare le etichette dei chip.
+ * @param onSelect Callback invocato al cambio filtro; passa null per "Tutti".
+ */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun SeverityFilterRow(
@@ -360,11 +398,16 @@ private fun SeverityFilterRow(
     }
 }
 
+/**
+ * Card con panoramica delle schermate e conteggio problemi/OK per ciascuna.
+ *
+ * @param entries Elenco delle voci di panoramica prodotte da [ReportHelper.screenOverview].
+ */
 @Composable
 private fun ScreenOverviewCard(entries: List<ReportHelper.ScreenOverviewEntry>) {
     Card(
         modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = BrandLight),
+        colors = CardDefaults.cardColors(containerColor = brandHighlightContainer()),
         shape = RoundedCornerShape(16.dp),
     ) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -398,6 +441,16 @@ private fun ScreenOverviewCard(entries: List<ReportHelper.ScreenOverviewEntry>) 
     }
 }
 
+/**
+ * Intestazione espandibile di una sezione del report (schermata o sotto-sezione).
+ *
+ * @param section Gruppo di sezione con titolo schermata e eventuale sotto-sezione.
+ * @param violationCount Numero di violazioni in questa sezione.
+ * @param talkBackCount Numero di note TalkBack in questa sezione.
+ * @param passedCount Numero di controlli superati in questa sezione.
+ * @param expanded True se il contenuto della sezione è espanso.
+ * @param onToggle Callback per espandere o comprimere la sezione.
+ */
 @Composable
 private fun SectionHeaderCard(
     section: ReportSectionGroup,
@@ -440,7 +493,7 @@ private fun SectionHeaderCard(
                         if (talkBackCount > 0) append(" · $talkBackCount note TalkBack")
                     },
                     style = MaterialTheme.typography.labelSmall,
-                    color = TextSecondary,
+                    color = contentSecondary(),
                 )
             }
             Icon(
@@ -451,6 +504,12 @@ private fun SectionHeaderCard(
     }
 }
 
+/**
+ * Intestazione colorata per un gruppo di violazioni della stessa gravità.
+ *
+ * @param severity Livello di gravità del gruppo.
+ * @param count Numero di violazioni nel gruppo.
+ */
 @Composable
 private fun SeverityGroupHeader(severity: ViolationSeverity, count: Int) {
     Row(
@@ -472,6 +531,12 @@ private fun SeverityGroupHeader(severity: ViolationSeverity, count: Int) {
     }
 }
 
+/**
+ * Card di dettaglio per una singola violazione di accessibilità.
+ *
+ * @param violation Oggetto violazione con tipo, spiegazione e metadati WCAG.
+ * @param packageLabels Mappa package name → etichetta leggibile dell'app.
+ */
 @Composable
 private fun ViolationCard(
     violation: AccessibilityViolation,
@@ -493,18 +558,24 @@ private fun ViolationCard(
                 Text(
                     "${(violation.confidence * 100).roundToInt()}%",
                     style = MaterialTheme.typography.labelSmall,
-                    color = TextSecondary,
+                    color = contentSecondary(),
                 )
             }
             Text(type.wcagRef, style = MaterialTheme.typography.labelSmall, color = BrandPrimary)
             Text(violation.simpleExplanation, style = MaterialTheme.typography.bodySmall)
             ReportHelper.violationDetailLines(violation).forEach { line ->
-                Text(line, style = MaterialTheme.typography.labelSmall, color = TextSecondary)
+                Text(line, style = MaterialTheme.typography.labelSmall, color = contentSecondary())
             }
-            Text("App: $appLabel", style = MaterialTheme.typography.labelSmall, color = TextSecondary)
+            Text("App: $appLabel", style = MaterialTheme.typography.labelSmall, color = contentSecondary())
     }
 }
 
+/**
+ * Card per un singolo risultato della simulazione TalkBack.
+ *
+ * @param finding Rilevamento screen reader con problema e testo annunciato.
+ * @param packageLabels Mappa package name → etichetta leggibile dell'app.
+ */
 @Composable
 private fun TalkBackFindingCard(
     finding: ScreenReaderFinding,
@@ -521,16 +592,21 @@ private fun TalkBackFindingCard(
     ) {
         Text(finding.issue, style = MaterialTheme.typography.bodyMedium)
         finding.announcedText?.let {
-            Text("Annuncio: \"$it\"", style = MaterialTheme.typography.bodySmall, color = TextSecondary)
+            Text("Annuncio: \"$it\"", style = MaterialTheme.typography.bodySmall, color = contentSecondary())
         }
         Text(
             "${finding.screenTitle} · $appLabel",
             style = MaterialTheme.typography.labelSmall,
-            color = TextSecondary,
+            color = contentSecondary(),
         )
     }
 }
 
+/**
+ * Card che mostra la copertura dei controlli per ambito (OK vs problemi).
+ *
+ * @param coverage Coppie ambito → (controlli superati, controlli falliti).
+ */
 @Composable
 private fun CheckCoverageCard(
     coverage: List<Pair<ViolationArea, Pair<Int, Int>>>,
@@ -553,6 +629,11 @@ private fun CheckCoverageCard(
     }
 }
 
+/**
+ * Card con elenco dei controlli superati per ambito, con campioni di esempio.
+ *
+ * @param summaries Riepiloghi dei controlli superati raggruppati per area.
+ */
 @Composable
 private fun PassedChecksCard(summaries: List<CheckAreaSummary>) {
     Card(
@@ -572,7 +653,7 @@ private fun PassedChecksCard(summaries: List<CheckAreaSummary>) {
                     Text(
                         ReportHelper.passedCheckLine(sample),
                         style = MaterialTheme.typography.labelSmall,
-                        color = TextSecondary,
+                        color = contentSecondary(),
                     )
                 }
             }
@@ -580,6 +661,7 @@ private fun PassedChecksCard(summaries: List<CheckAreaSummary>) {
     }
 }
 
+/** Card espandibile con glossario dei termini di accessibilità usati nel report. */
 @Composable
 private fun GlossaryCard() {
     var expanded by rememberSaveable { mutableStateOf(false) }
@@ -614,7 +696,7 @@ private fun GlossaryCard() {
                 Column(Modifier.padding(top = 12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     terms.forEach { (term, definition) ->
                         Text(term, fontWeight = FontWeight.Medium, color = BrandPrimary)
-                        Text(definition, style = MaterialTheme.typography.bodySmall, color = TextSecondary)
+                        Text(definition, style = MaterialTheme.typography.bodySmall, color = contentSecondary())
                         HorizontalDivider()
                     }
                 }

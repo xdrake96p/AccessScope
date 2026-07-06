@@ -1,3 +1,9 @@
+/**
+ * Schermata impostazioni per auto-launch e configurazione degli ambiti di scansione.
+ *
+ * Permette di attivare preset (completa, solo TalkBack, solo etichette, solo contrasto)
+ * o personalizzare singoli ambiti tramite switch.
+ */
 package dev.accessscope.scanner.ui.screen
 
 import androidx.compose.foundation.layout.Arrangement
@@ -35,10 +41,17 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.accessscope.scanner.data.ViolationArea
+import dev.accessscope.scanner.ui.components.ThemeModeSelector
 import dev.accessscope.scanner.ui.theme.BrandPrimary
-import dev.accessscope.scanner.ui.theme.TextSecondary
+import dev.accessscope.scanner.ui.theme.contentSecondary
 import dev.accessscope.scanner.ui.viewmodel.ScanViewModel
 
+/**
+ * Schermata delle impostazioni di scansione e ambiti di analisi.
+ *
+ * @param viewModel ViewModel con stato auto-launch e ambiti di scansione.
+ * @param onBack Callback per tornare alla schermata precedente.
+ */
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun SettingsScreen(
@@ -73,6 +86,25 @@ fun SettingsScreen(
                 shape = RoundedCornerShape(16.dp),
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
             ) {
+                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text("Preferenze di visualizzazione", fontWeight = FontWeight.SemiBold)
+                    Text(
+                        "Scegli come visualizzare l'interfaccia. La preferenza viene salvata sul dispositivo.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = contentSecondary(),
+                    )
+                    ThemeModeSelector(
+                        selected = uiState.themeMode,
+                        onSelect = viewModel::setThemeMode,
+                    )
+                }
+            }
+
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(16.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+            ) {
                 Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text("Scansione", fontWeight = FontWeight.SemiBold)
                     Row(
@@ -83,14 +115,42 @@ fun SettingsScreen(
                         Column(Modifier.weight(1f)) {
                             Text("Apri app automaticamente")
                             Text(
-                                "All'avvio apre la prima app selezionata.",
+                                "All'avvio apre automaticamente l'app selezionata. Puoi monitorare solo ${ScanViewModel.MAX_APPS_WITH_AUTO_LAUNCH} app.",
                                 style = MaterialTheme.typography.bodySmall,
-                                color = TextSecondary,
+                                color = contentSecondary(),
                             )
                         }
                         Switch(
                             checked = uiState.autoLaunchEnabled,
                             onCheckedChange = { viewModel.toggleAutoLaunch() },
+                        )
+                    }
+                }
+            }
+
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(16.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+            ) {
+                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("Debug live", fontWeight = FontWeight.SemiBold)
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Column(Modifier.weight(1f)) {
+                            Text("Pannello ispezione in tempo reale")
+                            Text(
+                                "Durante la scansione mostra schermata corrente, problemi e metriche. Disponibile nell'overlay (icona occhio) e in Home.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = contentSecondary(),
+                            )
+                        }
+                        Switch(
+                            checked = uiState.liveDebugPanelEnabled,
+                            onCheckedChange = { viewModel.toggleLiveDebugPanel() },
                         )
                     }
                 }
@@ -157,7 +217,7 @@ fun SettingsScreen(
                                 Text(
                                     area.subtitle,
                                     style = MaterialTheme.typography.bodySmall,
-                                    color = TextSecondary,
+                                    color = contentSecondary(),
                                 )
                             }
                             Switch(

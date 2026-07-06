@@ -1,3 +1,9 @@
+/**
+ * Helper per il caricamento delle app installate e la gestione dei permessi di sistema.
+ *
+ * Contiene [PackageHelper] per l'enumerazione delle applicazioni e
+ * [PermissionHelper] per verificare e aprire le impostazioni di accessibilità e overlay.
+ */
 package dev.accessscope.scanner.util
 
 import android.content.ComponentName
@@ -12,8 +18,18 @@ import android.text.TextUtils
 import dev.accessscope.scanner.data.InstalledAppInfo
 import dev.accessscope.scanner.service.AccessScopeAccessibilityService
 
+/**
+ * Utility per enumerare le applicazioni installate sul dispositivo.
+ */
 object PackageHelper {
 
+    /**
+     * Carica l'elenco delle app installate, escludendo AccessScope stesso.
+     *
+     * @param context Contesto Android per l'accesso al [PackageManager].
+     * @param includeSystemApps Se `true`, include le app di sistema preinstallate.
+     * @return Lista ordinata di [InstalledAppInfo] (app utente prima, poi per etichetta).
+     */
     fun loadInstalledApps(context: Context, includeSystemApps: Boolean): List<InstalledAppInfo> {
         val pm = context.packageManager
         @Suppress("DEPRECATION")
@@ -50,8 +66,18 @@ object PackageHelper {
     private fun ApplicationInfo.isFilteredSystemApp(): Boolean = isSystemApp()
 }
 
+/**
+ * Utility per verificare permessi di sistema e aprire le relative schermate impostazioni.
+ */
 object PermissionHelper {
 
+    /**
+     * Verifica se un servizio di accessibilità è abilitato nelle impostazioni di sistema.
+     *
+     * @param context Contesto Android.
+     * @param serviceClass Classe del servizio di accessibilità da verificare.
+     * @return `true` se il servizio compare tra quelli abilitati.
+     */
     fun isAccessibilityServiceEnabled(context: Context, serviceClass: Class<*>): Boolean {
         val enabled = Settings.Secure.getInt(
             context.contentResolver,
@@ -78,7 +104,16 @@ object PermissionHelper {
         return false
     }
 
-    /** True se il servizio è collegato; se abilitato in impostazioni consideriamo pronto per evitare falsi negativi. */
+    /**
+     * Verifica se il servizio di accessibilità è collegato o abilitato in impostazioni.
+     *
+     * Considera pronto il servizio anche se abilitato ma non ancora connesso,
+     * per evitare falsi negativi durante l'avvio.
+     *
+     * @param context Contesto Android.
+     * @param serviceClass Classe del servizio di accessibilità.
+     * @return `true` se il servizio è istanziato o abilitato nelle impostazioni.
+     */
     fun isAccessibilityServiceConnected(
         context: Context,
         serviceClass: Class<*>,
@@ -86,12 +121,34 @@ object PermissionHelper {
         AccessScopeAccessibilityService.instance != null ||
             isAccessibilityServiceEnabled(context, serviceClass)
 
+    /**
+     * Verifica se il servizio di accessibilità è abilitato e pronto all'uso.
+     *
+     * @param context Contesto Android.
+     * @param serviceClass Classe del servizio di accessibilità.
+     * @return `true` se il servizio è abilitato nelle impostazioni di sistema.
+     */
     fun isAccessibilityServiceReady(context: Context, serviceClass: Class<*>): Boolean =
         isAccessibilityServiceEnabled(context, serviceClass)
 
+    /**
+     * Verifica se l'app ha il permesso di disegnare sopra le altre applicazioni.
+     *
+     * @param context Contesto Android.
+     * @return `true` se il permesso overlay è concesso.
+     */
     fun canDrawOverlays(context: Context): Boolean = Settings.canDrawOverlays(context)
 
-    /** Apre direttamente AccessScope nelle impostazioni accessibilità (Android 13+) o la lista servizi. */
+    /**
+     * Crea un intent per aprire le impostazioni del servizio di accessibilità.
+     *
+     * Su Android 13+ apre direttamente il dettaglio del servizio;
+     * su versioni precedenti apre la lista generale dei servizi.
+     *
+     * @param context Contesto Android.
+     * @param serviceClass Classe del servizio di accessibilità.
+     * @return [Intent] configurato con [Intent.FLAG_ACTIVITY_NEW_TASK].
+     */
     fun accessibilityServiceIntent(context: Context, serviceClass: Class<*>): Intent {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             return Intent("android.settings.ACCESSIBILITY_DETAILS_SETTINGS").apply {
@@ -107,6 +164,12 @@ object PermissionHelper {
         }
     }
 
+    /**
+     * Crea un intent per gestire il permesso di overlay dell'app corrente.
+     *
+     * @param context Contesto Android.
+     * @return [Intent] verso [Settings.ACTION_MANAGE_OVERLAY_PERMISSION].
+     */
     fun overlaySettingsIntent(context: Context): Intent =
         Intent(
             Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
@@ -115,6 +178,12 @@ object PermissionHelper {
             flags = Intent.FLAG_ACTIVITY_NEW_TASK
         }
 
+    /**
+     * Crea un intent per aprire la schermata dettaglio dell'app corrente.
+     *
+     * @param context Contesto Android.
+     * @return [Intent] verso [Settings.ACTION_APPLICATION_DETAILS_SETTINGS].
+     */
     fun appDetailsIntent(context: Context): Intent =
         Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
             data = Uri.parse("package:${context.packageName}")

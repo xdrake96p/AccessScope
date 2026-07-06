@@ -1,3 +1,13 @@
+/**
+ * Analizzatore di accessibilità basato sull'albero [AccessibilityNodeInfo].
+ *
+ * Percorre la gerarchia delle view di una schermata Android, costruisce snapshot
+ * normalizzati ([NodeSnapshot]) e applica controlli WCAG per etichette, touch target,
+ * struttura semantica, form, contrasto colore, media/WebView e simulazione TalkBack.
+ *
+ * L'ambito dei controlli è filtrato da [ScanScope]; le eccezioni e i falsi positivi
+ * sono gestiti tramite [PrecisionRules] e regole specifiche per package.
+ */
 package dev.accessscope.scanner.analyzer
 
 import android.graphics.Bitmap
@@ -11,6 +21,20 @@ import dev.accessscope.scanner.data.ScreenReaderFinding
 import dev.accessscope.scanner.data.ViolationArea
 import dev.accessscope.scanner.data.ViolationType
 
+/**
+ * Motore principale di analisi dell'accessibilità su un singolo albero di nodi.
+ *
+ * Riceve soglie pixel derivate dalla densità dello schermo e un [ScanScope] che
+ * limita quali aree di controllo ([ViolationArea]) vengono eseguite.
+ *
+ * @param minTouchTargetPx Dimensione minima in pixel per target di tocco (tipicamente 48 dp).
+ * @param minTouchSpacingPx Spaziatura minima in pixel tra target adiacenti (tipicamente 8 dp).
+ * @param minTextHeightPx Altezza minima in pixel del testo (tipicamente 12 sp).
+ * @param recommendedTextHeightPx Altezza consigliata in pixel per testo interattivo (tipicamente 16 sp).
+ * @param density Densità del display (`DisplayMetrics.density`) usata per calcoli WCAG e padding.
+ * @param dynamicContentSilent Se true, segnala contenuti dinamici non annunciati a TalkBack.
+ * @param scanScope Ambito di scansione che abilita/disabilita gruppi di controlli.
+ */
 class NodeAccessibilityAnalyzer(
     private val minTouchTargetPx: Int,
     private val minTouchSpacingPx: Int,
@@ -21,10 +45,30 @@ class NodeAccessibilityAnalyzer(
     private val scanScope: ScanScope = ScanScope.FULL,
 ) {
 
+    /**
+     * Verifica se l'area di violazione indicata rientra nell'ambito di scansione corrente.
+     *
+     * @param area Area di controllo da valutare.
+     * @return `true` se l'area è inclusa in [scanScope], altrimenti `false`.
+     */
     private fun includes(area: ViolationArea): Boolean = scanScope.includes(area)
 
+    /** Impronta della schermata corrente, propagata alle violazioni generate durante [analyzeTree]. */
     private var analyzeFingerprint: String? = null
 
+    /**
+     * Analizza l'intero albero di accessibilità e restituisce violazioni, finding TalkBack e riepiloghi.
+     *
+     * Flusso: raccolta snapshot → controlli per nodo → controlli cross-nodo e strutturali →
+     * eventuale simulazione screen reader → aggregazione risultati.
+     *
+     * @param root Nodo radice dell'albero (tipicamente la root window attiva).
+     * @param packageName Package dell'app in analisi.
+     * @param screenTitle Titolo descrittivo della schermata (usato nei report).
+     * @param screenshot Bitmap opzionale dello schermo, necessaria per i controlli di contrasto.
+     * @param screenFingerprint Identificativo opzionale della schermata per correlare le violazioni.
+     * @return [AnalysisResult] con violazioni, finding del simulatore TalkBack e riepiloghi per area.
+     */
     fun analyzeTree(
         root: AccessibilityNodeInfo,
         packageName: String,
@@ -95,6 +139,17 @@ class NodeAccessibilityAnalyzer(
         )
     }
 
+    /**
+     * Attraversa ricorsivamente l'albero e popola la lista di [NodeSnapshot].
+     *
+     * Mantiene uno stack di heading strutturali per associare ogni nodo alla sezione corrente.
+     * I nodi figlio vengono riciclati dopo la visita per evitare leak di [AccessibilityNodeInfo].
+     *
+     * @param node Nodo corrente in visita depth-first.
+     * @param output Lista mutabile in cui appendere gli snapshot creati.
+     * @param headingStack Stack delle intestazioni di sezione attive lungo il percorso radice→nodo.
+     * @param nextIndex Fornitore dell'indice di traversata monotono crescente.
+     */
     private fun collectSnapshots(
         node: AccessibilityNodeInfo,
         output: MutableList<NodeSnapshot>,
@@ -126,6 +181,24 @@ class NodeAccessibilityAnalyzer(
         }
     }
 
+    /**
+     * Esegue tutti i controlli per-nodo applicabili a un singolo [NodeSnapshot].
+     *
+     * Applica filtri di precisione ([PrecisionRules]) prima di valutare etichette, touch,
+     * focusabilità, form, heading, testo, immagini, scroll, stati UI, ruoli, slider,
+     * tooltip, azioni custom, media e contrasto colore.
+     *
+     * @param snap Snapshot del nodo da analizzare.
+     * @param all Lista completa degli snapshot della schermata (contesto cross-nodo locale).
+     * @param packageName Package dell'app in analisi.
+     * @param screenTitle Titolo descrittivo della schermata.
+     * @param violations Lista mutabile a cui appendere le violazioni rilevate.
+     * @param screenshot Bitmap opzionale per misurazioni di contrasto.
+     * @param customActionEmitted Set di chiavi già emesse per evitare duplicati su azioni custom.
+     * @param viewport Rettangoio stimato dell'area visibile utile.
+     * @param screenWidth Larghezza del viewport in pixel.
+     * @param checkCollector Raccoglitore dei pass positivi per i riepiloghi per area.
+     */
     private fun checkSingleNode(
         snap: NodeSnapshot,
         all: List<NodeSnapshot>,
@@ -344,6 +417,22 @@ class NodeAccessibilityAnalyzer(
         }
     }
 
+    /**
+     * Valuta il contrasto colore di testo o elementi UI non testuali usando lo screenshot.
+     *
+     * Per le etichette micro dei campi (`txt_data_*`) espande i bounds di campionamento
+     * e applica soglie di confidenza ridotte. Registra pass positivi tramite [checkCollector]
+     * quando il contrasto è sufficiente.
+     *
+     * @param snap Snapshot del nodo da misurare.
+     * @param packageName Package dell'app in analisi.
+     * @param screenTitle Titolo descrittivo della schermata.
+     * @param violations Lista mutabile a cui appendere violazioni di contrasto insufficiente.
+     * @param bitmap Screenshot della schermata per il campionamento pixel.
+     * @param all Lista completa degli snapshot (contesto per regole di esclusione).
+     * @param viewport Rettangoio stimato dell'area visibile utile.
+     * @param checkCollector Raccoglitore dei pass positivi per i riepiloghi area colore.
+     */
     private fun checkContrast(
         snap: NodeSnapshot,
         packageName: String,
@@ -427,6 +516,15 @@ class NodeAccessibilityAnalyzer(
         }
     }
 
+    /**
+     * Esegue controlli che coinvolgono più nodi: nomi duplicati, sovrapposizione touch e spaziatura.
+     *
+     * @param snapshots Lista completa degli snapshot della schermata.
+     * @param packageName Package dell'app in analisi.
+     * @param screenTitle Titolo descrittivo della schermata.
+     * @param violations Lista mutabile a cui appendere le violazioni rilevate.
+     * @param screenWidth Larghezza del viewport in pixel (per regole di esclusione overlap).
+     */
     private fun checkCrossNodeIssues(
         snapshots: List<NodeSnapshot>,
         packageName: String,
@@ -492,6 +590,14 @@ class NodeAccessibilityAnalyzer(
         }
     }
 
+    /**
+     * Segnala WebView di dimensioni significative senza figli accessibili esposti.
+     *
+     * @param snapshots Lista completa degli snapshot della schermata.
+     * @param packageName Package dell'app in analisi.
+     * @param screenTitle Titolo descrittivo della schermata.
+     * @param violations Lista mutabile a cui appendere le violazioni rilevate.
+     */
     private fun checkWebViews(snapshots: List<NodeSnapshot>, packageName: String, screenTitle: String, violations: MutableList<AccessibilityViolation>) {
         snapshots.filter { it.isWebView() && it.childCount == 0 && it.bounds.width() > 100 }.forEach { snap ->
             violations += v(ViolationType.WEBVIEW_BARRIER, snap, packageName, screenTitle,
@@ -499,6 +605,14 @@ class NodeAccessibilityAnalyzer(
         }
     }
 
+    /**
+     * Verifica che griglie/tabulari con almeno 6 celle espongano intestazioni di riga/colonna.
+     *
+     * @param snapshots Lista completa degli snapshot della schermata.
+     * @param packageName Package dell'app in analisi.
+     * @param screenTitle Titolo descrittivo della schermata.
+     * @param violations Lista mutabile a cui appendere le violazioni rilevate.
+     */
     private fun checkTables(snapshots: List<NodeSnapshot>, packageName: String, screenTitle: String, violations: MutableList<AccessibilityViolation>) {
         val gridItems = snapshots.filter { it.collectionRow >= 0 && it.collectionColumn >= 0 }
         if (gridItems.size < 6) return
@@ -518,6 +632,14 @@ class NodeAccessibilityAnalyzer(
         }
     }
 
+    /**
+     * Segnala [viewId] condivisi da più nodi quando non corrispondono a un template di lista legittimo.
+     *
+     * @param snapshots Lista completa degli snapshot della schermata.
+     * @param packageName Package dell'app in analisi.
+     * @param screenTitle Titolo descrittivo della schermata.
+     * @param violations Lista mutabile a cui appendere le violazioni rilevate.
+     */
     private fun checkDuplicateViewIds(snapshots: List<NodeSnapshot>, packageName: String, screenTitle: String, violations: MutableList<AccessibilityViolation>) {
         snapshots.mapNotNull { snap -> snap.viewId?.let { it to snap } }
             .groupBy({ it.first }, { it.second })
@@ -536,6 +658,16 @@ class NodeAccessibilityAnalyzer(
             }
     }
 
+    /**
+     * Determina se nodi con lo stesso [viewId] sono istanze legittime di un template di lista.
+     *
+     * Criteri: ID noto come template, stessa classe, dimensioni simili e posizioni verticali distinte.
+     *
+     * @param viewId Identificatore risorsa condiviso tra i nodi.
+     * @param nodes Nodi che condividono lo stesso [viewId].
+     * @param packageName Package dell'app in analisi.
+     * @return `true` se il pattern è coerente con item di lista riciclati, altrimenti `false`.
+     */
     private fun isListItemTemplate(viewId: String, nodes: List<NodeSnapshot>, packageName: String): Boolean {
         if (nodes.size < 2) return false
         if (PrecisionRules.isKnownListTemplateId(viewId, packageName)) return true
@@ -551,6 +683,14 @@ class NodeAccessibilityAnalyzer(
         return widthSimilar && distinctTops
     }
 
+    /**
+     * Segnala link con testo identico ma destinazioni o posizioni probabilmente diverse.
+     *
+     * @param snapshots Lista completa degli snapshot della schermata.
+     * @param packageName Package dell'app in analisi.
+     * @param screenTitle Titolo descrittivo della schermata.
+     * @param violations Lista mutabile a cui appendere le violazioni rilevate.
+     */
     private fun checkDuplicateLinks(snapshots: List<NodeSnapshot>, packageName: String, screenTitle: String, violations: MutableList<AccessibilityViolation>) {
         snapshots.filter { it.isLikelyLink() && it.hasAccessibleName() }
             .groupBy { it.accessibleName()!!.lowercase() }
@@ -566,6 +706,14 @@ class NodeAccessibilityAnalyzer(
             }
     }
 
+    /**
+     * Verifica che modali e dialog espongano un titolo accessibile.
+     *
+     * @param root Nodo radice dell'albero (usato per rilevare classi Dialog/BottomSheet).
+     * @param packageName Package dell'app in analisi.
+     * @param screenTitle Titolo corrente della schermata; generico o vuoto indica assenza di titolo.
+     * @param violations Lista mutabile a cui appendere le violazioni rilevate.
+     */
     private fun checkModalTitle(root: AccessibilityNodeInfo, packageName: String, screenTitle: String, violations: MutableList<AccessibilityViolation>) {
         val className = root.className?.toString().orEmpty()
         val isModal = listOf("Dialog", "BottomSheet", "Popup", "AlertDialog").any { className.contains(it, true) }
@@ -581,6 +729,14 @@ class NodeAccessibilityAnalyzer(
         }
     }
 
+    /**
+     * Verifica che liste/collection con molti figli espongano struttura (righe/colonne) via [AccessibilityNodeInfo.getCollectionInfo].
+     *
+     * @param root Nodo radice da cui avviare la visita breadth-first.
+     * @param packageName Package dell'app in analisi.
+     * @param screenTitle Titolo descrittivo della schermata.
+     * @param violations Lista mutabile a cui appendere le violazioni rilevate.
+     */
     private fun checkCollectionStructure(root: AccessibilityNodeInfo, packageName: String, screenTitle: String, violations: MutableList<AccessibilityViolation>) {
         val queue = ArrayDeque<AccessibilityNodeInfo>()
         queue.add(root)
@@ -605,14 +761,28 @@ class NodeAccessibilityAnalyzer(
         }
     }
 
+    /**
+     * Calcola l'area in pixel² di intersezione tra due rettangoli.
+     *
+     * @param a Primo rettangolo.
+     * @param b Secondo rettangolo.
+     * @return Area di overlap in pixel², oppure `0` se i rettangoli non si intersecano.
+     */
     private fun overlapArea(a: Rect, b: Rect): Int {
         val left = maxOf(a.left, b.left)
         val top = maxOf(a.top, b.top)
         val right = minOf(a.right, b.right)
-        val bottom = minOf(a.bottom, b.bottom)
+        val bottom = minOf(b.bottom, b.bottom)
         return if (left < right && top < bottom) (right - left) * (bottom - top) else 0
     }
 
+    /**
+     * Calcola la distanza minima tra i bordi di due rettangoli non sovrapposti.
+     *
+     * @param a Primo rettangolo.
+     * @param b Secondo rettangolo.
+     * @return Distanza in pixel tra i bordi più vicini (`0` se i rettangoli si toccano o si sovrappongono).
+     */
     private fun edgeDistance(a: Rect, b: Rect): Int {
         val dx = when {
             a.right < b.left -> b.left - a.right
@@ -627,11 +797,30 @@ class NodeAccessibilityAnalyzer(
         return maxOf(dx, dy)
     }
 
+    /**
+     * Verifica se il testo del link è generico e non descrittivo del destino.
+     *
+     * @param name Testo accessibile del link.
+     * @return `true` se corrisponde a un pattern noto non descrittivo (es. "clicca qui", "altro").
+     */
     private fun isNonDescriptiveLink(name: String): Boolean {
         val n = name.trim().lowercase()
         return NON_DESCRIPTIVE_LINKS.any { n == it || n.matches(Regex("^$it\\W*")) }
     }
 
+    /**
+     * Factory per costruire una [AccessibilityViolation] arricchita con metadati dallo snapshot.
+     *
+     * @param type Tipo di violazione WCAG rilevata.
+     * @param snap Snapshot del nodo coinvolto.
+     * @param pkg Package dell'app in analisi.
+     * @param screen Titolo descrittivo della schermata.
+     * @param details Messaggio descrittivo per l'utente o il report.
+     * @param confidence Livello di confidenza della rilevazione (0–1).
+     * @param measuredValue Valore misurato opzionale (es. rapporto di contrasto).
+     * @param requiredValue Valore richiesto opzionale (es. soglia WCAG).
+     * @return Istanza di [AccessibilityViolation] pronta per l'aggregazione nel report.
+     */
     private fun v(
         type: ViolationType,
         snap: NodeSnapshot,
@@ -658,6 +847,12 @@ class NodeAccessibilityAnalyzer(
         remediation = remediationFor(type),
     )
 
+    /**
+     * Restituisce un suggerimento di remediation testuale per il tipo di violazione indicato.
+     *
+     * @param type Tipo di violazione per cui generare il suggerimento.
+     * @return Stringa con indicazioni pratiche di correzione in italiano.
+     */
     private fun remediationFor(type: ViolationType): String = when (type) {
         ViolationType.LOW_COLOR_CONTRAST, ViolationType.LOW_NON_TEXT_CONTRAST ->
             "Aumenta il contrasto tra primo piano e sfondo (testo più scuro o sfondo più chiaro)."
@@ -672,8 +867,22 @@ class NodeAccessibilityAnalyzer(
         else -> "Correggi secondo ${type.wcagRef} e verifica con TalkBack."
     }
 
+    /**
+     * Calcola l'area in pixel² del rettangolo del nodo.
+     *
+     * @receiver Snapshot del nodo di cui calcolare l'area.
+     * @return Prodotto larghezza × altezza dei [NodeSnapshot.bounds].
+     */
     private fun NodeSnapshot.area() = bounds.width() * bounds.height()
 
+    /**
+     * Espande i bounds di un'etichetta micro per migliorare il campionamento del contrasto.
+     *
+     * Aggiunge un padding proporzionale alla densità (minimo 3 px) su tutti i lati.
+     *
+     * @param bounds Rettangolo originale dell'etichetta.
+     * @return Nuovo [Rect] con padding applicato.
+     */
     private fun expandBoundsForMicroLabel(bounds: Rect): Rect {
         val pad = (3 * density).toInt().coerceAtLeast(3)
         return Rect(
@@ -684,6 +893,14 @@ class NodeAccessibilityAnalyzer(
         )
     }
 
+    /**
+     * Stima l'area dello schermo quando lo screenshot non è disponibile.
+     *
+     * Usa l'estensione massima dei bounds tra tutti gli snapshot come proxy delle dimensioni.
+     *
+     * @param snapshots Lista completa degli snapshot della schermata.
+     * @return Area stimata in pixel², oppure `0` se la lista è vuota.
+     */
     private fun estimateScreenArea(snapshots: List<NodeSnapshot>): Int {
         if (snapshots.isEmpty()) return 0
         var maxRight = 0
@@ -695,6 +912,13 @@ class NodeAccessibilityAnalyzer(
         return maxRight * maxBottom
     }
 
+    /**
+     * Risultato aggregato dell'analisi di un albero di accessibilità.
+     *
+     * @property violations Elenco delle violazioni WCAG rilevate sulla schermata.
+     * @property screenReaderFindings Output del simulatore TalkBack (ordine di focus, annunci).
+     * @property checkSummaries Riepiloghi per area di controllo con conteggi pass/fail.
+     */
     data class AnalysisResult(
         val violations: List<AccessibilityViolation>,
         val screenReaderFindings: List<ScreenReaderFinding>,
@@ -702,12 +926,21 @@ class NodeAccessibilityAnalyzer(
     )
 
     companion object {
+        /** Testi di link generici (IT/EN) considerati non descrittivi del destino. */
         private val NON_DESCRIPTIVE_LINKS = setOf(
             "click here", "tap here", "here", "more", "read more", "learn more", "details", "link",
             "continue", "go", "ok", "submit", "clicca qui", "qui", "altro", "leggi", "leggi tutto",
             "scopri", "continua", "dettagli", "vai", "info", "apri", "tap",
         )
 
+        /**
+         * Crea un [NodeAccessibilityAnalyzer] con soglie pixel derivate dalla densità del display.
+         *
+         * @param density Densità del display (`DisplayMetrics.density`).
+         * @param dynamicContentSilent Se true, abilita il controllo su contenuti dinamici non annunciati.
+         * @param scanScope Ambito di scansione che limita le aree di controllo attive.
+         * @return Istanza configurata con soglie 48 dp touch, 8 dp spacing, 12/16 sp testo.
+         */
         fun create(
             density: Float,
             dynamicContentSilent: Boolean = false,

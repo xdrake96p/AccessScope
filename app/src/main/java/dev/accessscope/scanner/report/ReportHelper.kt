@@ -1,3 +1,9 @@
+/**
+ * Utilità per l'aggregazione e la presentazione dei dati di accessibilità.
+ *
+ * Fornisce filtri per confidenza, calcolo del punteggio, raggruppamento per schermata
+ * e sezione, e formattazione delle righe per report UI e PDF.
+ */
 package dev.accessscope.scanner.report
 
 import dev.accessscope.scanner.data.AccessibilityViolation
@@ -9,16 +15,30 @@ import dev.accessscope.scanner.data.ViolationSeverity
 import dev.accessscope.scanner.data.ViolationType
 import kotlin.math.roundToInt
 
+/**
+ * Chiave di raggruppamento per violazioni e risultati TalkBack in report e PDF.
+ *
+ * @property screenTitle Titolo della schermata (es. "Home", "Impostazioni").
+ * @property sectionTitle Titolo della sottosezione all'interno della schermata;
+ *                        coincide con [screenTitle] se non esiste una sottosezione distinta.
+ */
 data class ReportSectionGroup(
     val screenTitle: String,
     val sectionTitle: String,
 ) {
+    /** `true` se [sectionTitle] rappresenta una sottosezione diversa da [screenTitle]. */
     val hasSubsection: Boolean get() = sectionTitle != screenTitle
 }
 
+/**
+ * Helper con funzioni pure per filtrare, aggregare e formattare i risultati
+ * di una sessione di scansione AccessScope.
+ */
 object ReportHelper {
+    /** Soglia minima di confidenza predefinita per includere una violazione nel report. */
     const val MIN_CONFIDENCE = 0.65f
 
+    /** Ordine di visualizzazione delle severità, dalla più grave alla più lieve. */
     val SEVERITY_ORDER = listOf(
         ViolationSeverity.CRITICAL,
         ViolationSeverity.SERIOUS,
@@ -26,6 +46,15 @@ object ReportHelper {
         ViolationSeverity.MINOR,
     )
 
+    /**
+     * Restituisce la soglia di confidenza minima per un dato tipo di violazione.
+     *
+     * Alcuni tipi (contrasto, gerarchia titoli, ecc.) richiedono confidenza più alta
+     * per ridurre i falsi positivi.
+     *
+     * @param type Tipo di violazione da valutare.
+     * @return Valore di confidenza compreso tra 0 e 1 oltre il quale la violazione è inclusa.
+     */
     fun confidenceThreshold(type: ViolationType): Float = when (type) {
         ViolationType.LOW_COLOR_CONTRAST,
         ViolationType.LOW_NON_TEXT_CONTRAST,
@@ -40,9 +69,24 @@ object ReportHelper {
         else -> MIN_CONFIDENCE
     }
 
+    /**
+     * Filtra le violazioni la cui confidenza supera la soglia specifica per il tipo.
+     *
+     * @param violations Elenco completo delle violazioni rilevate in sessione.
+     * @return Sottoinsieme di violazioni con confidenza sufficiente per il report.
+     */
     fun filterViolations(violations: List<AccessibilityViolation>): List<AccessibilityViolation> =
         violations.filter { it.confidence >= confidenceThreshold(it.type) }
 
+    /**
+     * Calcola un punteggio di accessibilità stimato (0–100) in base a violazioni e schermate.
+     *
+     * Il calcolo applica pesi per severità e normalizza sul numero di schermate uniche analizzate.
+     *
+     * @param violations Elenco delle violazioni da considerare (verranno filtrate per confidenza).
+     * @param screens Numero di schermate uniche visitate durante la scansione.
+     * @return Punteggio intero tra 0 (critico) e 100 (ottimo).
+     */
     fun computeScore(violations: List<AccessibilityViolation>, screens: Int): Int {
         if (screens == 0) return 100
         val filtered = filterViolations(violations)
@@ -50,12 +94,25 @@ object ReportHelper {
         return (100 - weighted / screens * 6).roundToInt().coerceIn(0, 100)
     }
 
-    /** @deprecated use computeScore(violations, screens) */
+    /**
+     * Calcola un punteggio semplificato in base al conteggio grezzo dei problemi.
+     *
+     * @param issues Numero totale di problemi rilevati.
+     * @param screens Numero di schermate uniche analizzate.
+     * @return Punteggio intero tra 0 e 100.
+     * @deprecated Usare [computeScore] con l'elenco delle violazioni per un calcolo ponderato per severità.
+     */
     fun computeScore(issues: Int, screens: Int): Int {
         if (screens == 0) return 100
         return (100 - issues.toFloat() / screens * 8).roundToInt().coerceIn(0, 100)
     }
 
+    /**
+     * Peso numerico associato a una severità per il calcolo del punteggio.
+     *
+     * @param severity Livello di gravità della violazione.
+     * @return Peso decimale usato nella somma ponderata.
+     */
     private fun severityWeight(severity: ViolationSeverity): Double = when (severity) {
         ViolationSeverity.CRITICAL -> 4.0
         ViolationSeverity.SERIOUS -> 2.0
@@ -63,6 +120,12 @@ object ReportHelper {
         ViolationSeverity.MINOR -> 0.5
     }
 
+    /**
+     * Restituisce l'etichetta testuale italiana corrispondente a un punteggio.
+     *
+     * @param score Punteggio calcolato tra 0 e 100.
+     * @return Etichetta qualitativa ("Ottimo", "Buono", "Da migliorare", "Critico").
+     */
     fun scoreLabel(score: Int): String = when {
         score >= 85 -> "Ottimo"
         score >= 70 -> "Buono"
@@ -70,18 +133,36 @@ object ReportHelper {
         else -> "Critico"
     }
 
+    /**
+     * Estrae la chiave di sezione da una violazione di accessibilità.
+     *
+     * @param violation Violazione da cui derivare schermata e sottosezione.
+     * @return [ReportSectionGroup] con titolo schermata e sezione report.
+     */
     fun sectionKey(violation: AccessibilityViolation): ReportSectionGroup =
         ReportSectionGroup(
             screenTitle = violation.screenTitle,
             sectionTitle = violation.reportSection,
         )
 
+    /**
+     * Estrae la chiave di sezione da un risultato della simulazione TalkBack.
+     *
+     * @param finding Risultato screen reader da raggruppare.
+     * @return [ReportSectionGroup] con titolo schermata e sezione report.
+     */
     fun sectionKey(finding: ScreenReaderFinding): ReportSectionGroup =
         ReportSectionGroup(
             screenTitle = finding.screenTitle,
             sectionTitle = finding.reportSection,
         )
 
+    /**
+     * Ordina le violazioni per severità (dalla più grave) e poi per nome del tipo.
+     *
+     * @param violations Elenco di violazioni da ordinare.
+     * @return Nuova lista ordinata secondo [SEVERITY_ORDER].
+     */
     fun sortBySeverity(violations: List<AccessibilityViolation>): List<AccessibilityViolation> =
         violations.sortedWith(
             compareBy(
@@ -90,6 +171,12 @@ object ReportHelper {
             ),
         )
 
+    /**
+     * Raggruppa le violazioni per schermata e sottosezione, ordinate per severità.
+     *
+     * @param violations Elenco completo delle violazioni della sessione.
+     * @return Coppie (chiave sezione, violazioni ordinate) ordinate per schermata e sezione.
+     */
     fun groupViolationsBySection(
         violations: List<AccessibilityViolation>,
     ): List<Pair<ReportSectionGroup, List<AccessibilityViolation>>> =
@@ -99,11 +186,23 @@ object ReportHelper {
             .sortedWith(compareBy({ it.first.screenTitle }, { it.first.sectionTitle }))
             .map { (key, items) -> key to sortBySeverity(items) }
 
+    /**
+     * Raggruppa i risultati TalkBack per schermata e sottosezione.
+     *
+     * @param findings Elenco dei risultati della simulazione screen reader.
+     * @return Mappa da chiave sezione a elenco di [ScreenReaderFinding].
+     */
     fun groupTalkBackBySection(
         findings: List<ScreenReaderFinding>,
     ): Map<ReportSectionGroup, List<ScreenReaderFinding>> =
         findings.groupBy(::sectionKey)
 
+    /**
+     * Restituisce l'emoji associata a un livello di severità per la UI e il PDF.
+     *
+     * @param severity Livello di gravità.
+     * @return Emoji Unicode (🔴, 🟠, 🟡, ⚪).
+     */
     fun severityEmoji(severity: ViolationSeverity): String = when (severity) {
         ViolationSeverity.CRITICAL -> "🔴"
         ViolationSeverity.SERIOUS -> "🟠"
@@ -111,6 +210,12 @@ object ReportHelper {
         ViolationSeverity.MINOR -> "⚪"
     }
 
+    /**
+     * Restituisce il titolo di gruppo in italiano per un livello di severità.
+     *
+     * @param severity Livello di gravità.
+     * @return Etichetta plurale ("Critiche", "Gravi", "Medie", "Lievi").
+     */
     fun severityGroupTitle(severity: ViolationSeverity): String = when (severity) {
         ViolationSeverity.CRITICAL -> "Critiche"
         ViolationSeverity.SERIOUS -> "Gravi"
@@ -118,15 +223,35 @@ object ReportHelper {
         ViolationSeverity.MINOR -> "Lievi"
     }
 
+    /**
+     * Conta le violazioni per titolo di schermata.
+     *
+     * @param violations Elenco delle violazioni da aggregare.
+     * @return Mappa schermata → numero di problemi.
+     */
     fun screenTotals(violations: List<AccessibilityViolation>): Map<String, Int> =
         violations.groupingBy { it.screenTitle }.eachCount()
 
+    /**
+     * Voce di riepilogo per una singola schermata nel report.
+     *
+     * @property screenTitle Titolo della schermata.
+     * @property violationCount Numero di violazioni rilevate sulla schermata.
+     * @property passedCount Numero totale di controlli superati sulla schermata.
+     */
     data class ScreenOverviewEntry(
         val screenTitle: String,
         val violationCount: Int,
         val passedCount: Int,
     )
 
+    /**
+     * Costruisce un riepilogo per schermata con conteggi di problemi e controlli superati.
+     *
+     * @param violations Violazioni della sessione.
+     * @param summaries Riepiloghi dei controlli superati per area.
+     * @return Elenco ordinato alfabeticamente per titolo schermata.
+     */
     fun screenOverview(
         violations: List<AccessibilityViolation>,
         summaries: List<CheckAreaSummary>,
@@ -145,6 +270,13 @@ object ReportHelper {
             }
     }
 
+    /**
+     * Conta problemi e note TalkBack per ambito di violazione ([ViolationArea]).
+     *
+     * @param violations Violazioni da aggregare per area.
+     * @param screenReaderFindings Risultati TalkBack; conteggiati solo nell'area SCREEN_READER.
+     * @return Mappa area → conteggio totale (solo aree con almeno un elemento).
+     */
     fun areaTotals(
         violations: List<AccessibilityViolation>,
         screenReaderFindings: List<ScreenReaderFinding>,
@@ -154,26 +286,66 @@ object ReportHelper {
         count + talkBack
     }.filterValues { it > 0 }
 
+    /**
+     * Conta quanti ambiti di analisi presentano almeno un problema o nota TalkBack.
+     *
+     * @param violations Violazioni della sessione.
+     * @param talkBackCount Numero di risultati della simulazione TalkBack.
+     * @return Numero di [ViolationArea] con almeno un'anomalia.
+     */
     fun areasWithIssues(violations: List<AccessibilityViolation>, talkBackCount: Int): Int {
         val areas = violations.map { it.area }.toMutableSet()
         if (talkBackCount > 0) areas.add(ViolationArea.SCREEN_READER)
         return areas.size
     }
 
+    /**
+     * Conta gli ambiti di analisi senza problemi rilevati.
+     *
+     * @param violations Violazioni della sessione.
+     * @param talkBackCount Numero di risultati TalkBack.
+     * @return Numero di ambiti "puliti" rispetto al totale definito in [ViolationArea].
+     */
     fun cleanAreaCount(violations: List<AccessibilityViolation>, talkBackCount: Int): Int =
         ViolationArea.entries.size - areasWithIssues(violations, talkBackCount)
 
+    /**
+     * Somma il numero totale di controlli superati in tutte le aree e schermate.
+     *
+     * @param summaries Riepiloghi dei controlli superati.
+     * @return Conteggio aggregato di tutti i `passedCount`.
+     */
     fun totalPassedChecks(summaries: List<CheckAreaSummary>): Int =
         summaries.sumOf { it.passedCount }
 
+    /**
+     * Raggruppa i riepiloghi controlli per titolo di schermata.
+     *
+     * @param summaries Elenco dei riepiloghi per area e schermata.
+     * @return Mappa schermata → riepiloghi ordinati per ordinal dell'area.
+     */
     fun groupChecksByScreen(summaries: List<CheckAreaSummary>): Map<String, List<CheckAreaSummary>> =
         summaries.groupBy { it.screenTitle }.mapValues { (_, items) ->
             items.sortedBy { it.area.ordinal }
         }
 
+    /**
+     * Filtra i riepiloghi controlli per una schermata specifica.
+     *
+     * @param summaries Elenco completo dei riepiloghi.
+     * @param screenTitle Titolo della schermata da filtrare.
+     * @return Riepiloghi relativi alla schermata indicata.
+     */
     fun checksForScreen(summaries: List<CheckAreaSummary>, screenTitle: String): List<CheckAreaSummary> =
         summaries.filter { it.screenTitle == screenTitle }
 
+    /**
+     * Calcola la copertura globale dei controlli per ambito (superati vs problemi).
+     *
+     * @param summaries Riepiloghi dei controlli superati per area.
+     * @param violations Violazioni rilevate, usate per il conteggio dei fallimenti per area.
+     * @return Elenco di coppie (area, passed to failed) per le aree con almeno un dato.
+     */
     fun globalCheckCoverage(
         summaries: List<CheckAreaSummary>,
         violations: List<AccessibilityViolation>,
@@ -187,6 +359,15 @@ object ReportHelper {
         }
     }
 
+    /**
+     * Formatta le righe di dettaglio di una violazione per la visualizzazione in report/PDF.
+     *
+     * Include dettaglio tecnico, etichetta elemento, misure, riferimento WCAG,
+     * suggerimento di correzione e metadati di posizione.
+     *
+     * @param v Violazione da descrivere.
+     * @return Elenco di righe testuali pronte per la stampa o la UI.
+     */
     fun violationDetailLines(v: AccessibilityViolation): List<String> = buildList {
         add("Dettaglio: ${v.details}")
         v.elementLabel?.takeIf { it.isNotBlank() }?.let { add("Elemento: \"$it\"") }
@@ -203,6 +384,12 @@ object ReportHelper {
         if (meta.isNotBlank()) add("Posizione: $meta")
     }
 
+    /**
+     * Formatta una riga descrittiva per un controllo superato.
+     *
+     * @param check Controllo superato con etichetta e riepilogo elemento.
+     * @return Stringa con checkmark, etichetta e opzionalmente view id.
+     */
     fun passedCheckLine(check: PassedCheck): String = buildString {
         append("✓ ${check.checkLabel}")
         if (check.elementSummary.isNotBlank()) append(": ${check.elementSummary}")

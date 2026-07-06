@@ -1,32 +1,76 @@
+/**
+ * Profili opzionali di precisione specifici per applicazione.
+ *
+ * Le euristiche generiche in [PrecisionRules] valgono per tutte le app; questo modulo
+ * aggiunge marker, ID e pattern noti quando il codice sorgente è disponibile
+ * (es. app Nexi in benchmark), riducendo i falsi positivi senza alterare la logica generale.
+ */
 package dev.accessscope.scanner.analyzer
 
 /**
- * Profili opzionali per regole di precisione specifiche per app.
- * Le euristiche in [PrecisionRules] restano generiche e valgono per tutte le app;
- * qui si aggiungono solo marker noti quando il codice sorgente è disponibile (es. Nexi in benchmark).
+ * Fornisce set di identificatori e prefissi noti per app specifiche, usati da [PrecisionRules]
+ * per filtrare rumore e migliorare il recall su pattern ricorrenti.
  */
 object AppPrecisionProfiles {
 
+    /** Package noti dell'app Nexi BFF e varianti. */
     private val NEXI_PACKAGES = setOf("it.nexi.bff", "it.nexi")
 
+    /**
+     * Verifica se il package appartiene all'ecosistema Nexi.
+     *
+     * @param packageName Nome completo del package Android.
+     * @return `true` se il package corrisponde o contiene "nexi".
+     */
     fun isNexi(packageName: String): Boolean =
         NEXI_PACKAGES.any { packageName.startsWith(it) } || packageName.contains("nexi")
 
+    /**
+     * Restituisce gli ID view che identificano la schermata Home per l'app data.
+     *
+     * @param packageName Package dell'applicazione.
+     * @return Set di view ID corti usati come marker della home; vuoto per app generiche.
+     */
     fun homeScreenMarkers(packageName: String): Set<String> =
         if (isNexi(packageName)) NEXI_HOME_MARKERS else emptySet()
 
+    /**
+     * Restituisce gli ID view considerati template di item di lista ricorrenti.
+     *
+     * @param packageName Package dell'applicazione.
+     * @return Unione di ID generici e specifici Nexi, se applicabile.
+     */
     fun listTemplateIds(packageName: String): Set<String> =
         GENERIC_LIST_TEMPLATE_IDS + if (isNexi(packageName)) NEXI_LIST_TEMPLATE_IDS else emptySet()
 
+    /**
+     * Restituisce gli ID view riconosciuti come etichette di campo in card o liste.
+     *
+     * @param packageName Package dell'applicazione.
+     * @return Set di ID etichetta campo, inclusi quelli Nexi se rilevante.
+     */
     fun fieldLabelIds(packageName: String): Set<String> =
         GENERIC_FIELD_LABEL_IDS + if (isNexi(packageName)) NEXI_FIELD_LABEL_IDS else emptySet()
 
+    /**
+     * Restituisce gli ID dei container CTA (call-to-action) noti.
+     *
+     * @param packageName Package dell'applicazione.
+     * @return Set di ID container pulsante/CTA.
+     */
     fun ctaContainerIds(packageName: String): Set<String> =
         GENERIC_CTA_IDS + if (isNexi(packageName)) NEXI_CTA_IDS else emptySet()
 
+    /**
+     * Restituisce gli ID dei tasti del pad numerico PIN.
+     *
+     * @param packageName Package dell'applicazione.
+     * @return Set di ID tasti PIN specifici Nexi o generici.
+     */
     fun pinPadKeyIds(packageName: String): Set<String> =
         if (isNexi(packageName)) NEXI_PIN_KEYS else GENERIC_PIN_KEYS
 
+    /** Prefissi comuni per voci di navigazione nel drawer laterale. */
     val drawerNavPrefixes: List<String> = listOf("nav_", "menu_", "drawer_")
 
     private val GENERIC_LIST_TEMPLATE_IDS = setOf("content", "item", "row", "cell")
@@ -82,16 +126,41 @@ object AppPrecisionProfiles {
         "delete", "backspace", "key", "digit",
     )
 
+    /**
+     * Restituisce gli ID del testo decorativo nei grafici della home.
+     *
+     * @param packageName Package dell'applicazione.
+     * @return Set di ID testo grafico home Nexi, o vuoto per altre app.
+     */
     fun homeChartTextIds(packageName: String): Set<String> =
         if (isNexi(packageName)) NEXI_HOME_CHART_TEXT else emptySet()
 
+    /**
+     * Restituisce gli ID dei container dei grafici in home.
+     *
+     * @param packageName Package dell'applicazione.
+     * @return Set di ID container grafico home Nexi, o vuoto per altre app.
+     */
     fun homeChartContainerIds(packageName: String): Set<String> =
         if (isNexi(packageName)) NEXI_HOME_CHART_CONTAINERS else emptySet()
 
-    /** Nodi carousel effetti / tab in home — contrasto decorativo o tab styling. */
+    /**
+     * Restituisce gli ID dei widget carousel/tab effetti in home.
+     *
+     * Nodi con contrasto decorativo o styling tab che non richiedono analisi standard.
+     *
+     * @param packageName Package dell'applicazione.
+     * @return Set di ID widget carousel home Nexi, o vuoto per altre app.
+     */
     fun homeCarouselWidgetIds(packageName: String): Set<String> =
         if (isNexi(packageName)) NEXI_HOME_CAROUSEL_WIDGET_IDS else emptySet()
 
+    /**
+     * Restituisce gli ID degli scroll container del contenuto principale.
+     *
+     * @param packageName Package dell'applicazione.
+     * @return Set di ID scroll principale; include "content" solo per app non Nexi.
+     */
     fun mainContentScrollIds(packageName: String): Set<String> =
         setOf("scrollview_port", "scroll", "card_home") + if (isNexi(packageName)) emptySet() else setOf("content")
 }

@@ -1,3 +1,10 @@
+/**
+ * Servizio di accessibilità di AccessScope.
+ *
+ * Ascolta gli eventi di sistema dalle app target, analizza l'albero dei nodi UI
+ * e registra violazioni di accessibilità, controlli superati e risultati TalkBack
+ * nel [dev.accessscope.scanner.data.ScanSessionRepository].
+ */
 package dev.accessscope.scanner.service
 
 import android.accessibilityservice.AccessibilityService
@@ -15,6 +22,8 @@ import dev.accessscope.scanner.analyzer.DynamicContentTracker
 import dev.accessscope.scanner.analyzer.ScreenTitleResolver
 import dev.accessscope.scanner.analyzer.NodeAccessibilityAnalyzer
 import dev.accessscope.scanner.analyzer.ScreenFingerprint
+import dev.accessscope.scanner.data.LiveDebugFinding
+import dev.accessscope.scanner.data.LiveScanSnapshot
 import dev.accessscope.scanner.data.ViolationArea
 import dev.accessscope.scanner.data.ScanSessionRepository
 import dev.accessscope.scanner.util.DebugTrace
@@ -22,6 +31,13 @@ import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
 
+/**
+ * [AccessibilityService] che esegue l'analisi automatica delle schermate
+ * delle app selezionate durante una sessione di scansione attiva.
+ *
+ * Gestisce debounce degli eventi, acquisizione screenshot per i controlli sul colore
+ * e deduplicazione delle schermate tramite fingerprint.
+ */
 class AccessScopeAccessibilityService : AccessibilityService() {
 
     init {
@@ -44,12 +60,26 @@ class AccessScopeAccessibilityService : AccessibilityService() {
     private val windowStateDebounceMs = 300L
     private val seenFingerprintsThisSession = mutableSetOf<String>()
 
+    /**
+     * Azzera lo stato del tracker di contenuto dinamico e la cache dei titoli schermata.
+     *
+     * Invocato all'avvio di una nuova sessione di scansione per evitare contaminazione
+     * dai dati della sessione precedente.
+     */
     fun resetDynamicTracking() {
         dynamicTracker.reset()
         seenFingerprintsThisSession.clear()
         ScreenTitleResolver.clearTitleCache()
     }
 
+    /**
+     * Gestisce gli eventi di accessibilità provenienti dal sistema.
+     *
+     * Filtra gli eventi per pacchetto target e stato di scansione, poi delega
+     * l'analisi a [scheduleScan] per cambi di finestra e contenuto.
+     *
+     * @param event Evento di accessibilità ricevuto; ignorato se `null`.
+     */
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
         if (event == null) return
 
@@ -85,6 +115,15 @@ class AccessScopeAccessibilityService : AccessibilityService() {
         }
     }
 
+    /**
+     * Pianifica l'analisi di una finestra con debounce temporale.
+     *
+     * Esegue l'analisi su un thread dedicato, acquisendo eventualmente uno screenshot
+     * se l'ambito di scansione include i controlli sul colore (API 30+).
+     *
+     * @param packageName Pacchetto dell'app target da analizzare.
+     * @param event Evento di accessibilità che ha scatenato la scansione.
+     */
     private fun scheduleScan(packageName: String, event: AccessibilityEvent) {
         val windowKey = "${packageName}_${event.windowId}_${event.className}"
         val now = System.currentTimeMillis()
@@ -143,7 +182,17 @@ class AccessScopeAccessibilityService : AccessibilityService() {
         }
     }
 
-    /** Raccoglie tutte le finestre target; preferisce overlay PIN/modal. */
+    /**
+     * Raccoglie le radici [AccessibilityNodeInfo] da analizzare per il pacchetto target.
+     *
+     * Itera sulle finestre di sistema (escludendo overlay di accessibilità), con fallback
+     * su `event.source` e `rootInActiveWindow`. Le radici vengono filtrate e prioritarizzate
+     * tramite [selectRootsToScan] e [prioritizeRoots].
+     *
+     * @param targetPackage Pacchetto dell'app di cui ottenere le radici.
+     * @param event Evento di accessibilità associato alla richiesta di scansione.
+     * @return Lista di radici clonate da analizzare; il chiamante deve chiamare [AccessibilityNodeInfo.recycle].
+     */
     private fun obtainRootsForScan(
         targetPackage: String,
         event: AccessibilityEvent,
@@ -182,7 +231,14 @@ class AccessScopeAccessibilityService : AccessibilityService() {
         return prioritizeRoots(selectRootsToScan(roots))
     }
 
-    /** Esclude drawer e, se possibile, analizza una sola finestra contenuto per evento. */
+    /**
+     * Seleziona le radici rilevanti per l'analisi, escludendo drawer e riducendo duplicati.
+     *
+     * Preferisce schermate PIN, dialog/modal e la finestra con punteggio di contenuto più alto.
+     *
+     * @param roots Elenco candidato di radici ottenute da [obtainRootsForScan].
+     * @return Sottoinsieme filtrato di radici da analizzare (tipicamente una sola).
+     */
     private fun selectRootsToScan(roots: List<AccessibilityNodeInfo>): List<AccessibilityNodeInfo> {
         val withoutDrawer = roots.filter { !ScreenTitleResolver.isDrawerOnlyRoot(it) }
         val candidates = if (withoutDrawer.isNotEmpty()) withoutDrawer else roots
@@ -201,6 +257,14 @@ class AccessScopeAccessibilityService : AccessibilityService() {
         return listOf(primary)
     }
 
+    /**
+     * Calcola un punteggio euristico per identificare la radice con il contenuto principale.
+     *
+     * Premia view con `scrollview_port` e `card_home`, penalizza elementi di navigazione (`nav_`).
+     *
+     * @param root Radice candidata da valutare.
+     * @return Punteggio numerico; valori più alti indicano contenuto principale.
+     */
     private fun contentRootScore(root: AccessibilityNodeInfo): Int {
         val ids = ScreenTitleResolver.rootViewIds(root)
         var score = root.childCount
@@ -210,6 +274,12 @@ class AccessScopeAccessibilityService : AccessibilityService() {
         return score
     }
 
+    /**
+     * Riordina le radici mettendo in testa PIN e modal rispetto al contenuto ordinario.
+     *
+     * @param roots Elenco di radici da prioritarizzare.
+     * @return Stesso elenco o riordinato con PIN/modal in prima posizione.
+     */
     private fun prioritizeRoots(roots: List<AccessibilityNodeInfo>): List<AccessibilityNodeInfo> {
         if (roots.size <= 1) return roots
 
@@ -232,6 +302,14 @@ class AccessScopeAccessibilityService : AccessibilityService() {
         return roots
     }
 
+    /**
+     * Acquisisce uno screenshot del display predefinito tramite API di accessibilità (API 30+).
+     *
+     * Evita acquisizioni concorrenti tramite flag atomico; in caso di errore o API non
+     * supportata invoca il callback con `null`.
+     *
+     * @param onResult Callback invocato sul thread principale con il bitmap o `null`.
+     */
     private fun captureScreenshot(onResult: (Bitmap?) -> Unit) {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
             onResult(null)
@@ -258,6 +336,13 @@ class AccessScopeAccessibilityService : AccessibilityService() {
         )
     }
 
+    /**
+     * Converte un [HardwareBuffer] dello screenshot in [Bitmap] modificabile in memoria.
+     *
+     * @receiver Buffer hardware restituito dall'API di screenshot.
+     * @param colorSpace Spazio colore associato al buffer.
+     * @return Bitmap in formato ARGB_8888, pronto per l'analisi del contrasto.
+     */
     @RequiresApi(Build.VERSION_CODES.R)
     private fun HardwareBuffer.toBitmap(colorSpace: ColorSpace): Bitmap {
         val bitmap = Bitmap.wrapHardwareBuffer(this, colorSpace)
@@ -269,6 +354,18 @@ class AccessScopeAccessibilityService : AccessibilityService() {
         }
     }
 
+    /**
+     * Analizza una singola radice dell'albero UI e aggiorna il repository con i risultati.
+     *
+     * Ignora overlay transitori e drawer; registra violazioni, controlli superati,
+     * risultati TalkBack e schermate uniche tramite fingerprint.
+     *
+     * @param root Radice dell'albero da analizzare.
+     * @param packageName Pacchetto dell'app target.
+     * @param event Evento di accessibilità che ha scatenato la scansione.
+     * @param screenshot Bitmap opzionale per controlli sul colore; `null` se non disponibile.
+     * @param analyzer Analizzatore configurato per l'ambito e la densità correnti.
+     */
     private fun scanRoot(
         root: AccessibilityNodeInfo,
         packageName: String,
@@ -297,6 +394,23 @@ class AccessScopeAccessibilityService : AccessibilityService() {
             seenFingerprintsThisSession.add(fingerprint)
             repository.registerUniqueScreen(fingerprint, screenTitle)
         }
+        val recentFindings = result.violations.takeLast(6).map { v ->
+            LiveDebugFinding(
+                title = v.type.displayName,
+                detail = v.elementLabel ?: v.viewId ?: v.simpleExplanation,
+                severity = v.type.severity,
+                screenTitle = v.screenTitle,
+            )
+        }
+        repository.updateLiveSnapshot(
+            LiveScanSnapshot(
+                packageName = packageName,
+                screenTitle = screenTitle,
+                analyzedAtMs = System.currentTimeMillis(),
+                newViolationsInPass = result.violations.size,
+                recentFindings = recentFindings,
+            ),
+        )
         // #region agent log
         DebugTrace.log("H5", "scanRoot", "analyzed", mapOf(
             "pkg" to packageName,
@@ -308,8 +422,14 @@ class AccessScopeAccessibilityService : AccessibilityService() {
         // #endregion
     }
 
+    /**
+     * Callback di interruzione del servizio di accessibilità; non richiede azioni specifiche.
+     */
     override fun onInterrupt() = Unit
 
+    /**
+     * Pulisce risorse e riferimenti statici alla distruzione del servizio.
+     */
     override fun onDestroy() {
         dynamicTracker.reset()
         lastScanByWindow.clear()
@@ -317,12 +437,24 @@ class AccessScopeAccessibilityService : AccessibilityService() {
         super.onDestroy()
     }
 
+    /**
+     * Riferimenti statici e utilità per l'avvio/arresto del servizio.
+     */
     companion object {
+        /**
+         * Istanza attiva del servizio, se connessa al sistema.
+         * Usata per reset e diagnostica da altri componenti.
+         */
         @Volatile
         var instance: AccessScopeAccessibilityService? = null
             private set
     }
 
+    /**
+     * Invocato quando il servizio viene collegato al framework di accessibilità.
+     *
+     * Registra l'istanza globale e ricrea l'executor se era stato chiuso.
+     */
     override fun onServiceConnected() {
         super.onServiceConnected()
         instance = this
@@ -335,6 +467,12 @@ class AccessScopeAccessibilityService : AccessibilityService() {
         lastScanByWindow.clear()
     }
 
+    /**
+     * Invocato quando il servizio viene scollegato dal sistema.
+     *
+     * @param intent Intent con cui il servizio era stato avviato, se presente.
+     * @return Valore restituito alla superclasse per consentire il rebind automatico.
+     */
     override fun onUnbind(intent: android.content.Intent?): Boolean {
         instance = null
         // #region agent log

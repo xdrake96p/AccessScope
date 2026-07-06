@@ -1,3 +1,10 @@
+/**
+ * Simulazione del percorso di navigazione TalkBack e degli annunci screen reader.
+ *
+ * Android non consente alle app terze di attivare TalkBack programmaticamente per motivi
+ * di sicurezza; questo modulo attraversa i nodi focalizzabili e ricostruisce il testo
+ * che verrebbe annunciato, segnalando elementi silenziosi o poco descrittivi.
+ */
 package dev.accessscope.scanner.analyzer
 
 import android.view.accessibility.AccessibilityNodeInfo
@@ -6,12 +13,19 @@ import dev.accessscope.scanner.data.ViolationType
 import dev.accessscope.scanner.data.AccessibilityViolation
 
 /**
- * Simula il percorso di navigazione di TalkBack attraversando i nodi focalizzabili
- * e verificando cosa verrebbe annunciato. Android non consente alle app terze di
- * attivare TalkBack programmaticamente per motivi di sicurezza.
+ * Simula la navigazione TalkBack su un albero di accessibilità e produce finding
+ * descrittivi per il report screen reader.
  */
 class TalkBackSimulator {
 
+    /**
+     * Attraversa i nodi focalizzabili e valuta la qualità degli annunci simulati.
+     *
+     * @param root Nodo radice dell'albero di accessibilità.
+     * @param packageName Package dell'applicazione analizzata.
+     * @param screenTitle Titolo umano della schermata corrente.
+     * @return Lista di [ScreenReaderFinding] per elementi silenziosi, troppo brevi o schermata innavigabile.
+     */
     fun simulate(
         root: AccessibilityNodeInfo,
         packageName: String,
@@ -71,6 +85,12 @@ class TalkBackSimulator {
         return findings
     }
 
+    /**
+     * Raccoglie ricorsivamente i nodi candidati al focus TalkBack.
+     *
+     * @param node Nodo corrente in visita depth-first.
+     * @param output Lista mutabile in cui aggiungere copie dei nodi focalizzabili.
+     */
     private fun collectFocusableNodes(
         node: AccessibilityNodeInfo,
         output: MutableList<AccessibilityNodeInfo>,
@@ -98,12 +118,26 @@ class TalkBackSimulator {
         }
     }
 
+    /**
+     * Ricicla tutti i figli di un nodo non visibile per evitare perdite di riferimento.
+     *
+     * @param node Nodo padre i cui figli devono essere riciclati.
+     */
     private fun recycleChildren(node: AccessibilityNodeInfo) {
         for (i in 0 until node.childCount) {
             node.getChild(i)?.recycle()
         }
     }
 
+    /**
+     * Ricostruisce il testo che TalkBack annuncerebbe per un nodo.
+     *
+     * Combina contentDescription, text, hint e stato (es. selezionato/non selezionato),
+     * con fallback sul ruolo semantico della classe.
+     *
+     * @param node Nodo di cui simulare l'annuncio.
+     * @return Testo annunciato simulato, oppure `null` se nessun contenuto utile.
+     */
     private fun buildAnnouncement(node: AccessibilityNodeInfo): String? {
         val parts = mutableListOf<String>()
 
@@ -130,6 +164,12 @@ class TalkBackSimulator {
     }
 }
 
+/**
+ * Converte i finding del simulatore TalkBack in violazioni formali del report.
+ *
+ * @param findings Lista di [ScreenReaderFinding] prodotti da [TalkBackSimulator.simulate].
+ * @return Lista di [AccessibilityViolation] di tipo [ViolationType.SCREEN_READER_ANNOUNCEMENT].
+ */
 fun TalkBackSimulator.toViolations(
     findings: List<ScreenReaderFinding>,
 ): List<AccessibilityViolation> =

@@ -1,3 +1,9 @@
+/**
+ * Raccolta dei controlli di accessibilità superati durante l'analisi di una schermata.
+ *
+ * Oltre alle violazioni, il report può includere un riepilogo dei controlli passati
+ * (etichette, target di tocco, contrasto) con campioni rappresentativi per area WCAG.
+ */
 package dev.accessscope.scanner.analyzer
 
 import dev.accessscope.scanner.data.CheckAreaSummary
@@ -5,16 +11,28 @@ import dev.accessscope.scanner.data.PassedCheck
 import dev.accessscope.scanner.data.ViolationArea
 
 /**
- * Raccoglie controlli superati durante l'analisi (campioni + conteggi).
- * Regole generiche: vale per qualsiasi app nel [scanScope] attivo.
+ * Accumula conteggi e campioni dei controlli superati, raggruppati per area,
+ * schermata e package.
  */
 class CheckCollector {
 
+    /** Chiave interna per raggruppare i pass per area, titolo e package. */
     private data class Key(val area: ViolationArea, val screenTitle: String, val packageName: String)
 
     private val passedCounts = mutableMapOf<Key, Int>()
     private val samples = mutableMapOf<Key, MutableList<PassedCheck>>()
 
+    /**
+     * Registra un controllo superato per un nodo specifico.
+     *
+     * @param area Area di violazione/controllo WCAG (es. [ViolationArea.LABELS]).
+     * @param screenTitle Titolo umano della schermata corrente.
+     * @param packageName Package dell'applicazione analizzata.
+     * @param checkLabel Etichetta descrittiva del controllo superato.
+     * @param snap Snapshot del nodo che ha superato il controllo.
+     * @param wcagRef Riferimento WCAG opzionale (es. "1.4.3").
+     * @param detail Dettaglio opzionale; se assente viene derivato dallo snapshot.
+     */
     fun recordPass(
         area: ViolationArea,
         screenTitle: String,
@@ -43,6 +61,11 @@ class CheckCollector {
         )
     }
 
+    /**
+     * Costruisce i riepiloghi finali dei controlli superati.
+     *
+     * @return Lista di [CheckAreaSummary] con conteggi e campioni per ogni chiave accumulata.
+     */
     fun buildSummaries(): List<CheckAreaSummary> =
         passedCounts.map { (key, count) ->
             CheckAreaSummary(
@@ -55,8 +78,16 @@ class CheckCollector {
         }
 
     companion object {
+        /** Numero massimo di campioni conservati per ogni combinazione area/schermata/package. */
         private const val MAX_SAMPLES_PER_KEY = 4
 
+        /**
+         * Unisce più liste di riepiloghi (es. da scansioni multiple) sommando i conteggi
+         * e deduplicando i campioni.
+         *
+         * @param summaries Liste di riepiloghi da fondere.
+         * @return Lista unificata ordinata per titolo schermata e area.
+         */
         fun merge(summaries: List<CheckAreaSummary>): List<CheckAreaSummary> {
             if (summaries.isEmpty()) return emptyList()
             return summaries
@@ -76,6 +107,12 @@ class CheckCollector {
                 .sortedWith(compareBy({ it.screenTitle }, { it.area.ordinal }))
         }
 
+        /**
+         * Produce un riassunto testuale breve dell'elemento per i report.
+         *
+         * @param snap Snapshot del nodo.
+         * @return Nome accessibile, testo visibile, view ID o nome classe (max 48 caratteri).
+         */
         private fun elementSummary(snap: NodeSnapshot): String {
             snap.accessibleName()?.takeIf { it.isNotBlank() }?.let { return it.take(48) }
             snap.text?.trim()?.takeIf { it.isNotBlank() }?.let { return it.take(48) }

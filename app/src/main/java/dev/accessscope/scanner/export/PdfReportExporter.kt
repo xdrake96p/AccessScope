@@ -1,3 +1,9 @@
+/**
+ * Esportazione del report di accessibilità in formato PDF.
+ *
+ * Genera un documento multipagina con copertina, panoramica, copertura controlli,
+ * dettaglio per schermata e glossario, salvandolo nella cartella Download.
+ */
 package dev.accessscope.scanner.export
 
 import android.content.ContentValues
@@ -23,8 +29,27 @@ import java.util.Date
 import java.util.Locale
 import kotlin.math.roundToInt
 
+/**
+ * Esportatore che trasforma i risultati di una sessione di scansione
+ * in un report PDF leggibile e condivisibile.
+ *
+ * @property context Contesto Android usato per l'accesso a MediaStore e alle risorse di sistema.
+ */
 class PdfReportExporter(private val context: Context) {
 
+    /**
+     * Genera e salva il report PDF con tutti i dati della sessione di scansione.
+     *
+     * @param targetPackages Insieme dei pacchetti delle app analizzate.
+     * @param violations Elenco completo delle violazioni rilevate.
+     * @param screenReaderFindings Risultati della simulazione TalkBack.
+     * @param uniqueScreens Numero di schermate uniche visitate.
+     * @param scanAnalyses Numero totale di analisi eseguite (default: uguale a [uniqueScreens]).
+     * @param scanScopeLabel Etichetta testuale dell'ambito di scansione (es. "Completa").
+     * @param scannedScreens Titoli delle schermate visitate, in ordine di navigazione.
+     * @param checkSummaries Riepiloghi dei controlli superati per area e schermata.
+     * @return [Result] con il percorso del file salvato in caso di successo, o l'eccezione in caso di errore.
+     */
     fun export(
         targetPackages: Set<String>,
         violations: List<AccessibilityViolation>,
@@ -51,6 +76,18 @@ class PdfReportExporter(private val context: Context) {
         savePdf(document, ctx.fileName())
     }
 
+    /**
+     * Disegna la pagina di copertina con riepilogo sintetico della scansione.
+     *
+     * @param ctx Contesto di rendering PDF corrente.
+     * @param packages Pacchetti delle app analizzate.
+     * @param screens Numero di schermate uniche.
+     * @param analyses Numero di analisi eseguite.
+     * @param scopeLabel Etichetta dell'ambito di scansione.
+     * @param filtered Violazioni filtrate per confidenza.
+     * @param talkBack Numero di note screen reader.
+     * @param passedChecks Totale controlli superati.
+     */
     private fun drawCover(
         ctx: PdfContext,
         packages: Set<String>,
@@ -97,6 +134,13 @@ class PdfReportExporter(private val context: Context) {
         ctx.y = y + 40f
     }
 
+    /**
+     * Disegna la sezione "Copertura controlli per ambito" con conteggi OK e problemi.
+     *
+     * @param ctx Contesto di rendering PDF.
+     * @param checkSummaries Riepiloghi dei controlli superati.
+     * @param violations Violazioni usate per il conteggio dei fallimenti per area.
+     */
     private fun drawCheckCoverage(
         ctx: PdfContext,
         checkSummaries: List<CheckAreaSummary>,
@@ -124,6 +168,14 @@ class PdfReportExporter(private val context: Context) {
         ctx.y += 8f
     }
 
+    /**
+     * Disegna la panoramica per schermata con conteggio problemi e elenco schermate pulite.
+     *
+     * @param ctx Contesto di rendering PDF.
+     * @param violations Violazioni filtrate da mostrare nel riepilogo.
+     * @param talkBack Risultati TalkBack (usati indirettamente tramite schermate visitate).
+     * @param scannedScreens Elenco titoli schermate visitate; se vuoto si usano le chiavi dalle violazioni.
+     */
     private fun drawSummary(
         ctx: PdfContext,
         violations: List<AccessibilityViolation>,
@@ -164,6 +216,14 @@ class PdfReportExporter(private val context: Context) {
         ctx.y += 12f
     }
 
+    /**
+     * Disegna le sezioni dettagliate per ogni schermata: controlli superati, problemi e TalkBack.
+     *
+     * @param ctx Contesto di rendering PDF.
+     * @param violations Violazioni filtrate da elencare per schermata e severità.
+     * @param talkBack Risultati della simulazione TalkBack.
+     * @param checkSummaries Riepiloghi controlli superati per schermata.
+     */
     private fun drawScreenSections(
         ctx: PdfContext,
         violations: List<AccessibilityViolation>,
@@ -257,6 +317,11 @@ class PdfReportExporter(private val context: Context) {
         }
     }
 
+    /**
+     * Disegna la sezione esplicativa su come interpretare severità, controlli e confidenza.
+     *
+     * @param ctx Contesto di rendering PDF.
+     */
     private fun drawHowToRead(ctx: PdfContext) {
         ctx.ensureSpace(120f)
         ctx.drawText("Come leggere questo report", 40f, ctx.y, ctx.headingPaint, COLOR_BRAND_DARK)
@@ -277,6 +342,12 @@ class PdfReportExporter(private val context: Context) {
         ctx.y += 16f
     }
 
+    /**
+     * Disegna una card singola per una violazione con barra laterale colorata per severità.
+     *
+     * @param ctx Contesto di rendering PDF.
+     * @param v Violazione da visualizzare.
+     */
     private fun drawViolationCard(ctx: PdfContext, v: AccessibilityViolation) {
         val type = v.type
         val lines = ReportHelper.violationDetailLines(v)
@@ -299,6 +370,11 @@ class PdfReportExporter(private val context: Context) {
         ctx.y += 12f
     }
 
+    /**
+     * Disegna il glossario con termini di accessibilità usati nel report.
+     *
+     * @param ctx Contesto di rendering PDF.
+     */
     private fun drawGlossary(ctx: PdfContext) {
         ctx.ensureSpace(80f)
         ctx.drawText("Glossario rapido", 40f, ctx.y, ctx.headingPaint, COLOR_BRAND_DARK)
@@ -319,6 +395,12 @@ class PdfReportExporter(private val context: Context) {
         }
     }
 
+    /**
+     * Restituisce il colore ARGB associato a un livello di severità per la UI del PDF.
+     *
+     * @param s Livello di gravità.
+     * @return Valore colore intero ARGB.
+     */
     private fun severityColor(s: ViolationSeverity) = when (s) {
         ViolationSeverity.CRITICAL -> 0xFFC62828.toInt()
         ViolationSeverity.SERIOUS -> 0xFFE65100.toInt()
@@ -326,6 +408,12 @@ class PdfReportExporter(private val context: Context) {
         ViolationSeverity.MINOR -> 0xFF9E9E9E.toInt()
     }
 
+    /**
+     * Restituisce l'emoji associata a un livello di severità nel PDF.
+     *
+     * @param s Livello di gravità.
+     * @return Emoji Unicode corrispondente.
+     */
     private fun severityEmoji(s: ViolationSeverity) = when (s) {
         ViolationSeverity.CRITICAL -> "🔴"
         ViolationSeverity.SERIOUS -> "🟠"
@@ -333,6 +421,13 @@ class PdfReportExporter(private val context: Context) {
         ViolationSeverity.MINOR -> "⚪"
     }
 
+    /**
+     * Scrive il documento PDF su disco tramite MediaStore (API 29+) o file system legacy.
+     *
+     * @param document Documento PDF completato da salvare.
+     * @param fileName Nome file desiderato (es. `AccessScope_20260101_120000.pdf`).
+     * @return Percorso relativo o assoluto del file salvato.
+     */
     private fun savePdf(document: PdfDocument, fileName: String): String {
         return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             val values = ContentValues().apply {
@@ -362,7 +457,15 @@ class PdfReportExporter(private val context: Context) {
         }
     }
 
+    /**
+     * Contesto interno per il layout e il disegno progressivo delle pagine PDF.
+     *
+     * Gestisce paginazione automatica, paint preconfigurati e utilità di disegno testo/rettangoli.
+     *
+     * @property document Documento PDF Android su cui scrivere le pagine.
+     */
     private class PdfContext(private val document: PdfDocument) {
+        /** Coordinata Y corrente sul canvas della pagina attiva. */
         var y = 40f
         private var pageNumber = 0
         private lateinit var page: PdfDocument.Page
@@ -371,46 +474,104 @@ class PdfReportExporter(private val context: Context) {
             page = createPage()
         }
 
+        /** Paint per il titolo principale (copertina). */
         val titlePaint = paint(26f, true)
+        /** Paint per il sottotitolo. */
         val subtitlePaint = paint(14f, false)
+        /** Paint per le intestazioni di sezione. */
         val headingPaint = paint(16f, true)
+        /** Paint per i titoli di area/schermata. */
         val areaTitlePaint = paint(15f, true)
+        /** Paint per il corpo del testo. */
         val bodyPaint = paint(11f, false)
+        /** Paint per il corpo in grassetto. */
         val bodyBoldPaint = paint(11f, true)
+        /** Paint per metadati e testo secondario. */
         val metaPaint = paint(9.5f, false)
 
+        /**
+         * Chiude la pagina corrente e ne apre una nuova, azzerando [y].
+         */
         fun newPage() {
             document.finishPage(page)
             page = createPage()
             y = 40f
         }
 
+        /**
+         * Apre una nuova pagina se lo spazio verticale residuo è insufficiente.
+         *
+         * @param required Altezza minima richiesta in punti dalla posizione [y] corrente.
+         */
         fun ensureSpace(required: Float) {
             if (y + required > PAGE_H - 40f) newPage()
         }
 
+        /**
+         * Chiude l'ultima pagina aperta senza crearne una nuova.
+         */
         fun finish() {
             document.finishPage(page)
         }
 
+        /**
+         * Genera un nome file univoco basato sulla data e ora corrente.
+         *
+         * @return Nome file nel formato `AccessScope_yyyyMMdd_HHmmss.pdf`.
+         */
         fun fileName() = "AccessScope_${SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())}.pdf"
 
+        /**
+         * Crea e avvia una nuova pagina PDF con dimensioni A4 in punti.
+         *
+         * @return Pagina appena creata e pronta per il disegno.
+         */
         private fun createPage(): PdfDocument.Page {
             pageNumber++
             val info = PdfDocument.PageInfo.Builder(PAGE_W.toInt(), PAGE_H.toInt(), pageNumber).create()
             return document.startPage(info)
         }
 
+        /**
+         * Disegna una singola riga di testo sul canvas della pagina corrente.
+         *
+         * @param text Testo da disegnare.
+         * @param x Coordinata X in punti.
+         * @param yPos Coordinata Y della baseline in punti.
+         * @param paint Paint con dimensione e stile del carattere.
+         * @param color Colore ARGB del testo.
+         */
         fun drawText(text: String, x: Float, yPos: Float, paint: Paint, color: Int) {
             paint.color = color
             page.canvas.drawText(text, x, yPos, paint)
         }
 
+        /**
+         * Disegna un rettangolo pieno sul canvas della pagina corrente.
+         *
+         * @param l Coordinata X dell'angolo superiore sinistro.
+         * @param t Coordinata Y dell'angolo superiore sinistro.
+         * @param w Larghezza in punti.
+         * @param h Altezza in punti.
+         * @param color Colore ARGB di riempimento.
+         */
         fun fillRect(l: Float, t: Float, w: Float, h: Float, color: Int) {
             val p = Paint().apply { this.color = color }
             page.canvas.drawRect(RectF(l, t, l + w, t + h), p)
         }
 
+        /**
+         * Disegna testo con a capo automatico entro una larghezza massima.
+         *
+         * Aggiorna [y] alla fine del blocco disegnato.
+         *
+         * @param text Testo da disegnare, eventualmente su più righe.
+         * @param x Coordinata X in punti.
+         * @param startY Coordinata Y di partenza.
+         * @param maxW Larghezza massima disponibile per il testo.
+         * @param paint Paint per il rendering del testo.
+         * @param color Colore ARGB del testo.
+         */
         fun drawWrapped(text: String, x: Float, startY: Float, maxW: Float, paint: Paint, color: Int) {
             paint.color = color
             var cy = startY
@@ -422,6 +583,14 @@ class PdfReportExporter(private val context: Context) {
             y = cy
         }
 
+        /**
+         * Suddivide il testo in righe che rientrano nella larghezza massima misurata col [paint].
+         *
+         * @param text Testo da spezzare.
+         * @param paint Paint usato per misurare la larghezza dei caratteri.
+         * @param maxW Larghezza massima per riga in punti.
+         * @return Elenco di righe pronte per il disegno.
+         */
         private fun wrap(text: String, paint: Paint, maxW: Float): List<String> {
             val words = text.split(' ')
             val lines = mutableListOf<String>()
@@ -438,12 +607,22 @@ class PdfReportExporter(private val context: Context) {
             return lines.ifEmpty { listOf(text) }
         }
 
+        /**
+         * Crea un [Paint] per il testo con dimensione e peso specificati.
+         *
+         * @param size Dimensione del testo in punti.
+         * @param bold `true` per carattere grassetto.
+         * @return Paint configurato con antialiasing.
+         */
         private fun paint(size: Float, bold: Boolean) = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             textSize = size
             typeface = Typeface.create(Typeface.DEFAULT, if (bold) Typeface.BOLD else Typeface.NORMAL)
         }
     }
 
+    /**
+     * Costanti di layout, colori e limiti per la generazione del PDF.
+     */
     companion object {
         private const val PAGE_W = 595f
         private const val PAGE_H = 842f

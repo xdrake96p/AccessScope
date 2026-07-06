@@ -5,7 +5,16 @@
 **Repository:** [github.com/xdrake96p/AccessScope](https://github.com/xdrake96p/AccessScope)  
 **Package:** `dev.accessscope.scanner`  
 **Branch principale sviluppo:** `develop`  
-**Ultimo aggiornamento:** 6 luglio 2026
+**Ultimo aggiornamento:** 6 luglio 2026 (v1.2.3 scroll + overlay drag)
+
+---
+
+## Convenzioni di sviluppo
+
+A **fine di ogni task**, obbligatorio (regola Cursor: `.cursor/rules/project-maintenance.mdc`):
+
+1. **Aggiornare questo file** (`docs/PROJECT.md`) — cronologia, architettura, benchmark, changelog.
+2. **Aggiornare la KDoc** (JavaDoc Kotlin) su tutti i file `.kt` modificati o creati: blocco file, tipi pubblici, funzioni con `@param` / `@return`, descrizioni in italiano.
 
 ---
 
@@ -97,6 +106,57 @@ Utente → HomeScreen (selezione app) → Avvia scan
 - `AppPrecisionProfiles`: regole generiche multi-app
 - Profilo Nexi opzionale isolato
 - Skip off-screen, bounds anomali, list row overlap
+
+### v1.2.3 — Scroll fluido e overlay trascinabile (6 luglio 2026)
+
+- **Scroll home:** icone caricate in async (`AppIconAsync`), righe ottimizzate (`AppListRow`), debounce ricerca 120ms, `animateItem`, preload icone a batch
+- **Overlay scansione:** card semi-trasparente con handle «Trascina»; LIVE/STOP spostabili; posizione persistita in `ScanSettingsStore`
+
+| Commit | Descrizione |
+|--------|-------------|
+| *pending* | v1.2.3 scroll + overlay drag |
+
+### v1.2.2 — Restyling UI premium Material You (6 luglio 2026)
+
+**Design system rivisto (ciano / lavanda / viola, WCAG AAA):**
+- Palette scura: sfondo `#1A1D24`, card `#252830`, gradiente header ciano → viola
+- Palette chiara: sfondo `#F8F9FA`, card bianche sollevate, gradiente header ciano soft → lavanda
+- `AccessScopeCard`: elevazione light / bordo luminoso dark
+- `Shape.kt`: `CardShape`, `HeroShape`, `ControlShape`, `ChipShape`
+- `AppSearchField`: barra ricerca Material 3 filled
+- `HeroHeader` + `FeatureHighlights`: icone vettoriali, chip stato, layout bilanciato
+- `PermissionsCard`: badge semaforo, progress bar, raggruppamento permessi con icone stato
+- `HomeScreen`: layout adattivo orizzontale (≥720dp) — sinistra header+feature, centro permessi, destra selezione app; colonna singola su telefono
+- `ScanActionBar`: CTA «Avvia scansione» prominente (56dp, titleMedium bold)
+
+| Commit | Descrizione |
+|--------|-------------|
+| *pending* | v1.2.2 restyling UI premium |
+
+### v1.2.1 — Scroll, auto-launch, debug live (6 luglio 2026)
+
+- Lista app: LazyColumn dedicata, righe leggere (Switch al posto di FilterChip)
+- Auto-launch: massimo **1** app (sostituzione automatica al cambio selezione)
+- Banner Material `AppSelectionInfoBanner` (selezione libera vs limite auto-launch)
+- Debug live: pannello in Impostazioni, icona occhio in Home, pulsante LIVE nell'overlay
+- `LiveScanSnapshot` aggiornato ad ogni analisi del servizio a11y
+
+
+**Design system WCAG AAA:**
+- Palette chiaro: sfondo `#F8F9FA`, card `#FFFFFF`, testo `#111827`, brand ciano `#0891B2` / viola `#7C3AED`
+- Palette scuro: sfondo `#1A1D24`, card `#252830`, testo `#F9FAFB`, accenti ciano `#22D3EE` / lavanda `#A78BFA`
+- Semantici: errore `#DC2626`, warning `#D97706`, successo `#059669`
+- Tipografia base 16sp, line-height 1.5, monospace per dati tecnici
+
+**Impostazioni tema:**
+- `AppThemeMode`: Chiaro / Scuro / Sistema
+- `ThemePreferencesStore` (SharedPreferences) per persistenza
+- `ThemeModeSelector` in Impostazioni con focus ring ad alto contrasto
+- `AccessScopeTheme(themeMode)` applicato da `MainActivity`
+
+| Commit | Descrizione |
+|--------|-------------|
+| *pending* | v1.2.0 tema chiaro/scuro + selettore impostazioni |
 
 ### v1.1.0 — Iterazioni 9–11 UI (6 luglio 2026)
 
@@ -203,6 +263,7 @@ Report PDF: `/storage/emulated/0/Download/AccessScope_*.pdf`
 | `d9b344a` | Iter 6–7: drawer, home widget, UI Avvia |
 | `6bb2798` | Iter 8: generiche multi-app + profili |
 | *v1.1.0* | Iter 9–10 motore, check OK, UI fluida, PROJECT.md |
+| *pending* | KDoc completa su tutti i sorgenti + regola Cursor manutenzione doc |
 
 ---
 

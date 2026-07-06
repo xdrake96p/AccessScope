@@ -1,3 +1,9 @@
+/**
+ * Activity principale dell'applicazione AccessScope.
+ *
+ * Configura l'interfaccia Compose con navigazione tra home, impostazioni e report,
+ * e aggiorna lo stato dei permessi al ritorno in primo piano.
+ */
 package dev.accessscope.scanner
 
 import android.os.Bundle
@@ -10,7 +16,9 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.platform.LocalContext
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
@@ -22,26 +30,49 @@ import dev.accessscope.scanner.ui.theme.AccessScopeTheme
 import dev.accessscope.scanner.ui.viewmodel.ScanViewModel
 import dev.accessscope.scanner.util.PdfHelper
 
+/**
+ * Activity host dell'interfaccia utente AccessScope.
+ *
+ * Avvia il tema Compose, il [ScanViewModel] e il grafo di navigazione tra le schermate
+ * principali dell'app.
+ */
 class MainActivity : ComponentActivity() {
 
     private val scanViewModel: ScanViewModel by viewModels()
 
+    /**
+     * Configura l'edge-to-edge e imposta il contenuto Compose con tema e navigazione.
+     *
+     * @param savedInstanceState Stato salvato dell'activity, se presente.
+     */
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         setContent {
-            AccessScopeTheme {
+            val uiState by scanViewModel.uiState.collectAsStateWithLifecycle()
+            AccessScopeTheme(themeMode = uiState.themeMode) {
                 AccessScopeNavHost(viewModel = scanViewModel)
             }
         }
     }
 
+    /**
+     * Aggiorna lo stato dei permessi (accessibilità, overlay, ecc.) al ritorno in primo piano.
+     */
     override fun onResume() {
         super.onResume()
         scanViewModel.refreshPermissions()
     }
 }
 
+/**
+ * Grafo di navigazione Compose per le schermate principali di AccessScope.
+ *
+ * Definisce le rotte `home`, `settings` e `report` con transizioni animate
+ * coerenti con il design system dell'app.
+ *
+ * @param viewModel ViewModel condiviso che gestisce lo stato della scansione e del report.
+ */
 @Composable
 private fun AccessScopeNavHost(viewModel: ScanViewModel) {
     val navController = rememberNavController()

@@ -1,3 +1,9 @@
+/**
+ * Punto di ingresso dell'applicazione AccessScope.
+ *
+ * Inizializza il repository delle sessioni di scansione, ripristina eventuali scansioni
+ * interrotte e coordina l'arresto della scansione con la generazione del report PDF.
+ */
 package dev.accessscope.scanner
 
 import android.app.Application
@@ -7,21 +13,41 @@ import dev.accessscope.scanner.service.ScanOverlayService
 import dev.accessscope.scanner.util.DebugTrace
 import dev.accessscope.scanner.util.FavoriteAppsStore
 import dev.accessscope.scanner.util.ScanSettingsStore
+import dev.accessscope.scanner.util.ThemePreferencesStore
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
+/**
+ * Classe [Application] principale di AccessScope.
+ *
+ * Mantiene lo stato globale della sessione di scansione, le preferenze utente
+ * e orchestra l'export del report PDF al termine di una scansione.
+ */
 class AccessScopeApp : Application() {
 
+    /** Repository condiviso che gestisce lo stato corrente della sessione di scansione. */
     lateinit var scanRepository: ScanSessionRepository
         private set
+
+    /** Store persistente per le app contrassegnate come preferite dall'utente. */
     val favoriteAppsStore: FavoriteAppsStore by lazy { FavoriteAppsStore(this) }
+
+    /** Store persistente per le impostazioni di scansione (ambito, pacchetti selezionati, ecc.). */
     val scanSettingsStore: ScanSettingsStore by lazy { ScanSettingsStore(this) }
+
+    /** Store persistente per la preferenza tema (chiaro / scuro / sistema). */
+    val themePreferencesStore: ThemePreferencesStore by lazy { ThemePreferencesStore(this) }
+
     private val pdfExporter by lazy { PdfReportExporter(this) }
     private val applicationScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
 
+    /**
+     * Inizializza l'applicazione: crea il repository, registra i callback
+     * e ripristina una scansione eventualmente persistita.
+     */
     override fun onCreate() {
         super.onCreate()
         scanRepository = ScanSessionRepository(this)
@@ -39,6 +65,13 @@ class AccessScopeApp : Application() {
         // #endregion
     }
 
+    /**
+     * Arresta la sessione di scansione corrente, chiude l'overlay e genera il report PDF
+     * se era in corso una sessione con dati raccolti.
+     *
+     * @param fromOverlay `true` se l'arresto è stato richiesto dall'overlay flottante
+     *                    o dalla notifica; `false` se avviato dall'interfaccia principale.
+     */
     fun stopScanSession(fromOverlay: Boolean = false) {
         // Sempre chiudi overlay — anche se lo stato in memoria è perso dopo restart processo.
         ScanOverlayService.stop(this)

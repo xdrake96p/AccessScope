@@ -1,3 +1,9 @@
+/**
+ * Dashboard live con metriche OK/KO della sessione di scansione.
+ *
+ * Mostra punteggio, violazioni per gravità, chip dei problemi principali
+ * e pulsante per aprire il report completo al termine della scansione.
+ */
 package dev.accessscope.scanner.ui.components
 
 import androidx.compose.animation.core.LinearEasing
@@ -53,10 +59,24 @@ import dev.accessscope.scanner.report.ReportHelper
 import dev.accessscope.scanner.ui.theme.BrandPrimary
 import dev.accessscope.scanner.ui.theme.Danger
 import dev.accessscope.scanner.ui.theme.Success
-import dev.accessscope.scanner.ui.theme.TextSecondary
 import dev.accessscope.scanner.ui.theme.Warning
+import dev.accessscope.scanner.ui.theme.contentSecondary
+import dev.accessscope.scanner.ui.theme.contentSecondary
 import dev.accessscope.scanner.ui.theme.severityColor
 
+/**
+ * Card dashboard con statistiche live o dell'ultima sessione di scansione.
+ *
+ * @param violations Elenco grezzo delle violazioni rilevate.
+ * @param screens Numero di schermate uniche visitate.
+ * @param talkBackFindings Numero di note dalla simulazione TalkBack.
+ * @param isScanning True se la scansione è in corso (attiva animazione e messaggi).
+ * @param onOpenReport Callback per navigare al report dettagliato.
+ * @param modifier Modifier Compose applicato alla card.
+ * @param scanAnalyses Numero totale di analisi eseguite; mostrato se supera [screens].
+ * @param isPartialScan True se la scansione non copre tutti gli ambiti.
+ * @param scanScopeLabel Etichetta leggibile degli ambiti attivi.
+ */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun ScanDashboard(
@@ -110,7 +130,7 @@ fun ScanDashboard(
                         .size(10.dp)
                         .alpha(if (isScanning) pulse else 1f)
                         .clip(RoundedCornerShape(50))
-                        .background(if (isScanning) Color(0xFF43A047) else TextSecondary),
+                        .background(if (isScanning) Success else contentSecondary()),
                 )
                 Text(
                     if (isScanning) "Scansione in corso" else "Ultima sessione",
@@ -131,7 +151,7 @@ fun ScanDashboard(
                 Text(
                     "In attesa dell'app selezionata. Apri l'app e naviga tra le schermate.",
                     style = MaterialTheme.typography.bodyMedium,
-                    color = TextSecondary,
+                    color = contentSecondary(),
                 )
             } else {
             SessionStatsBlock(
@@ -146,7 +166,7 @@ fun ScanDashboard(
                         Icons.Outlined.ViewCarousel,
                         "$scanAnalyses",
                         "Analisi",
-                        TextSecondary,
+                        contentSecondary(),
                     ) else stats
                 },
                 koStats = listOf(
@@ -196,6 +216,14 @@ fun ScanDashboard(
     }
 }
 
+/**
+ * Dati di una singola metrica nella dashboard (icona, valore, etichetta, colore).
+ *
+ * @param icon Icona Material associata alla metrica.
+ * @param value Valore formattato da mostrare.
+ * @param label Etichetta breve sotto il valore.
+ * @param tint Colore di icona e valore numerico.
+ */
 private data class StatData(
     val icon: ImageVector,
     val value: String,
@@ -203,6 +231,14 @@ private data class StatData(
     val tint: Color,
 )
 
+/**
+ * Blocco con due righe di statistiche: metriche positive (OK) e negative (KO).
+ *
+ * @param okLabel Etichetta della sezione metriche positive.
+ * @param koLabel Etichetta della sezione metriche negative.
+ * @param okStats Elenco metriche positive da visualizzare.
+ * @param koStats Elenco metriche negative da visualizzare.
+ */
 @Composable
 private fun SessionStatsBlock(
     okLabel: String,
@@ -224,6 +260,13 @@ private fun SessionStatsBlock(
     }
 }
 
+/**
+ * Riga di statistiche con etichetta di sezione e valori affiancati.
+ *
+ * @param sectionLabel Titolo della sezione (es. "OK" o "KO").
+ * @param sectionColor Colore tematico della sezione.
+ * @param stats Elenco di [StatData] da mostrare in orizzontale.
+ */
 @Composable
 private fun StatsRow(
     sectionLabel: String,
@@ -260,6 +303,14 @@ private fun StatsRow(
     }
 }
 
+/**
+ * Singola cella statistica con icona, valore numerico e etichetta.
+ *
+ * @param icon Icona Material della metrica.
+ * @param value Valore formattato.
+ * @param label Etichetta descrittiva breve.
+ * @param tint Colore di icona e valore.
+ */
 @Composable
 private fun StatItem(
     icon: ImageVector,
@@ -270,10 +321,16 @@ private fun StatItem(
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
         Icon(icon, contentDescription = null, tint = tint, modifier = Modifier.size(20.dp))
         Text(value, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium, color = tint)
-        Text(label, style = MaterialTheme.typography.labelSmall, color = TextSecondary)
+        Text(label, style = MaterialTheme.typography.labelSmall, color = contentSecondary())
     }
 }
 
+/**
+ * Chip colorato che riassume un tipo di violazione e il relativo conteggio.
+ *
+ * @param type Tipo di violazione con nome e gravità.
+ * @param count Numero di occorrenze di questo tipo.
+ */
 @Composable
 private fun ViolationChip(type: ViolationType, count: Int) {
     Text(

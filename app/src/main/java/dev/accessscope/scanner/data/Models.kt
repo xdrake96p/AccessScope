@@ -1,45 +1,69 @@
+/**
+ * Modelli di dominio per la scansione di accessibilità.
+ *
+ * Definisce aree di violazione WCAG, tipi e gravità dei problemi rilevati,
+ * violazioni strutturate, controlli superati e lo stato aggregato di una sessione di scansione.
+ */
 package dev.accessscope.scanner.data
 
+/**
+ * Ambiti tematici in cui vengono classificati i controlli e le violazioni di accessibilità.
+ *
+ * Ogni valore rappresenta una categoria WCAG con titolo, sottotitolo descrittivo ed emoji
+ * per l'interfaccia utente.
+ *
+ * @property title Titolo breve mostrato nell'UI.
+ * @property subtitle Spiegazione in linguaggio semplice dell'ambito controllato.
+ * @property emoji Simbolo grafico associato all'ambito.
+ */
 enum class ViolationArea(
     val title: String,
     val subtitle: String,
     val emoji: String,
 ) {
+    /** Etichette, nomi accessibili e descrizioni di pulsanti e immagini. */
     LABELS(
         title = "Etichette e nomi",
         subtitle = "Ogni pulsante e immagine deve dire cosa fa",
         emoji = "🏷️",
     ),
+    /** Dimensioni minime e spaziatura tra target di tocco. */
     TOUCH(
         title = "Tocco e dimensioni",
         subtitle = "Pulsanti abbastanza grandi e distanziati",
         emoji = "👆",
     ),
+    /** Contrasto tra testo, icone e sfondo. */
     COLOR(
         title = "Colori e contrasto",
         subtitle = "Testo leggibile sullo sfondo",
         emoji = "🎨",
     ),
+    /** Dimensione, leggibilità e troncamento del testo. */
     TEXT(
         title = "Testo e tipografia",
         subtitle = "Caratteri non troppo piccoli o tagliati",
         emoji = "🔤",
     ),
+    /** Campi input, etichette, errori e campi obbligatori. */
     FORMS(
         title = "Moduli e campi",
         subtitle = "Input con etichetta, errori e campi obbligatori",
         emoji = "📝",
     ),
+    /** Titoli, ordine di lettura, liste e tabelle. */
     STRUCTURE(
         title = "Struttura e navigazione",
         subtitle = "Titoli, ordine di lettura, liste e tabelle",
         emoji = "🧭",
     ),
+    /** Comportamento con TalkBack e annunci dello screen reader. */
     SCREEN_READER(
         title = "Screen reader (TalkBack)",
         subtitle = "Cosa sentirebbe chi usa la lettura vocale",
         emoji = "🔊",
     ),
+    /** WebView, media e componenti avanzati non nativi. */
     MEDIA_WEB(
         title = "Web e contenuti speciali",
         subtitle = "WebView, media e componenti avanzati",
@@ -47,13 +71,34 @@ enum class ViolationArea(
     ),
 }
 
+/**
+ * Livello di gravità di una violazione di accessibilità.
+ *
+ * @property label Etichetta localizzata mostrata nei report e nell'UI.
+ */
 enum class ViolationSeverity(val label: String) {
+    /** Problema bloccante per l'uso con tecnologie assistive. */
     CRITICAL("Critico"),
+    /** Problema significativo che ostacola l'accessibilità. */
     SERIOUS("Grave"),
+    /** Problema rilevante ma con impatto moderato. */
     MODERATE("Medio"),
+    /** Problema minore o di miglioramento consigliato. */
     MINOR("Lieve"),
 }
 
+/**
+ * Tipi specifici di violazione WCAG rilevabili durante la scansione.
+ *
+ * Ogni valore associa un nome leggibile, un riferimento WCAG, la gravità,
+ * l'ambito tematico e un suggerimento in linguaggio semplice.
+ *
+ * @property displayName Nome human-readable del tipo di violazione.
+ * @property wcagRef Riferimento alla linea guida WCAG (es. «WCAG 4.1.2»).
+ * @property severity Gravità predefinita della violazione.
+ * @property area Ambito tematico di appartenenza.
+ * @property plainHint Spiegazione semplificata per l'utente finale.
+ */
 enum class ViolationType(
     val displayName: String,
     val wcagRef: String,
@@ -215,6 +260,28 @@ enum class ViolationType(
     ),
 }
 
+/**
+ * Singola violazione di accessibilità rilevata su un elemento UI.
+ *
+ * Aggrega metadati sul tipo di problema, la vista coinvolta, la schermata
+ * e valori misurati per la generazione del report.
+ *
+ * @property type Tipo WCAG della violazione.
+ * @property viewClassName Nome completo della classe della vista Android.
+ * @property screenTitle Titolo della schermata in cui è stato rilevato il problema.
+ * @property packageName Package dell'app analizzata.
+ * @property details Descrizione tecnica o contestuale del problema.
+ * @property viewId Identificatore risorsa della vista, se disponibile.
+ * @property bounds Coordinate del rettangolo dell'elemento in formato stringa.
+ * @property sectionTitle Sottosezione all'interno della schermata (es. «Credenziali»).
+ * @property confidence Livello di confidenza del rilevamento (0.0–1.0).
+ * @property timestampMs Timestamp Unix in millisecondi del rilevamento.
+ * @property screenFingerprint Impronta univoca della schermata per la deduplicazione.
+ * @property elementLabel Etichetta accessibile o testo visibile dell'elemento.
+ * @property measuredValue Valore misurato (es. rapporto di contrasto).
+ * @property requiredValue Valore minimo richiesto dalla linea guida.
+ * @property remediation Suggerimento per correggere il problema.
+ */
 data class AccessibilityViolation(
     val type: ViolationType,
     val viewClassName: String,
@@ -232,14 +299,27 @@ data class AccessibilityViolation(
     val requiredValue: String? = null,
     val remediation: String? = null,
 ) {
+    /** Ambito tematico derivato dal [type] della violazione. */
     val area: ViolationArea get() = type.area
+
+    /** Spiegazione semplificata derivata dal [type] della violazione. */
     val simpleExplanation: String get() = type.plainHint
+
+    /** Riferimento WCAG derivato dal [type] della violazione. */
     val wcagReference: String get() = type.wcagRef
 
-    /** Sottosezione UI (es. «Credenziali» dentro «Login»). */
+    /**
+     * Sezione da usare nel report: preferisce [sectionTitle] se valorizzata,
+     * altrimenti ricade su [screenTitle].
+     */
     val reportSection: String
         get() = sectionTitle?.takeIf { it.isNotBlank() } ?: screenTitle
 
+    /**
+     * Chiave univoca per deduplicare violazioni identiche nella stessa sessione.
+     *
+     * Combina tipo, package, ambito schermata e identità dell'elemento.
+     */
     val dedupeKey: String
         get() {
             val identity = viewId?.takeIf { it.isNotBlank() }
@@ -253,6 +333,13 @@ data class AccessibilityViolation(
         }
 
     companion object {
+        /**
+         * Verifica se un [viewId] corrisponde a un widget globale dell'app host
+         * (es. icone della top bar) che compare su più schermate.
+         *
+         * @param viewId Identificatore risorsa della vista, opzionale.
+         * @return `true` se la vista è considerata widget globale.
+         */
         fun isGlobalWidget(viewId: String?): Boolean {
             if (viewId.isNullOrBlank()) return false
             val short = viewId.substringAfterLast('/').lowercase()
@@ -265,7 +352,18 @@ data class AccessibilityViolation(
     }
 }
 
-/** Controllo superato durante la scansione (campione rappresentativo). */
+/**
+ * Controllo superato durante la scansione (campione rappresentativo).
+ *
+ * @property area Ambito tematico del controllo.
+ * @property checkLabel Etichetta descrittiva del controllo superato.
+ * @property screenTitle Titolo della schermata analizzata.
+ * @property packageName Package dell'app analizzata.
+ * @property elementSummary Riepilogo testuale dell'elemento verificato.
+ * @property viewId Identificatore risorsa della vista, se disponibile.
+ * @property bounds Coordinate del rettangolo dell'elemento.
+ * @property wcagRef Riferimento WCAG associato al controllo.
+ */
 data class PassedCheck(
     val area: ViolationArea,
     val checkLabel: String,
@@ -277,7 +375,15 @@ data class PassedCheck(
     val wcagRef: String? = null,
 )
 
-/** Riepilogo controlli OK per ambito e schermata. */
+/**
+ * Riepilogo aggregato dei controlli superati per ambito e schermata.
+ *
+ * @property area Ambito tematico dei controlli.
+ * @property screenTitle Titolo della schermata.
+ * @property packageName Package dell'app analizzata.
+ * @property passedCount Numero totale di controlli superati in questo gruppo.
+ * @property samples Campioni rappresentativi dei controlli superati.
+ */
 data class CheckAreaSummary(
     val area: ViolationArea,
     val screenTitle: String,
@@ -286,6 +392,17 @@ data class CheckAreaSummary(
     val samples: List<PassedCheck> = emptyList(),
 )
 
+/**
+ * Risultato dell'analisi simulata dello screen reader su un nodo dell'albero di accessibilità.
+ *
+ * @property packageName Package dell'app analizzata.
+ * @property screenTitle Titolo della schermata corrente.
+ * @property nodeClassName Classe del nodo di accessibilità analizzato.
+ * @property announcedText Testo che TalkBack annuncerebbe, se presente.
+ * @property issue Descrizione del problema rilevato nella simulazione.
+ * @property viewId Identificatore risorsa della vista, se disponibile.
+ * @property sectionTitle Sottosezione all'interno della schermata.
+ */
 data class ScreenReaderFinding(
     val packageName: String,
     val screenTitle: String,
@@ -295,10 +412,22 @@ data class ScreenReaderFinding(
     val viewId: String? = null,
     val sectionTitle: String? = null,
 ) {
+    /**
+     * Sezione da usare nel report: preferisce [sectionTitle] se valorizzata,
+     * altrimenti ricade su [screenTitle].
+     */
     val reportSection: String
         get() = sectionTitle?.takeIf { it.isNotBlank() } ?: screenTitle
 }
 
+/**
+ * Metadati di un'applicazione installata sul dispositivo.
+ *
+ * @property packageName Identificatore univoco del package Android.
+ * @property label Nome visualizzato dell'applicazione.
+ * @property isSystemApp `true` se l'app è preinstallata di sistema.
+ * @property isFavorite `true` se l'app è contrassegnata come preferita dall'utente.
+ */
 data class InstalledAppInfo(
     val packageName: String,
     val label: String,
@@ -306,6 +435,24 @@ data class InstalledAppInfo(
     val isFavorite: Boolean = false,
 )
 
+/**
+ * Stato completo e osservabile di una sessione di scansione di accessibilità.
+ *
+ * Viene aggiornato dal [ScanSessionRepository] e consumato dall'interfaccia utente.
+ *
+ * @property isScanning `true` mentre la scansione è attiva.
+ * @property selectedPackages Set di package Android da analizzare.
+ * @property violations Elenco cumulativo delle violazioni rilevate.
+ * @property screenReaderFindings Risultati della simulazione TalkBack.
+ * @property uniqueScreens Numero di schermate distinte visitate.
+ * @property scanAnalyses Contatore di analisi dell'albero di accessibilità eseguite.
+ * @property scanScope Ambito tematico dei controlli attivi.
+ * @property visitedScreenTitles Titoli delle schermate visitate, in ordine di scoperta.
+ * @property checkSummaries Riepiloghi dei controlli superati per ambito.
+ * @property lastPdfPath Percorso dell'ultimo report PDF generato, se presente.
+ * @property errorMessage Ultimo messaggio di errore della sessione, se presente.
+ * @property liveSnapshot Istantanea dell'ultima analisi in tempo reale per il pannello debug.
+ */
 data class ScanSessionState(
     val isScanning: Boolean = false,
     val selectedPackages: Set<String> = emptySet(),
@@ -318,7 +465,44 @@ data class ScanSessionState(
     val checkSummaries: List<CheckAreaSummary> = emptyList(),
     val lastPdfPath: String? = null,
     val errorMessage: String? = null,
+    val liveSnapshot: LiveScanSnapshot? = null,
 ) {
-    /** @deprecated use uniqueScreens */
+    /**
+     * Alias retrocompatibile per [uniqueScreens].
+     *
+     * @deprecated Usare [uniqueScreens].
+     */
     val scannedScreens: Int get() = uniqueScreens
 }
+
+/**
+ * Istantanea dell'ultima analisi accessibilità per il pannello debug live.
+ *
+ * @property packageName Package dell'app analizzata nell'ultimo passaggio.
+ * @property screenTitle Titolo della schermata rilevata.
+ * @property analyzedAtMs Timestamp Unix dell'ultima analisi.
+ * @property newViolationsInPass Numero di nuove violazioni trovate nell'ultimo passaggio.
+ * @property recentFindings Ultimi problemi rilevati (max 6) per anteprima rapida.
+ */
+data class LiveScanSnapshot(
+    val packageName: String,
+    val screenTitle: String,
+    val analyzedAtMs: Long = System.currentTimeMillis(),
+    val newViolationsInPass: Int = 0,
+    val recentFindings: List<LiveDebugFinding> = emptyList(),
+)
+
+/**
+ * Singola voce mostrata nel pannello debug live.
+ *
+ * @property title Nome breve del problema (tipo violazione).
+ * @property detail Dettaglio o elemento coinvolto.
+ * @property severity Gravità WCAG.
+ * @property screenTitle Schermata in cui è stato rilevato.
+ */
+data class LiveDebugFinding(
+    val title: String,
+    val detail: String,
+    val severity: ViolationSeverity,
+    val screenTitle: String,
+)

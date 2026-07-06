@@ -1,3 +1,12 @@
+/**
+ * Risoluzione del titolo di schermata a partire dall'albero di accessibilità Android.
+ *
+ * Questo modulo analizza [AccessibilityNodeInfo] e [AccessibilityEvent] per produrre
+ * un'etichetta leggibile della schermata corrente, con euristiche specifiche per l'app Nexi
+ * (sezioni bancarie, PIN, drawer, overlay transitori). I titoli risolti possono essere
+ * memorizzati in cache per pacchetto e riutilizzati quando l'albero non espone un titolo
+ * esplicito.
+ */
 package dev.accessscope.scanner.analyzer
 
 import android.os.Build
@@ -6,6 +15,14 @@ import android.view.accessibility.AccessibilityNodeInfo
 import java.util.ArrayDeque
 import java.util.concurrent.ConcurrentHashMap
 
+/**
+ * Risolve titoli di schermata umanamente leggibili dall'albero di accessibilità.
+ *
+ * Applica una catena di strategie in ordine di priorità: testo dell'evento, pane title,
+ * schermata PIN, modali, titoli di sezione, titoli Nexi noti, viewId distintivi, top bar,
+ * heading prominenti, descrizione contenuto, nome activity e infine cache per pacchetto.
+ * Espone anche helper per distinguere drawer, overlay transitori e schermate PIN.
+ */
 object ScreenTitleResolver {
 
     private val lastTitleByPackage = ConcurrentHashMap<String, String>()
@@ -31,11 +48,28 @@ object ScreenTitleResolver {
         "AIUTO E CONTATTI",
     )
 
+    /**
+     * Determina il titolo della schermata corrente analizzando radice e evento di accessibilità.
+     *
+     * Prova le varie euristiche in sequenza; quando trova un candidato valido lo normalizza,
+     * lo memorizza in cache (se appropriato) e lo restituisce. Se nessuna strategia ha successo
+     * e la cache non è riutilizzabile, restituisce il fallback `"Schermata"`.
+     *
+     * @param root Nodo radice dell'albero di accessibilità da analizzare.
+     * @param event Evento di accessibilità associato alla finestra o al contenuto corrente.
+     * @return Titolo umanamente leggibile della schermata, oppure `"Schermata"` come fallback.
+     */
     fun resolve(root: AccessibilityNodeInfo, event: AccessibilityEvent): String {
         val packageKey = root.packageName?.toString()
             ?: event.packageName?.toString()
             ?: ""
 
+        /**
+         * Normalizza il titolo, aggiorna la cache per pacchetto se consentito e lo restituisce.
+         *
+         * @param title Titolo candidato da restituire.
+         * @return Lo stesso [title], eventualmente dopo la scrittura in cache.
+         */
         fun storeAndReturn(title: String): String {
             if (title != "Schermata" && title != "Menu" && packageKey.isNotBlank() &&
                 shouldCacheTitle(root, title)
@@ -79,10 +113,26 @@ object ScreenTitleResolver {
         return "Schermata"
     }
 
-    /** Public: viewId corti nel sottoalbero (per filtrare drawer / home). */
+    /**
+     * Raccoglie i suffissi corti dei viewId presenti nel sottoalbero radice.
+     *
+     * Utile per filtrare drawer, home e altre schermate in base ai marker di layout,
+     * senza esporre l'intero nome qualificato della risorsa.
+     *
+     * @param root Nodo radice del sottoalbero da ispezionare.
+     * @return Insieme dei suffissi viewId (parte dopo l'ultimo `/`), in minuscolo.
+     */
     fun rootViewIds(root: AccessibilityNodeInfo): Set<String> = collectViewIdShorts(root)
 
-    /** Finestra / sottoalbero che contiene solo il menu laterale (nessun fragment principale). */
+    /**
+     * Verifica se la radice rappresenta solo il menu laterale (drawer), senza contenuto principale.
+     *
+     * Considera drawer-only una finestra con almeno due viewId `nav_*` e nessun marker
+     * del contenuto principale dell'app.
+     *
+     * @param root Nodo radice della finestra o del sottoalbero da valutare.
+     * @return `true` se l'albero contiene prevalentemente navigazione laterale senza fragment principale.
+     */
     fun isDrawerOnlyRoot(root: AccessibilityNodeInfo): Boolean {
         val ids = collectViewIdShorts(root)
         val navCount = ids.count { it.startsWith("nav_") }
@@ -95,6 +145,16 @@ object ScreenTitleResolver {
         "labelcontacts", "iban_account", "vop_info", "amount_effetti", "pin_pad_view",
     )
 
+    /**
+     * Indica se un titolo risolto può essere memorizzato in cache per il pacchetto corrente.
+     *
+     * Esclude titoli ambigui in home (es. widget insoluti), schermate con navigazione drawer
+     * aperta e altri casi in cui la cache indurrebbe falsi positivi.
+     *
+     * @param root Nodo radice usato per raccogliere i viewId del layout corrente.
+     * @param title Titolo candidato da valutare per la cache.
+     * @return `true` se il titolo può essere salvato in [lastTitleByPackage].
+     */
     private fun shouldCacheTitle(root: AccessibilityNodeInfo, title: String): Boolean {
         val ids = collectViewIdShorts(root)
         if (title.equals("Ultimi insoluti", ignoreCase = true) && hasHomeMarkers(ids)) return false
@@ -102,6 +162,16 @@ object ScreenTitleResolver {
         return true
     }
 
+    /**
+     * Verifica se un titolo in cache è ancora valido per il layout corrente.
+     *
+     * Impedisce il riuso quando il drawer è visibile, quando si è in home con widget insoluti,
+     * quando compaiono marker di altre sezioni o quando l'albero espone un titolo fresco diverso.
+     *
+     * @param root Nodo radice del layout corrente.
+     * @param cached Titolo precedentemente memorizzato per il pacchetto.
+     * @return `true` se [cached] può essere restituito come titolo della schermata attuale.
+     */
     private fun canReuseCachedTitle(root: AccessibilityNodeInfo, cached: String): Boolean {
         val ids = collectViewIdShorts(root)
         if (ids.any { it.startsWith("nav_") }) return false
@@ -116,6 +186,12 @@ object ScreenTitleResolver {
         return true
     }
 
+    /**
+     * Controlla se l'insieme di viewId include marker tipici della schermata Home Nexi.
+     *
+     * @param ids Suffissi viewId raccolti dal sottoalbero corrente.
+     * @return `true` se almeno un viewId corrisponde a [HOME_MARKER_IDS].
+     */
     private fun hasHomeMarkers(ids: Set<String>): Boolean =
         ids.any { it in HOME_MARKER_IDS }
 
@@ -123,6 +199,12 @@ object ScreenTitleResolver {
         "entrate_home", "uscite_home", "card_home", "scrollview_port", "rotate_display",
     )
 
+    /**
+     * Svuota la cache dei titoli per pacchetto.
+     *
+     * @param packageName Nome del pacchetto da rimuovere dalla cache; se `null` o blank,
+     *   viene svuotata l'intera mappa [lastTitleByPackage].
+     */
     fun clearTitleCache(packageName: String? = null) {
         if (packageName.isNullOrBlank()) {
             lastTitleByPackage.clear()
@@ -131,7 +213,15 @@ object ScreenTitleResolver {
         }
     }
 
-    /** Splash / brand screen senza navigazione — non creare sezione «Schermata» nel report. */
+    /**
+     * Rileva schermate splash o overlay di brand senza navigazione utilizzabile.
+     *
+     * Una schermata transitoria mostra il logo ma non elementi di navigazione né titoli
+     * di sezione riconosciuti; in tal caso non va creata una sezione «Schermata» nel report.
+     *
+     * @param root Nodo radice dell'albero da analizzare.
+     * @return `true` se la radice corrisponde a un overlay transitorio (es. splash con logo).
+     */
     fun isTransientOverlay(root: AccessibilityNodeInfo): Boolean {
         val ids = collectViewIdShorts(root)
         val hasLogo = "logo" in ids
@@ -142,9 +232,23 @@ object ScreenTitleResolver {
         return hasLogo && !hasNav && !hasKnownTitle
     }
 
-    /** Public helper for multi-window prioritization. */
+    /**
+     * Indica se la radice corrisponde a una schermata di inserimento PIN.
+     *
+     * Helper pubblico usato per la prioritizzazione tra finestre multiple quando più
+     * overlay o activity sono visibili contemporaneamente.
+     *
+     * @param root Nodo radice dell'albero da ispezionare.
+     * @return `true` se [findPinScreen] individua una schermata PIN.
+     */
     fun isPinScreen(root: AccessibilityNodeInfo): Boolean = findPinScreen(root) != null
 
+    /**
+     * Cerca nel sottoalbero indicatori di schermata PIN (tastierino numerico, testi, viewId).
+     *
+     * @param root Nodo radice da attraversare in ampiezza.
+     * @return `"Inserisci PIN"` se rilevata una schermata PIN, altrimenti `null`.
+     */
     private fun findPinScreen(root: AccessibilityNodeInfo): String? {
         val queue = ArrayDeque<AccessibilityNodeInfo>()
         queue.add(root)
@@ -180,6 +284,15 @@ object ScreenTitleResolver {
         return null
     }
 
+    /**
+     * Estrae il titolo da barre superiori (Toolbar, ActionBar, AppBar, topbar).
+     *
+     * Ignora testi che sembrano importi o titoli di sezione già noti, per evitare duplicati
+     * o etichette fuorvianti.
+     *
+     * @param root Nodo radice del sottoalbero da analizzare.
+     * @return Titolo umanizzato trovato nella top bar, oppure `null`.
+     */
     private fun findTopBarTitle(root: AccessibilityNodeInfo): String? {
         val queue = ArrayDeque<AccessibilityNodeInfo>()
         queue.add(root)
@@ -211,6 +324,14 @@ object ScreenTitleResolver {
         return null
     }
 
+    /**
+     * Cerca il testo del titolo all'interno di un nodo barra (toolbar/topbar).
+     *
+     * Priorità: viewId `topbar_title` / `toolbar_title`, nodi heading (API 28+), testo del nodo barra.
+     *
+     * @param barNode Nodo che rappresenta la barra superiore.
+     * @return Testo del titolo se trovato, altrimenti `null`.
+     */
     private fun findTitleTextInBar(barNode: AccessibilityNodeInfo): String? {
         val queue = ArrayDeque<AccessibilityNodeInfo>()
         queue.add(barNode)
@@ -234,6 +355,14 @@ object ScreenTitleResolver {
         return null
     }
 
+    /**
+     * Cerca un titolo di sezione tramite viewId che termina con `/title` nella fascia alta dello schermo.
+     *
+     * Considera solo testi brevi, non importi, entro circa il 22% superiore dell'area visibile.
+     *
+     * @param root Nodo radice del sottoalbero.
+     * @return Titolo umanizzato se trovato, altrimenti `null`.
+     */
     private fun findSectionTitle(root: AccessibilityNodeInfo): String? {
         val screenBounds = android.graphics.Rect()
         root.getBoundsInScreen(screenBounds)
@@ -261,6 +390,15 @@ object ScreenTitleResolver {
         return null
     }
 
+    /**
+     * Risolve titoli di sezione Nexi noti tramite testo in fascia alta o viewId `content_pagamento`.
+     *
+     * Esclude il widget «Ultimi insoluti» quando si è in home e gestisce il fallback
+     * [findTitleNearContentPagamento] per schermate di pagamento.
+     *
+     * @param root Nodo radice del sottoalbero.
+     * @return Titolo di sezione Nexi umanizzato, oppure `null`.
+     */
     private fun findKnownNexiTitles(root: AccessibilityNodeInfo): String? {
         val screenBounds = android.graphics.Rect()
         root.getBoundsInScreen(screenBounds)
@@ -313,6 +451,15 @@ object ScreenTitleResolver {
         return findTitleNearContentPagamento(root)
     }
 
+    /**
+     * Cerca un titolo di pagamento vicino al viewId `content_pagamento` nel sottoalbero.
+     *
+     * Dopo aver trovato `content_pagamento`, raccoglie candidati il cui testo contiene
+     * «PAGAMENTO» o «NUOVO» e restituisce il primo valido.
+     *
+     * @param root Nodo radice del sottoalbero.
+     * @return Primo titolo candidato umanizzato, oppure `null`.
+     */
     private fun findTitleNearContentPagamento(root: AccessibilityNodeInfo): String? {
         val queue = ArrayDeque<AccessibilityNodeInfo>()
         queue.add(root)
@@ -339,6 +486,12 @@ object ScreenTitleResolver {
         return candidates.firstOrNull()
     }
 
+    /**
+     * Verifica se il testo corrisponde a un titolo di sezione Nexi nella lista nota.
+     *
+     * @param text Testo da confrontare (case-insensitive dopo normalizzazione).
+     * @return `true` se il testo coincide o contiene una voce di [KNOWN_NEXI_SECTION_TITLES].
+     */
     private fun isKnownSectionTitle(text: String): Boolean {
         val normalized = text.trim().uppercase()
         return KNOWN_NEXI_SECTION_TITLES.any { known ->
@@ -346,6 +499,12 @@ object ScreenTitleResolver {
         }
     }
 
+    /**
+     * Estrae il titolo da dialog, bottom sheet o altri contenitori modali.
+     *
+     * @param root Nodo radice; deve avere className indicativa di modale per essere considerato.
+     * @return Titolo umanizzato del modale, oppure `null` se non modale o senza titolo.
+     */
     private fun findModalTitle(root: AccessibilityNodeInfo): String? {
         val className = root.className?.toString().orEmpty()
         val isModal = listOf("Dialog", "BottomSheet", "Popup", "AlertDialog", "Modal")
@@ -374,6 +533,15 @@ object ScreenTitleResolver {
         return null
     }
 
+    /**
+     * Seleziona l'heading più prominente nella porzione superiore dello schermo (~28%).
+     *
+     * Esclude `topbar_title` (già gestito altrove), importi e titoli del widget insoluti in home.
+     * Preferisce l'heading con maggiore altezza visiva come punteggio.
+     *
+     * @param root Nodo radice del sottoalbero.
+     * @return Titolo umanizzato dell'heading migliore, oppure `null`.
+     */
     private fun findProminentHeading(root: AccessibilityNodeInfo): String? {
         val screenBounds = android.graphics.Rect()
         root.getBoundsInScreen(screenBounds)
@@ -425,8 +593,22 @@ object ScreenTitleResolver {
         return best?.first
     }
 
+    /**
+     * Determina se una stringa assomiglia a un importo o valuta piuttosto che a un titolo.
+     *
+     * @param text Testo da valutare.
+     * @return `true` se [PrecisionRules.isCurrencyOrAmountText] classifica il testo come importo.
+     */
     private fun looksLikeAmount(text: String): Boolean = PrecisionRules.isCurrencyOrAmountText(text)
 
+    /**
+     * Converte un nome di activity o fragment in un titolo leggibile.
+     *
+     * Rimuove suffissi comuni (`Activity`, `Fragment`, …), separa camelCase e applica [humanizeTitle].
+     *
+     * @param name Nome semplice della classe (es. `HomeActivity`).
+     * @return Titolo umanizzato derivato dal nome classe.
+     */
     private fun humanizeActivityName(name: String): String {
         val cleaned = name
             .removeSuffix("Activity")
@@ -438,6 +620,12 @@ object ScreenTitleResolver {
         )
     }
 
+    /**
+     * Normalizza spazi e trim di un titolo grezzo.
+     *
+     * @param title Stringa titolo eventualmente con spazi multipli.
+     * @return Titolo con spazi collassati e bordi trimmati.
+     */
     private fun humanizeTitle(title: String): String =
         title.trim().replace(Regex("\\s+"), " ")
 
@@ -447,7 +635,15 @@ object ScreenTitleResolver {
         "labelcontacts", "rotate_display", "scrollview_port",
     )
 
-    /** Risolve titolo da viewId distintivi Nexi quando heading/topbar assenti. */
+    /**
+     * Risolve il titolo da viewId distintivi Nexi quando heading e topbar non sono disponibili.
+     *
+     * Mappa combinazioni di viewId a sezioni note (Home, Rubrica, pagamenti, distinte, effetti,
+     * insoluti). Non opera quando il drawer (`nav_*`) è visibile.
+     *
+     * @param root Nodo radice del sottoalbero.
+     * @return Titolo di sezione inferito dai viewId, oppure `null`.
+     */
     private fun findByDistinctiveIds(root: AccessibilityNodeInfo): String? {
         val ids = collectViewIdShorts(root)
         if (ids.isEmpty()) return null
@@ -466,13 +662,29 @@ object ScreenTitleResolver {
         }
     }
 
-    /** Titolo widget insoluti in home (`unpaid_last` = «Ultimi insoluti») — non sezione dedicata. */
+    /**
+     * Identifica il titolo del widget insoluti in home, non una sezione dedicata.
+     *
+     * In home, «Ultimi insoluti» (viewId `insoluti_title` o testo equivalente) è un widget
+     * e non deve essere trattato come titolo di navigazione verso la sezione Insoluti.
+     *
+     * @param text Testo del nodo candidato.
+     * @param viewId ViewId completo o parziale del nodo.
+     * @param onHome `true` se il layout corrente contiene marker della home.
+     * @return `true` se il testo/viewId corrisponde al widget insoluti in home.
+     */
     private fun isHomeInsolutiWidgetTitle(text: String, viewId: String, onHome: Boolean): Boolean {
         if (!onHome) return false
         if (viewId.endsWith("/insoluti_title")) return true
         return text.equals("Ultimi insoluti", ignoreCase = true)
     }
 
+    /**
+     * Attraversa il sottoalbero e raccoglie i suffissi corti di tutti i viewId presenti.
+     *
+     * @param root Nodo radice da visitare in ampiezza.
+     * @return Insieme immutabile dei suffissi viewId (parte dopo `/`), in minuscolo.
+     */
     private fun collectViewIdShorts(root: AccessibilityNodeInfo): Set<String> {
         val ids = mutableSetOf<String>()
         val queue = ArrayDeque<AccessibilityNodeInfo>()
