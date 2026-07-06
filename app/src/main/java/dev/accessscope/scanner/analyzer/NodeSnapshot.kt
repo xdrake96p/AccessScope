@@ -30,7 +30,7 @@ data class NodeSnapshot(
     val collectionRow: Int,
     val collectionColumn: Int,
     val childCount: Int,
-    val importantForAccessibility: Int,
+    val isLikelyDecorative: Boolean,
     val traversalIndex: Int,
     val rangeCurrent: Float?,
     val rangeMin: Float?,
@@ -120,8 +120,14 @@ fun AccessibilityNodeInfo.toSnapshot(
     if (bounds.width() <= 0 || bounds.height() <= 0) return null
 
     val range = rangeInfo
+    val collectionItem = collectionItemInfo
+    val isHeadingMarked = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P) {
+        collectionItem?.isHeading == true
+    } else {
+        false
+    }
     val headingLevel = when {
-        collectionItemInfo?.heading == true -> estimateHeadingLevel(bounds.height())
+        isHeadingMarked -> estimateHeadingLevel(bounds.height())
         else -> 0
     }
 
@@ -156,7 +162,7 @@ fun AccessibilityNodeInfo.toSnapshot(
         isScrollable = isScrollable,
         isEnabled = isEnabled,
         isPassword = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) isPassword else false,
-        isHeading = collectionItemInfo?.heading == true,
+        isHeading = isHeadingMarked,
         headingLevel = headingLevel,
         hasLabeledBy = labeledBy != null,
         hasLabelFor = labelFor != null,
@@ -170,7 +176,8 @@ fun AccessibilityNodeInfo.toSnapshot(
         collectionRow = collectionItemInfo?.rowIndex ?: -1,
         collectionColumn = collectionItemInfo?.columnIndex ?: -1,
         childCount = childCount,
-        importantForAccessibility = importantForAccessibility,
+        isLikelyDecorative = !isClickable && !isFocusable && !isCheckable &&
+            (className?.toString().orEmpty().contains("Image", true)),
         traversalIndex = traversalIndex,
         rangeCurrent = range?.current,
         rangeMin = range?.min,

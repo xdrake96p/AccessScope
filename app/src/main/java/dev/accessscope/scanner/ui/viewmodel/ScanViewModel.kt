@@ -27,6 +27,7 @@ data class HomeUiState(
     val accessibilityGranted: Boolean = false,
     val overlayGranted: Boolean = false,
     val isLoadingApps: Boolean = true,
+    val includeSystemApps: Boolean = false,
     val statusMessage: String? = null,
 )
 
@@ -64,12 +65,18 @@ class ScanViewModel(application: Application) : AndroidViewModel(application) {
 
     fun loadApps() {
         viewModelScope.launch {
+            val includeSystem = _uiState.value.includeSystemApps
             _uiState.update { it.copy(isLoadingApps = true) }
             val apps = withContext(Dispatchers.IO) {
-                PackageHelper.loadLaunchableApps(getApplication())
+                PackageHelper.loadInstalledApps(getApplication(), includeSystem)
             }
             _uiState.update { it.copy(apps = apps, isLoadingApps = false) }
         }
+    }
+
+    fun toggleIncludeSystemApps() {
+        _uiState.update { it.copy(includeSystemApps = !it.includeSystemApps) }
+        loadApps()
     }
 
     fun toggleApp(packageName: String) {

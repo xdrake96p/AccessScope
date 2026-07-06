@@ -24,9 +24,8 @@ object PrecisionRules {
         }
     }
 
-    /** Immagine marcata come non importante per accessibilità. */
-    fun isDecorative(snap: NodeSnapshot): Boolean =
-        snap.importantForAccessibility == 2 // IMPORTANT_FOR_ACCESSIBILITY_NO
+    /** Immagine probabilmente decorativa (non interattiva). */
+    fun isDecorative(snap: NodeSnapshot): Boolean = snap.isLikelyDecorative
 
     fun shouldSkipTouchTargetCheck(snap: NodeSnapshot, all: List<NodeSnapshot>): Boolean =
         isInlineTextLink(snap) || isIconInsideLabeledButton(snap, all)

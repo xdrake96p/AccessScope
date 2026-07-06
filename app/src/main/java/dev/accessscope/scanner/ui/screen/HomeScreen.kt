@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -37,6 +38,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -90,6 +92,7 @@ fun HomeScreen(viewModel: ScanViewModel) {
         snackbarHost = { SnackbarHost(snackbarHost) },
         bottomBar = {
             ScanActionBar(
+                modifier = Modifier.navigationBarsPadding(),
                 isScanning = uiState.scanState.isScanning,
                 canStart = uiState.selectedPackages.isNotEmpty() &&
                     uiState.accessibilityGranted && uiState.overlayGranted,
@@ -157,23 +160,41 @@ fun HomeScreen(viewModel: ScanViewModel) {
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        Text(
-                            "App (${uiState.selectedPackages.size}/${uiState.apps.size})",
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.SemiBold,
+                        Column {
+                            Text(
+                                "App installate (${uiState.selectedPackages.size}/${uiState.apps.size})",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.SemiBold,
+                            )
+                            Text(
+                                "Tutte le app del telefono, non solo quelle in home",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = TextSecondary,
+                            )
+                        }
+                        if (uiState.isLoadingApps) {
+                            CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
+                        }
+                    }
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text("Mostra app di sistema", style = MaterialTheme.typography.bodyMedium)
+                        Switch(
+                            checked = uiState.includeSystemApps,
+                            onCheckedChange = { viewModel.toggleIncludeSystemApps() },
                         )
-                        Row {
-                            TextButton(onClick = viewModel::selectAllVisible) {
-                                Icon(Icons.Outlined.SelectAll, contentDescription = null, modifier = Modifier.size(18.dp))
-                                Spacer(Modifier.width(4.dp))
-                                Text("Tutte")
-                            }
-                            TextButton(onClick = viewModel::clearSelection) {
-                                Text("Nessuna")
-                            }
-                            if (uiState.isLoadingApps) {
-                                CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
-                            }
+                    }
+                    Row {
+                        TextButton(onClick = viewModel::selectAllVisible) {
+                            Icon(Icons.Outlined.SelectAll, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Spacer(Modifier.width(4.dp))
+                            Text("Tutte")
+                        }
+                        TextButton(onClick = viewModel::clearSelection) {
+                            Text("Nessuna")
                         }
                     }
                 }
@@ -261,6 +282,9 @@ private fun AppRow(
             Column(Modifier.weight(1f)) {
                 Text(app.label, fontWeight = FontWeight.Medium)
                 Text(app.packageName, style = MaterialTheme.typography.bodySmall, color = TextSecondary)
+                if (app.isSystemApp) {
+                    Text("App di sistema", style = MaterialTheme.typography.labelSmall, color = TextSecondary)
+                }
             }
             FilterChip(
                 selected = selected,
@@ -273,13 +297,14 @@ private fun AppRow(
 
 @Composable
 private fun ScanActionBar(
+    modifier: Modifier = Modifier,
     isScanning: Boolean,
     canStart: Boolean,
     onStart: () -> Unit,
     onStop: () -> Unit,
 ) {
     Row(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
             .background(MaterialTheme.colorScheme.surface)
             .padding(horizontal = 16.dp, vertical = 12.dp),

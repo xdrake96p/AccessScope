@@ -242,7 +242,11 @@ data class ScreenReaderFinding(
     val viewId: String? = null,
 )
 
-data class InstalledAppInfo(val packageName: String, val label: String)
+data class InstalledAppInfo(
+    val packageName: String,
+    val label: String,
+    val isSystemApp: Boolean = false,
+)
 
 data class ScanSessionState(
     val isScanning: Boolean = false,
