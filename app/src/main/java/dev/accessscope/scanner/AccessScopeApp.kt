@@ -46,14 +46,15 @@ class AccessScopeApp : Application() {
         val snapshot = scanRepository.state.value
         val hadActiveSession = snapshot.isScanning ||
             snapshot.violations.isNotEmpty() ||
-            snapshot.scannedScreens > 0
+            snapshot.uniqueScreens > 0
 
         // #region agent log
         DebugTrace.log("H-STOP2", "AccessScopeApp.stopScanSession", "called", mapOf(
             "fromOverlay" to fromOverlay,
             "isScanning" to snapshot.isScanning,
             "violations" to snapshot.violations.size,
-            "screens" to snapshot.scannedScreens,
+            "screens" to snapshot.uniqueScreens,
+            "analyses" to snapshot.scanAnalyses,
             "hadActiveSession" to hadActiveSession,
         ))
         // #endregion
@@ -69,7 +70,10 @@ class AccessScopeApp : Application() {
                     targetPackages = current.selectedPackages,
                     violations = current.violations,
                     screenReaderFindings = current.screenReaderFindings,
-                    scannedScreens = current.scannedScreens,
+                    uniqueScreens = current.uniqueScreens,
+                    scanAnalyses = current.scanAnalyses,
+                    scanScopeLabel = current.scanScope.label(),
+                    scannedScreens = current.visitedScreenTitles,
                 )
             }
             result.fold(

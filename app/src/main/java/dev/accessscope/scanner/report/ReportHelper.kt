@@ -4,6 +4,7 @@ import dev.accessscope.scanner.data.AccessibilityViolation
 import dev.accessscope.scanner.data.ScreenReaderFinding
 import dev.accessscope.scanner.data.ViolationArea
 import dev.accessscope.scanner.data.ViolationSeverity
+import dev.accessscope.scanner.data.ViolationType
 import kotlin.math.roundToInt
 
 data class ReportSectionGroup(
@@ -14,7 +15,7 @@ data class ReportSectionGroup(
 }
 
 object ReportHelper {
-    const val MIN_CONFIDENCE = 0.60f
+    const val MIN_CONFIDENCE = 0.65f
 
     val SEVERITY_ORDER = listOf(
         ViolationSeverity.CRITICAL,
@@ -23,13 +24,41 @@ object ReportHelper {
         ViolationSeverity.MINOR,
     )
 
-    fun filterViolations(violations: List<AccessibilityViolation>): List<AccessibilityViolation> =
-        violations.filter { it.confidence >= MIN_CONFIDENCE }
+    fun confidenceThreshold(type: ViolationType): Float = when (type) {
+        ViolationType.LOW_COLOR_CONTRAST,
+        ViolationType.LOW_NON_TEXT_CONTRAST,
+        -> 0.72f
+        ViolationType.HEADING_HIERARCHY,
+        ViolationType.TEXT_TRUNCATED,
+        ViolationType.DUPLICATE_VIEW_ID,
+        -> 0.80f
+        ViolationType.REQUIRED_FIELD_UNMARKED,
+        ViolationType.INPUT_ERROR_MISSING,
+        -> 0.75f
+        else -> MIN_CONFIDENCE
+    }
 
+    fun filterViolations(violations: List<AccessibilityViolation>): List<AccessibilityViolation> =
+        violations.filter { it.confidence >= confidenceThreshold(it.type) }
+
+    fun computeScore(violations: List<AccessibilityViolation>, screens: Int): Int {
+        if (screens == 0) return 100
+        val filtered = filterViolations(violations)
+        val weighted = filtered.sumOf { severityWeight(it.type.severity) }
+        return (100 - weighted / screens * 6).roundToInt().coerceIn(0, 100)
+    }
+
+    /** @deprecated use computeScore(violations, screens) */
     fun computeScore(issues: Int, screens: Int): Int {
         if (screens == 0) return 100
-        val density = issues.toFloat() / screens
-        return (100 - density * 8).roundToInt().coerceIn(0, 100)
+        return (100 - issues.toFloat() / screens * 8).roundToInt().coerceIn(0, 100)
+    }
+
+    private fun severityWeight(severity: ViolationSeverity): Double = when (severity) {
+        ViolationSeverity.CRITICAL -> 4.0
+        ViolationSeverity.SERIOUS -> 2.0
+        ViolationSeverity.MODERATE -> 1.0
+        ViolationSeverity.MINOR -> 0.5
     }
 
     fun scoreLabel(score: Int): String = when {

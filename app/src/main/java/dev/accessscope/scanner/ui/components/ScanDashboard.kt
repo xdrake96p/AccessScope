@@ -66,6 +66,9 @@ fun ScanDashboard(
     isScanning: Boolean,
     onOpenReport: () -> Unit,
     modifier: Modifier = Modifier,
+    scanAnalyses: Int = 0,
+    isPartialScan: Boolean = false,
+    scanScopeLabel: String = "Completa",
 ) {
     val transition = rememberInfiniteTransition(label = "pulse")
     val pulse by transition.animateFloat(
@@ -79,7 +82,7 @@ fun ScanDashboard(
     )
 
     val filtered = remember(violations) { ReportHelper.filterViolations(violations) }
-    val score = ReportHelper.computeScore(filtered.size, screens)
+    val score = ReportHelper.computeScore(filtered, screens)
     val cleanAreas = ReportHelper.cleanAreaCount(filtered, talkBackFindings)
     val bySeverity = filtered.groupBy { it.type.severity }
     val topTypes = filtered.groupBy { it.type }
@@ -113,6 +116,13 @@ fun ScanDashboard(
                     if (isScanning) "Scansione in corso" else "Ultima sessione",
                     fontWeight = FontWeight.SemiBold,
                 )
+                if (isPartialScan) {
+                    Text(
+                        "Parziale: $scanScopeLabel",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = Warning,
+                    )
+                }
             }
 
             val hasLiveData = screens > 0 || filtered.isNotEmpty() || talkBackFindings > 0
@@ -131,7 +141,14 @@ fun ScanDashboard(
                     StatData(Icons.Outlined.ViewCarousel, "$screens", "Schermate", Success),
                     StatData(Icons.Outlined.Star, "$score", "Punteggio", Success),
                     StatData(Icons.Outlined.CheckCircle, "$cleanAreas/8", "Aree ok", Success),
-                ),
+                ).let { stats ->
+                    if (scanAnalyses > screens) stats + StatData(
+                        Icons.Outlined.ViewCarousel,
+                        "$scanAnalyses",
+                        "Analisi",
+                        TextSecondary,
+                    ) else stats
+                },
                 koStats = listOf(
                     StatData(Icons.Outlined.BugReport, "${filtered.size}", "Violazioni", Danger),
                     StatData(Icons.Outlined.RecordVoiceOver, "$talkBackFindings", "TalkBack", Warning),

@@ -79,7 +79,7 @@ fun ReportScreen(
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val scan = uiState.scanState
     val violations = remember(scan.violations) { ReportHelper.filterViolations(scan.violations) }
-    val score = ReportHelper.computeScore(violations.size, scan.scannedScreens)
+    val score = ReportHelper.computeScore(violations, scan.uniqueScreens)
     var severityFilter by rememberSaveable { mutableStateOf<ViolationSeverity?>(null) }
     val filteredViolations = remember(violations, severityFilter) {
         severityFilter?.let { s -> violations.filter { it.type.severity == s } } ?: violations
@@ -147,7 +147,9 @@ fun ReportScreen(
             item {
                 ReportSummaryCard(
                     score = score,
-                    scannedScreens = scan.scannedScreens,
+                    scannedScreens = scan.uniqueScreens,
+                    scanAnalyses = scan.scanAnalyses,
+                    scanScopeLabel = scan.scanScope.label(),
                     appCount = scan.selectedPackages.size,
                     violationCount = violations.size,
                     talkBackCount = scan.screenReaderFindings.size,
@@ -227,6 +229,8 @@ fun ReportScreen(
 private fun ReportSummaryCard(
     score: Int,
     scannedScreens: Int,
+    scanAnalyses: Int,
+    scanScopeLabel: String,
     appCount: Int,
     violationCount: Int,
     talkBackCount: Int,
@@ -266,7 +270,11 @@ private fun ReportSummaryCard(
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             SummaryRow("Data scansione", date)
             SummaryRow("App controllate", "$appCount")
-            SummaryRow("Schermate analizzate", "$scannedScreens")
+            SummaryRow("Ambiti analizzati", scanScopeLabel)
+            SummaryRow("Schermate uniche", "$scannedScreens")
+            if (scanAnalyses > scannedScreens) {
+                SummaryRow("Analisi eseguite", "$scanAnalyses")
+            }
             SummaryRow("Problemi trovati", "$violationCount")
             SummaryRow("Note screen reader", "$talkBackCount")
         }

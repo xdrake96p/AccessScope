@@ -226,6 +226,7 @@ data class AccessibilityViolation(
     val sectionTitle: String? = null,
     val confidence: Float = 1.0f,
     val timestampMs: Long = System.currentTimeMillis(),
+    val screenFingerprint: String? = null,
 ) {
     val area: ViolationArea get() = type.area
     val simpleExplanation: String get() = type.plainHint
@@ -235,7 +236,28 @@ data class AccessibilityViolation(
         get() = sectionTitle?.takeIf { it.isNotBlank() } ?: screenTitle
 
     val dedupeKey: String
-        get() = "${type.name}|$packageName|$screenTitle|$reportSection|$viewClassName|$details|$viewId|$bounds"
+        get() {
+            val identity = viewId?.takeIf { it.isNotBlank() }
+                ?: "${viewClassName}@${bounds?.hashCode()?.and(0xFFFF)}"
+            val scope = when {
+                type == ViolationType.DYNAMIC_CONTENT_SILENT -> "global"
+                isGlobalWidget(viewId) -> "global"
+                else -> screenFingerprint?.takeIf { it.isNotBlank() } ?: screenTitle
+            }
+            return "${type.name}|$packageName|$scope|$identity"
+        }
+
+    companion object {
+        fun isGlobalWidget(viewId: String?): Boolean {
+            if (viewId.isNullOrBlank()) return false
+            val short = viewId.substringAfterLast('/').lowercase()
+            return short.contains("topbar_icon") ||
+                short == "layout_topbar_icon_left" ||
+                short == "layout_topbar_icon_right" ||
+                short == "topbar_icon_left" ||
+                short == "topbar_icon_right"
+        }
+    }
 }
 
 data class ScreenReaderFinding(
@@ -263,7 +285,13 @@ data class ScanSessionState(
     val selectedPackages: Set<String> = emptySet(),
     val violations: List<AccessibilityViolation> = emptyList(),
     val screenReaderFindings: List<ScreenReaderFinding> = emptyList(),
-    val scannedScreens: Int = 0,
+    val uniqueScreens: Int = 0,
+    val scanAnalyses: Int = 0,
+    val scanScope: ScanScope = ScanScope.FULL,
+    val visitedScreenTitles: List<String> = emptyList(),
     val lastPdfPath: String? = null,
     val errorMessage: String? = null,
-)
+) {
+    /** @deprecated use uniqueScreens */
+    val scannedScreens: Int get() = uniqueScreens
+}

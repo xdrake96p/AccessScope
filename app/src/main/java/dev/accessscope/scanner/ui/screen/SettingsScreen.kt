@@ -1,0 +1,174 @@
+package dev.accessscope.scanner.ui.screen
+
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.ArrowBack
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Switch
+import androidx.compose.material3.Text
+import androidx.compose.material3.TopAppBar
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import dev.accessscope.scanner.data.ViolationArea
+import dev.accessscope.scanner.ui.theme.BrandPrimary
+import dev.accessscope.scanner.ui.theme.TextSecondary
+import dev.accessscope.scanner.ui.viewmodel.ScanViewModel
+
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
+@Composable
+fun SettingsScreen(
+    viewModel: ScanViewModel,
+    onBack: () -> Unit,
+) {
+    val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val scope = uiState.scanScope
+
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text("Impostazioni") },
+                navigationIcon = {
+                    IconButton(onClick = onBack) {
+                        Icon(Icons.AutoMirrored.Outlined.ArrowBack, contentDescription = "Indietro")
+                    }
+                },
+            )
+        },
+    ) { padding ->
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(padding)
+                .verticalScroll(rememberScrollState())
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp),
+        ) {
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(16.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+            ) {
+                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("Scansione", fontWeight = FontWeight.SemiBold)
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Column(Modifier.weight(1f)) {
+                            Text("Apri app automaticamente")
+                            Text(
+                                "All'avvio apre la prima app selezionata.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = TextSecondary,
+                            )
+                        }
+                        Switch(
+                            checked = uiState.autoLaunchEnabled,
+                            onCheckedChange = { viewModel.toggleAutoLaunch() },
+                        )
+                    }
+                }
+            }
+
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(16.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+            ) {
+                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text("Ambiti di scansione", fontWeight = FontWeight.SemiBold)
+                    if (!scope.isFullScan) {
+                        Text(
+                            "La prossima scansione analizzerà solo gli ambiti selezionati.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = BrandPrimary,
+                        )
+                    }
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text("Analizza tutto")
+                        Switch(
+                            checked = scope.isFullScan,
+                            onCheckedChange = { enabled ->
+                                if (enabled) viewModel.setFullScan() else Unit
+                            },
+                        )
+                    }
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        FilterChip(
+                            selected = scope.isFullScan,
+                            onClick = viewModel::setFullScan,
+                            label = { Text("Completa") },
+                        )
+                        FilterChip(
+                            selected = scope.enabledAreas == setOf(ViolationArea.SCREEN_READER),
+                            onClick = viewModel::applyTalkBackOnlyPreset,
+                            label = { Text("Solo TalkBack") },
+                        )
+                        FilterChip(
+                            selected = scope.enabledAreas == setOf(ViolationArea.LABELS),
+                            onClick = viewModel::applyLabelsOnlyPreset,
+                            label = { Text("Solo etichette") },
+                        )
+                        FilterChip(
+                            selected = scope.enabledAreas == setOf(ViolationArea.COLOR),
+                            onClick = viewModel::applyContrastOnlyPreset,
+                            label = { Text("Solo contrasto") },
+                        )
+                    }
+                    HorizontalDivider()
+                    ViolationArea.entries.forEach { area ->
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Column(Modifier.weight(1f).padding(end = 8.dp)) {
+                                Text("${area.emoji} ${area.title}", fontWeight = FontWeight.Medium)
+                                Text(
+                                    area.subtitle,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = TextSecondary,
+                                )
+                            }
+                            Switch(
+                                checked = scope.includes(area),
+                                onCheckedChange = { viewModel.toggleScanArea(area) },
+                            )
+                        }
+                        Spacer(Modifier.height(4.dp))
+                    }
+                }
+            }
+        }
+    }
+}

@@ -3,6 +3,7 @@ package dev.accessscope.scanner.analyzer
 import android.graphics.Bitmap
 import android.graphics.Color
 import android.graphics.Rect
+import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.pow
@@ -12,6 +13,9 @@ object WcagContrast {
     const val MIN_TEXT_CONTRAST = 4.5
     const val MIN_LARGE_TEXT_CONTRAST = 3.0
     const val MIN_NON_TEXT_CONTRAST = 3.0
+    const val MIN_RELIABLE_RATIO = 1.15
+    const val MIN_LUMINANCE_SEPARATION = 0.08
+    const val MIN_SAMPLES = 8
 
     data class ContrastResult(
         val ratio: Double,
@@ -21,6 +25,13 @@ object WcagContrast {
         val samplesUsed: Int,
     )
 
+    fun isReliableMeasurement(result: ContrastResult): Boolean {
+        if (result.ratio < MIN_RELIABLE_RATIO) return false
+        if (result.samplesUsed < MIN_SAMPLES) return false
+        val separation = abs(relativeLuminance(result.foreground) - relativeLuminance(result.background))
+        return separation >= MIN_LUMINANCE_SEPARATION
+    }
+
     fun measureTextContrast(bitmap: Bitmap, bounds: Rect, isLargeText: Boolean): ContrastResult? {
         val fgSamples = sampleGrid(bitmap, bounds, grid = 4, insetPercent = 0.15f)
         if (fgSamples.isEmpty()) return null
@@ -28,12 +39,11 @@ object WcagContrast {
         val bgSamples = sampleBackgroundRing(bitmap, bounds)
         if (bgSamples.isEmpty()) return null
 
-        val fg = medianColorByLuminance(fgSamples, preferDark = true)
-        val bg = medianColorByLuminance(bgSamples, preferDark = false)
+        val fg = percentileColorByLuminance(fgSamples, percentile = 0.25)
+        val bg = percentileColorByLuminance(bgSamples, percentile = 0.75)
         val ratio = contrastRatio(fg, bg)
 
-        val threshold = if (isLargeText) MIN_LARGE_TEXT_CONTRAST else MIN_TEXT_CONTRAST
-        val separation = kotlin.math.abs(relativeLuminance(fg) - relativeLuminance(bg))
+        val separation = abs(relativeLuminance(fg) - relativeLuminance(bg))
         val confidence = (0.55f + separation.coerceIn(0.0, 0.45).toFloat() +
             (fgSamples.size / 16f).coerceAtMost(0.2f)).coerceAtMost(0.98f)
 
@@ -44,15 +54,23 @@ object WcagContrast {
         val fgSamples = sampleGrid(bitmap, bounds, grid = 3, insetPercent = 0.2f)
         val bgSamples = sampleBackgroundRing(bitmap, bounds)
         if (fgSamples.isEmpty() || bgSamples.isEmpty()) return null
-        val fg = medianColorByLuminance(fgSamples, preferDark = true)
-        val bg = medianColorByLuminance(bgSamples, preferDark = false)
+        val fg = percentileColorByLuminance(fgSamples, percentile = 0.25)
+        val bg = percentileColorByLuminance(bgSamples, percentile = 0.75)
+        val separation = abs(relativeLuminance(fg) - relativeLuminance(bg))
+        val confidence = (0.60f + separation.coerceIn(0.0, 0.35).toFloat()).coerceAtMost(0.90f)
         return ContrastResult(
             ratio = contrastRatio(fg, bg),
             foreground = fg,
             background = bg,
-            confidence = 0.75f,
+            confidence = confidence,
             samplesUsed = fgSamples.size + bgSamples.size,
         )
+    }
+
+    private fun percentileColorByLuminance(colors: List<Int>, percentile: Double): Int {
+        val sorted = colors.sortedBy { relativeLuminance(it) }
+        val index = ((sorted.size - 1) * percentile).toInt().coerceIn(0, sorted.lastIndex)
+        return sorted[index]
     }
 
     private fun sampleGrid(bitmap: Bitmap, bounds: Rect, grid: Int, insetPercent: Float): List<Int> {
@@ -87,13 +105,6 @@ object WcagContrast {
         )
         return points.mapNotNull { (x, y) -> sampleColor(bitmap, x, y) }
             .filter { Color.alpha(it) > 200 }
-    }
-
-    private fun medianColorByLuminance(colors: List<Int>, preferDark: Boolean): Int {
-        return colors.sortedBy { relativeLuminance(it) }
-            .let { sorted ->
-                if (preferDark) sorted.firstOrNull() else sorted.lastOrNull()
-            } ?: colors.first()
     }
 
     fun contrastRatio(foreground: Int, background: Int): Double {

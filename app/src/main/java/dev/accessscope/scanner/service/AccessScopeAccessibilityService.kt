@@ -14,6 +14,8 @@ import dev.accessscope.scanner.AccessScopeApp
 import dev.accessscope.scanner.analyzer.DynamicContentTracker
 import dev.accessscope.scanner.analyzer.ScreenTitleResolver
 import dev.accessscope.scanner.analyzer.NodeAccessibilityAnalyzer
+import dev.accessscope.scanner.analyzer.ScreenFingerprint
+import dev.accessscope.scanner.data.ViolationArea
 import dev.accessscope.scanner.data.ScanSessionRepository
 import dev.accessscope.scanner.util.DebugTrace
 import java.util.concurrent.ConcurrentHashMap
@@ -39,8 +41,13 @@ class AccessScopeAccessibilityService : AccessibilityService() {
     private val lastScanByWindow = ConcurrentHashMap<String, Long>()
     private val screenshotInFlight = AtomicBoolean(false)
     private val debounceMs = 800L
+    private val windowStateDebounceMs = 300L
+    private val seenFingerprintsThisSession = mutableSetOf<String>()
 
-    fun resetDynamicTracking() = dynamicTracker.reset()
+    fun resetDynamicTracking() {
+        dynamicTracker.reset()
+        seenFingerprintsThisSession.clear()
+    }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
         if (event == null) return
@@ -81,14 +88,23 @@ class AccessScopeAccessibilityService : AccessibilityService() {
         val windowKey = "${packageName}_${event.windowId}_${event.className}"
         val now = System.currentTimeMillis()
         val last = lastScanByWindow[windowKey] ?: 0L
-        if (now - last < debounceMs) return
+        val debounce = if (event.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) {
+            windowStateDebounceMs
+        } else {
+            debounceMs
+        }
+        if (now - last < debounce) return
         lastScanByWindow[windowKey] = now
 
         val silentDynamic = dynamicTracker.isSilentDynamicContent(packageName, event.windowId)
-        val analyzer = NodeAccessibilityAnalyzer.create(density, silentDynamic)
+        val scanScope = repository.currentScanScope()
+        val analyzer = NodeAccessibilityAnalyzer.create(density, silentDynamic, scanScope)
+        val needsScreenshot = scanScope.includes(ViolationArea.COLOR) &&
+            Build.VERSION.SDK_INT >= Build.VERSION_CODES.R
 
         executor.execute {
-            val root = obtainRootForScan(packageName, event) ?: run {
+            val roots = obtainRootsForScan(packageName, event)
+            if (roots.isEmpty()) {
                 // #region agent log
                 DebugTrace.log("H4", "scheduleScan", "no_root", mapOf(
                     "targetPkg" to packageName,
@@ -98,43 +114,48 @@ class AccessScopeAccessibilityService : AccessibilityService() {
                 return@execute
             }
             // #region agent log
-            DebugTrace.log("H2", "scheduleScan", "root_obtained", mapOf(
+            DebugTrace.log("H2", "scheduleScan", "roots_obtained", mapOf(
                 "targetPkg" to packageName,
-                "rootPkg" to root.packageName?.toString(),
-                "childCount" to root.childCount,
+                "rootCount" to roots.size,
             ))
             // #endregion
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            if (needsScreenshot) {
                 captureScreenshot { bitmap ->
                     try {
-                        scanRoot(root, packageName, event, bitmap, analyzer)
+                        roots.forEach { root ->
+                            scanRoot(root, packageName, event, bitmap, analyzer)
+                        }
                     } finally {
                         bitmap?.recycle()
-                        root.recycle()
+                        roots.forEach { it.recycle() }
                     }
                 }
             } else {
                 try {
-                    scanRoot(root, packageName, event, null, analyzer)
+                    roots.forEach { root ->
+                        scanRoot(root, packageName, event, null, analyzer)
+                    }
                 } finally {
-                    root.recycle()
+                    roots.forEach { it.recycle() }
                 }
             }
         }
     }
 
-    /** Evita che l'overlay STOP rubi [rootInActiveWindow] — cerca la finestra dell'app target. */
-    private fun obtainRootForScan(
+    /** Raccoglie tutte le finestre target; preferisce overlay PIN/modal. */
+    private fun obtainRootsForScan(
         targetPackage: String,
         event: AccessibilityEvent,
-    ): AccessibilityNodeInfo? {
+    ): List<AccessibilityNodeInfo> {
+        val roots = mutableListOf<AccessibilityNodeInfo>()
+
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
             windows?.forEach { window ->
                 if (window.type == AccessibilityWindowInfo.TYPE_ACCESSIBILITY_OVERLAY) return@forEach
                 val windowRoot = window.root ?: return@forEach
                 try {
                     if (windowRoot.packageName?.toString() == targetPackage) {
-                        return AccessibilityNodeInfo.obtain(windowRoot)
+                        roots.add(AccessibilityNodeInfo.obtain(windowRoot))
                     }
                 } finally {
                     windowRoot.recycle()
@@ -142,20 +163,44 @@ class AccessScopeAccessibilityService : AccessibilityService() {
             }
         }
 
-        event.source?.let { source ->
-            return AccessibilityNodeInfo.obtain(source)
-        }
-
-        rootInActiveWindow?.let { active ->
-            try {
-                if (active.packageName?.toString() == targetPackage) {
-                    return AccessibilityNodeInfo.obtain(active)
+        if (roots.isEmpty()) {
+            event.source?.let { source ->
+                roots.add(AccessibilityNodeInfo.obtain(source))
+            }
+            rootInActiveWindow?.let { active ->
+                try {
+                    if (active.packageName?.toString() == targetPackage) {
+                        roots.add(AccessibilityNodeInfo.obtain(active))
+                    }
+                } finally {
+                    active.recycle()
                 }
-            } finally {
-                active.recycle()
             }
         }
-        return null
+
+        return prioritizeRoots(roots)
+    }
+
+    private fun prioritizeRoots(roots: List<AccessibilityNodeInfo>): List<AccessibilityNodeInfo> {
+        if (roots.size <= 1) return roots
+
+        val pinRoots = roots.filter { ScreenTitleResolver.isPinScreen(it) }
+        if (pinRoots.isNotEmpty()) {
+            val others = roots.filter { root -> pinRoots.none { it == root } }
+            return pinRoots + others
+        }
+
+        val modalRoots = roots.filter { root ->
+            val className = root.className?.toString().orEmpty()
+            listOf("Dialog", "BottomSheet", "Popup", "AlertDialog", "Modal")
+                .any { className.contains(it, true) }
+        }
+        if (modalRoots.isNotEmpty()) {
+            val others = roots.filter { root -> modalRoots.none { it == root } }
+            return modalRoots + others
+        }
+
+        return roots
     }
 
     private fun captureScreenshot(onResult: (Bitmap?) -> Unit) {
@@ -203,10 +248,19 @@ class AccessScopeAccessibilityService : AccessibilityService() {
         analyzer: NodeAccessibilityAnalyzer,
     ) {
         val screenTitle = ScreenTitleResolver.resolve(root, event)
-        val result = analyzer.analyzeTree(root, packageName, screenTitle, screenshot)
+        val fingerprint = ScreenFingerprint.compute(root, packageName, screenTitle)
+        val result = analyzer.analyzeTree(root, packageName, screenTitle, screenshot, fingerprint)
         repository.addViolations(result.violations)
-        repository.addScreenReaderFindings(result.screenReaderFindings)
-        repository.incrementScreenCount()
+        if (repository.currentScanScope().includes(ViolationArea.SCREEN_READER)) {
+            repository.addScreenReaderFindings(result.screenReaderFindings)
+        }
+        repository.incrementScanAnalysis()
+        val isNewScreen = event.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED ||
+            !seenFingerprintsThisSession.contains(fingerprint)
+        if (isNewScreen) {
+            seenFingerprintsThisSession.add(fingerprint)
+            repository.registerUniqueScreen(fingerprint, screenTitle)
+        }
         // #region agent log
         DebugTrace.log("H5", "scanRoot", "analyzed", mapOf(
             "pkg" to packageName,

@@ -63,7 +63,6 @@ import dev.accessscope.scanner.data.InstalledAppInfo
 import dev.accessscope.scanner.ui.components.FeatureHighlights
 import dev.accessscope.scanner.ui.components.HeroHeader
 import dev.accessscope.scanner.ui.components.PermissionsCard
-import dev.accessscope.scanner.ui.components.ScanOptionsCard
 import dev.accessscope.scanner.ui.components.ScanDashboard
 import dev.accessscope.scanner.ui.theme.BrandPrimary
 import dev.accessscope.scanner.ui.theme.Danger
@@ -76,6 +75,7 @@ import dev.accessscope.scanner.ui.viewmodel.ScanViewModel
 fun HomeScreen(
     viewModel: ScanViewModel,
     onOpenReport: () -> Unit,
+    onOpenSettings: () -> Unit = {},
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
@@ -123,6 +123,7 @@ fun HomeScreen(
                 HeroHeader(
                     selectedCount = uiState.selectedPackages.size,
                     isScanning = uiState.scanState.isScanning,
+                    onOpenSettings = onOpenSettings,
                 )
             }
 
@@ -135,10 +136,6 @@ fun HomeScreen(
                         overlayGranted = uiState.overlayGranted,
                         onRefresh = viewModel::refreshPermissions,
                     )
-                    ScanOptionsCard(
-                        autoLaunchEnabled = uiState.autoLaunchEnabled,
-                        onToggleAutoLaunch = viewModel::toggleAutoLaunch,
-                    )
                 }
             }
 
@@ -146,8 +143,11 @@ fun HomeScreen(
                 item {
                     ScanDashboard(
                         violations = uiState.scanState.violations,
-                        screens = uiState.scanState.scannedScreens,
+                        screens = uiState.scanState.uniqueScreens,
+                        scanAnalyses = uiState.scanState.scanAnalyses,
                         talkBackFindings = uiState.scanState.screenReaderFindings.size,
+                        isPartialScan = !uiState.scanState.scanScope.isFullScan,
+                        scanScopeLabel = uiState.scanState.scanScope.label(),
                         isScanning = true,
                         onOpenReport = onOpenReport,
                         modifier = Modifier.padding(horizontal = 16.dp),
@@ -155,14 +155,17 @@ fun HomeScreen(
                 }
             } else if (
                 uiState.scanState.violations.isNotEmpty() ||
-                uiState.scanState.scannedScreens > 0 ||
+                uiState.scanState.uniqueScreens > 0 ||
                 uiState.scanState.screenReaderFindings.isNotEmpty()
             ) {
                 item {
                     ScanDashboard(
                         violations = uiState.scanState.violations,
-                        screens = uiState.scanState.scannedScreens,
+                        screens = uiState.scanState.uniqueScreens,
+                        scanAnalyses = uiState.scanState.scanAnalyses,
                         talkBackFindings = uiState.scanState.screenReaderFindings.size,
+                        isPartialScan = !uiState.scanState.scanScope.isFullScan,
+                        scanScopeLabel = uiState.scanState.scanScope.label(),
                         isScanning = false,
                         onOpenReport = onOpenReport,
                         modifier = Modifier.padding(horizontal = 16.dp),

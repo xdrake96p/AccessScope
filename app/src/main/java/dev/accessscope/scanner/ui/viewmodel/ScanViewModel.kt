@@ -6,7 +6,9 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import dev.accessscope.scanner.AccessScopeApp
 import dev.accessscope.scanner.data.InstalledAppInfo
+import dev.accessscope.scanner.data.ScanScope
 import dev.accessscope.scanner.data.ScanSessionState
+import dev.accessscope.scanner.data.ViolationArea
 import dev.accessscope.scanner.service.AccessScopeAccessibilityService
 import dev.accessscope.scanner.service.ScanOverlayService
 import dev.accessscope.scanner.util.AppLaunchHelper
@@ -32,6 +34,7 @@ data class HomeUiState(
     val isLoadingApps: Boolean = true,
     val includeSystemApps: Boolean = false,
     val autoLaunchEnabled: Boolean = false,
+    val scanScope: ScanScope = ScanScope.FULL,
     val statusMessage: String? = null,
 )
 
@@ -61,7 +64,12 @@ class ScanViewModel(application: Application) : AndroidViewModel(application) {
             }
         }
         refreshPermissions()
-        _uiState.update { it.copy(autoLaunchEnabled = scanSettingsStore.autoLaunchEnabled) }
+        _uiState.update {
+            it.copy(
+                autoLaunchEnabled = scanSettingsStore.autoLaunchEnabled,
+                scanScope = scanSettingsStore.getScanScope(),
+            )
+        }
         loadApps()
     }
 
@@ -69,6 +77,33 @@ class ScanViewModel(application: Application) : AndroidViewModel(application) {
         val enabled = !_uiState.value.autoLaunchEnabled
         scanSettingsStore.autoLaunchEnabled = enabled
         _uiState.update { it.copy(autoLaunchEnabled = enabled) }
+    }
+
+    fun toggleScanArea(area: ViolationArea) {
+        val current = _uiState.value.scanScope.enabledAreas.toMutableSet()
+        if (area in current) {
+            if (current.size == 1) {
+                _uiState.update { it.copy(statusMessage = "Almeno un ambito deve restare attivo.") }
+                return
+            }
+            current.remove(area)
+        } else {
+            current.add(area)
+        }
+        applyScanScope(ScanScope(current))
+    }
+
+    fun setFullScan() = applyScanScope(ScanScope.FULL)
+
+    fun applyTalkBackOnlyPreset() = applyScanScope(ScanScope.talkBackOnly())
+
+    fun applyLabelsOnlyPreset() = applyScanScope(ScanScope.labelsOnly())
+
+    fun applyContrastOnlyPreset() = applyScanScope(ScanScope.contrastOnly())
+
+    private fun applyScanScope(scope: ScanScope) {
+        scanSettingsStore.setScanScope(scope)
+        _uiState.update { it.copy(scanScope = scope) }
     }
 
     fun refreshPermissions() {
@@ -176,7 +211,7 @@ class ScanViewModel(application: Application) : AndroidViewModel(application) {
             return
         }
 
-        repository.startScan(selected)
+        repository.startScan(selected, state.scanScope)
         AccessScopeAccessibilityService.instance?.resetDynamicTracking()
         // #region agent log
         DebugTrace.log("H1", "ViewModel.startScan", "scan_requested", mapOf(

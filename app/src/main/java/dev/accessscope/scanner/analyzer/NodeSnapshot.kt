@@ -1,6 +1,7 @@
 package dev.accessscope.scanner.analyzer
 
 import android.graphics.Rect
+import android.os.Build
 import android.view.accessibility.AccessibilityNodeInfo
 
 data class NodeSnapshot(
@@ -30,6 +31,7 @@ data class NodeSnapshot(
     val collectionRow: Int,
     val collectionColumn: Int,
     val childCount: Int,
+    val isAccessibilityExcluded: Boolean,
     val isLikelyDecorative: Boolean,
     val traversalIndex: Int,
     val rangeCurrent: Float?,
@@ -66,11 +68,13 @@ data class NodeSnapshot(
     }
 
     fun shouldBeFocusable(): Boolean =
-        isClickable || isCheckable || isEditable || isScrollable
+        isClickable || isCheckable || isEditable
 
     fun looksLikeStructuralHeading(): Boolean {
         val value = text?.trim().orEmpty()
         if (value.isEmpty() || value.length > 80) return false
+        if (PrecisionRules.shouldSkipHeadingCheck(this)) return false
+        if (PrecisionRules.isCurrencyOrAmountText(value)) return false
         return className.contains("TextView", true) && !isClickable && value.split(" ").size <= 12
     }
 
@@ -123,11 +127,14 @@ fun AccessibilityNodeInfo.toSnapshot(
 
     val range = rangeInfo
     val collectionItem = collectionItemInfo
-    val isHeadingMarked = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P) {
+    val isHeadingMarked = when {
+        android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P -> isHeading
+        else -> false
+    } || (if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P) {
         collectionItem?.isHeading == true
     } else {
         false
-    }
+    })
     val headingLevel = when {
         isHeadingMarked -> estimateHeadingLevel(bounds.height())
         else -> 0
@@ -136,12 +143,17 @@ fun AccessibilityNodeInfo.toSnapshot(
     var unlabeledActions = 0
     if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.LOLLIPOP) {
         actionList?.forEach { action ->
+            if (action.id < CUSTOM_ACTION_ID_MIN) return@forEach
             val label = action.label?.toString()
-            if (label.isNullOrBlank() && action.id > AccessibilityNodeInfo.ACTION_FOCUS) {
-                unlabeledActions++
-            }
+            if (label.isNullOrBlank()) unlabeledActions++
         }
     }
+
+    val isExcluded = Build.VERSION.SDK_INT >= Build.VERSION_CODES.N && !isImportantForAccessibility
+
+    val smallThreshold = minTouchTargetPx / 2
+    val classStr = className?.toString().orEmpty()
+    val isImage = classStr.contains("Image", true) || classStr.contains("Icon", true)
 
     return NodeSnapshot(
         className = className?.toString() ?: "unknown",
@@ -178,8 +190,10 @@ fun AccessibilityNodeInfo.toSnapshot(
         collectionRow = collectionItemInfo?.rowIndex ?: -1,
         collectionColumn = collectionItemInfo?.columnIndex ?: -1,
         childCount = childCount,
-        isLikelyDecorative = !isClickable && !isFocusable && !isCheckable &&
-            (className?.toString().orEmpty().contains("Image", true)),
+        isAccessibilityExcluded = isExcluded,
+        isLikelyDecorative = isExcluded ||
+            (bounds.width() < smallThreshold && bounds.height() < smallThreshold && isImage) ||
+            (!isClickable && !isFocusable && !isCheckable && isImage),
         traversalIndex = traversalIndex,
         rangeCurrent = range?.current,
         rangeMin = range?.min,
@@ -190,6 +204,8 @@ fun AccessibilityNodeInfo.toSnapshot(
         sectionTitle = sectionTitle,
     )
 }
+
+private const val CUSTOM_ACTION_ID_MIN = 0x01000000
 
 private fun estimateHeadingLevel(heightPx: Int): Int = when {
     heightPx >= 72 -> 1

@@ -12,6 +12,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import dev.accessscope.scanner.ui.screen.HomeScreen
 import dev.accessscope.scanner.ui.screen.ReportScreen
+import dev.accessscope.scanner.ui.screen.SettingsScreen
 import dev.accessscope.scanner.ui.theme.AccessScopeTheme
 import dev.accessscope.scanner.ui.viewmodel.ScanViewModel
 import dev.accessscope.scanner.util.PdfHelper
@@ -46,6 +47,13 @@ private fun AccessScopeNavHost(viewModel: ScanViewModel) {
             HomeScreen(
                 viewModel = viewModel,
                 onOpenReport = { navController.navigate("report") },
+                onOpenSettings = { navController.navigate("settings") },
+            )
+        }
+        composable("settings") {
+            SettingsScreen(
+                viewModel = viewModel,
+                onBack = { navController.popBackStack() },
             )
         }
         composable("report") {

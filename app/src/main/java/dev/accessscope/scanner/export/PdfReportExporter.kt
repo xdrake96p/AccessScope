@@ -27,14 +27,17 @@ class PdfReportExporter(private val context: Context) {
         targetPackages: Set<String>,
         violations: List<AccessibilityViolation>,
         screenReaderFindings: List<ScreenReaderFinding>,
-        scannedScreens: Int,
+        uniqueScreens: Int,
+        scanAnalyses: Int = uniqueScreens,
+        scanScopeLabel: String = "Completa",
+        scannedScreens: List<String> = emptyList(),
     ): Result<String> = runCatching {
         val filtered = ReportHelper.filterViolations(violations)
         val document = PdfDocument()
         val ctx = PdfContext(document)
 
-        drawCover(ctx, targetPackages, scannedScreens, filtered.size, screenReaderFindings.size)
-        drawSummary(ctx, filtered, screenReaderFindings)
+        drawCover(ctx, targetPackages, uniqueScreens, scanAnalyses, scanScopeLabel, filtered, screenReaderFindings.size)
+        drawSummary(ctx, filtered, screenReaderFindings, scannedScreens)
         drawHowToRead(ctx)
         drawScreenSections(ctx, filtered, screenReaderFindings)
 
@@ -47,7 +50,9 @@ class PdfReportExporter(private val context: Context) {
         ctx: PdfContext,
         packages: Set<String>,
         screens: Int,
-        issues: Int,
+        analyses: Int,
+        scopeLabel: String,
+        filtered: List<AccessibilityViolation>,
         talkBack: Int,
     ) {
         ctx.fillRect(0f, 0f, PAGE_W, 120f, COLOR_BRAND_DARK)
@@ -59,14 +64,16 @@ class PdfReportExporter(private val context: Context) {
         y += 28f
 
         val date = SimpleDateFormat("dd MMMM yyyy, HH:mm", Locale.ITALY).format(Date())
-        val score = ReportHelper.computeScore(issues, screens)
+        val score = ReportHelper.computeScore(filtered, screens)
         val scoreLabel = ReportHelper.scoreLabel(score)
 
         listOf(
             "📅  Data scansione: $date",
             "📱  App controllate: ${packages.size}",
-            "🖥️  Schermate analizzate: $screens",
-            "⚠️  Problemi trovati: $issues",
+            "🎯  Ambiti analizzati: $scopeLabel",
+            "🖥️  Schermate uniche: $screens",
+            "🔄  Analisi eseguite: $analyses",
+            "⚠️  Problemi trovati: ${filtered.size}",
             "🔊  Note screen reader: $talkBack",
             "⭐  Punteggio stimato: $score/100 ($scoreLabel)",
         ).forEach { line ->
@@ -83,16 +90,42 @@ class PdfReportExporter(private val context: Context) {
         ctx.y = y + 40f
     }
 
-    private fun drawSummary(ctx: PdfContext, violations: List<AccessibilityViolation>, talkBack: List<ScreenReaderFinding>) {
+    private fun drawSummary(
+        ctx: PdfContext,
+        violations: List<AccessibilityViolation>,
+        talkBack: List<ScreenReaderFinding>,
+        scannedScreens: List<String>,
+    ) {
         ctx.ensureSpace(80f)
         ctx.drawText("Panoramica per schermata", 40f, ctx.y, ctx.headingPaint, COLOR_BRAND_DARK)
         ctx.y += 28f
 
-        ReportHelper.screenTotals(violations).toSortedMap().forEach { (screen, total) ->
+        val violationTotals = ReportHelper.screenTotals(violations)
+        val allScreens = if (scannedScreens.isNotEmpty()) {
+            scannedScreens.distinct().sorted()
+        } else {
+            violationTotals.keys.sorted()
+        }
+
+        allScreens.forEach { screen ->
             ctx.ensureSpace(28f)
+            val total = violationTotals[screen] ?: 0
             ctx.drawText(screen, 48f, ctx.y + 4f, ctx.bodyBoldPaint, COLOR_TEXT)
-            ctx.drawText("$total", PAGE_W - 60f, ctx.y + 4f, ctx.bodyBoldPaint, COLOR_BRAND)
+            ctx.drawText("$total", PAGE_W - 60f, ctx.y + 4f, ctx.bodyBoldPaint, if (total == 0) 0xFF2E7D32.toInt() else COLOR_BRAND)
             ctx.y += 24f
+        }
+
+        val cleanScreens = allScreens.filter { (violationTotals[it] ?: 0) == 0 }
+        if (cleanScreens.isNotEmpty()) {
+            ctx.y += 8f
+            ctx.ensureSpace(40f)
+            ctx.drawText("Schermate senza problemi rilevati", 48f, ctx.y, ctx.bodyBoldPaint, 0xFF2E7D32.toInt())
+            ctx.y += 20f
+            cleanScreens.forEach { screen ->
+                ctx.ensureSpace(22f)
+                ctx.drawText("• $screen", 56f, ctx.y, ctx.bodyPaint, COLOR_TEXT)
+                ctx.y += 18f
+            }
         }
         ctx.y += 12f
     }

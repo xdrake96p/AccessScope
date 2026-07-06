@@ -1,21 +1,22 @@
 package dev.accessscope.scanner.data
 
-import android.content.Context
-import dev.accessscope.scanner.util.DebugTrace
+import dev.accessscope.scanner.report.ReportHelper
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 
-class ScanSessionRepository(context: Context) {
+class ScanSessionRepository(context: android.content.Context) {
 
-    private val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    private val prefs = context.getSharedPreferences(PREFS_NAME, android.content.Context.MODE_PRIVATE)
 
     private val _state = MutableStateFlow(ScanSessionState())
     val state: StateFlow<ScanSessionState> = _state.asStateFlow()
 
     private val violationKeys = LinkedHashSet<String>()
     private val screenReaderKeys = LinkedHashSet<String>()
+    private val seenFingerprints = LinkedHashSet<String>()
+    private val scannedScreenTitles = LinkedHashMap<String, String>()
 
     var stopCallback: (() -> Unit)? = null
 
@@ -33,12 +34,15 @@ class ScanSessionRepository(context: Context) {
         return true
     }
 
-    fun startScan(selectedPackages: Set<String>) {
+    fun startScan(selectedPackages: Set<String>, scanScope: ScanScope = ScanScope.FULL) {
         violationKeys.clear()
         screenReaderKeys.clear()
+        seenFingerprints.clear()
+        scannedScreenTitles.clear()
         _state.value = ScanSessionState(
             isScanning = true,
             selectedPackages = selectedPackages,
+            scanScope = scanScope,
             lastPdfPath = null,
             errorMessage = null,
         )
@@ -46,11 +50,6 @@ class ScanSessionRepository(context: Context) {
             .putBoolean(KEY_SCANNING, true)
             .putStringSet(KEY_PACKAGES, selectedPackages)
             .apply()
-        // #region agent log
-        DebugTrace.log("H3", "Repository.startScan", "started", mapOf(
-            "packages" to selectedPackages.joinToString(","),
-        ))
-        // #endregion
     }
 
     fun stopScan() {
@@ -66,7 +65,8 @@ class ScanSessionRepository(context: Context) {
     }
 
     fun addViolations(violations: List<AccessibilityViolation>) {
-        val newOnes = violations.filter { violationKeys.add(it.dedupeKey) }
+        val filtered = ReportHelper.filterViolations(violations)
+        val newOnes = filtered.filter { violationKeys.add(it.dedupeKey) }
         if (newOnes.isEmpty()) return
         _state.update { current ->
             current.copy(violations = current.violations + newOnes)
@@ -84,8 +84,23 @@ class ScanSessionRepository(context: Context) {
         }
     }
 
-    fun incrementScreenCount() {
-        _state.update { it.copy(scannedScreens = it.scannedScreens + 1) }
+    fun incrementScanAnalysis() {
+        _state.update { it.copy(scanAnalyses = it.scanAnalyses + 1) }
+    }
+
+    fun registerUniqueScreen(fingerprint: String, screenTitle: String) {
+        if (fingerprint.isBlank()) return
+        scannedScreenTitles[fingerprint] = screenTitle
+        if (!seenFingerprints.add(fingerprint)) {
+            _state.update { it.copy(visitedScreenTitles = scannedScreenTitles.values.toList()) }
+            return
+        }
+        _state.update {
+            it.copy(
+                uniqueScreens = it.uniqueScreens + 1,
+                visitedScreenTitles = scannedScreenTitles.values.toList(),
+            )
+        }
     }
 
     fun setPdfPath(path: String?) {
@@ -101,13 +116,9 @@ class ScanSessionRepository(context: Context) {
         return targets.isNotEmpty() && packageName in targets
     }
 
+    fun currentScanScope(): ScanScope = _state.value.scanScope
+
     fun requestStopFromOverlay() {
-        // #region agent log
-        DebugTrace.log("H-STOP1", "Repository.requestStop", "invoke", mapOf(
-            "hasCallback" to (stopCallback != null),
-            "isScanning" to _state.value.isScanning,
-        ))
-        // #endregion
         stopCallback?.invoke()
     }
 

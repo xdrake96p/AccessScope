@@ -48,7 +48,10 @@ object FocusOrderAnalyzer {
         screenTitle: String,
     ): List<AccessibilityViolation> {
         val headings = snapshots
-            .filter { it.isHeading || it.looksLikeStructuralHeading() }
+            .filter {
+                (it.isHeading || it.looksLikeStructuralHeading()) &&
+                    !PrecisionRules.shouldSkipHeadingCheck(it)
+            }
             .map { snap ->
                 val level = if (snap.headingLevel > 0) snap.headingLevel
                 else estimateFromBounds(snap.bounds.height())
