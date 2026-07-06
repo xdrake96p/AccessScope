@@ -70,6 +70,7 @@ object FocusOrderAnalyzer {
                     details = "Salto da livello ~H$prev a ~H$curr su \"${snap.accessibleName() ?: snap.text}\".",
                     viewId = snap.viewId,
                     bounds = snap.boundsLabel(),
+                    sectionTitle = snap.sectionTitle,
                     confidence = 0.8f,
                 )
             }

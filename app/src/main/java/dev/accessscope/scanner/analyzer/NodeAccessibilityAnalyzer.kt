@@ -3,6 +3,7 @@ package dev.accessscope.scanner.analyzer
 import android.graphics.Bitmap
 import android.graphics.Rect
 import android.view.accessibility.AccessibilityNodeInfo
+import java.util.ArrayDeque
 import dev.accessscope.scanner.data.AccessibilityViolation
 import dev.accessscope.scanner.data.ScreenReaderFinding
 import dev.accessscope.scanner.data.ViolationType
@@ -25,7 +26,7 @@ class NodeAccessibilityAnalyzer(
         val violations = mutableListOf<AccessibilityViolation>()
         val snapshots = mutableListOf<NodeSnapshot>()
         var traversalIndex = 0
-        collectSnapshots(root, snapshots) { traversalIndex++ }
+        collectSnapshots(root, snapshots, ArrayDeque(), { traversalIndex++ })
 
         snapshots.forEach { snap ->
             checkSingleNode(snap, snapshots, packageName, screenTitle, violations, screenshot)
@@ -60,14 +61,31 @@ class NodeAccessibilityAnalyzer(
     private fun collectSnapshots(
         node: AccessibilityNodeInfo,
         output: MutableList<NodeSnapshot>,
+        headingStack: ArrayDeque<String>,
         nextIndex: () -> Int,
     ) {
+        val sectionTitle = headingStack.lastOrNull()
         val index = nextIndex()
-        node.toSnapshot(index, minTextHeightPx, minTouchTargetPx)?.let(output::add)
+        val snap = node.toSnapshot(index, minTextHeightPx, minTouchTargetPx, sectionTitle)
+        var pushedHeading: String? = null
+
+        snap?.let { snapshot ->
+            output.add(snapshot)
+            val headingText = snapshot.text?.trim()?.takeIf { it.isNotBlank() }
+            if (headingText != null && (snapshot.isHeading || snapshot.looksLikeStructuralHeading())) {
+                headingStack.addLast(headingText)
+                pushedHeading = headingText
+            }
+        }
+
         for (i in 0 until node.childCount) {
             val child = node.getChild(i) ?: continue
-            collectSnapshots(child, output, nextIndex)
+            collectSnapshots(child, output, headingStack, nextIndex)
             child.recycle()
+        }
+
+        if (pushedHeading != null) {
+            headingStack.removeLast()
         }
     }
 
@@ -418,7 +436,17 @@ class NodeAccessibilityAnalyzer(
     }
 
     private fun v(type: ViolationType, snap: NodeSnapshot, pkg: String, screen: String, details: String, confidence: Float) =
-        AccessibilityViolation(type, snap.className, screen, pkg, details, snap.viewId, snap.boundsLabel(), confidence)
+        AccessibilityViolation(
+            type = type,
+            viewClassName = snap.className,
+            screenTitle = screen,
+            packageName = pkg,
+            details = details,
+            viewId = snap.viewId,
+            bounds = snap.boundsLabel(),
+            sectionTitle = snap.sectionTitle,
+            confidence = confidence,
+        )
 
     private fun NodeSnapshot.area() = bounds.width() * bounds.height()
 

@@ -21,7 +21,9 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.PictureAsPdf
+import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.outlined.OpenInNew
+import androidx.compose.material.icons.outlined.StarOutline
 import androidx.compose.material.icons.outlined.PlayArrow
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.SelectAll
@@ -33,6 +35,7 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
@@ -50,6 +53,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -64,10 +68,15 @@ import dev.accessscope.scanner.ui.theme.BrandPrimary
 import dev.accessscope.scanner.ui.theme.Danger
 import dev.accessscope.scanner.ui.theme.SurfaceLight
 import dev.accessscope.scanner.ui.theme.TextSecondary
+import dev.accessscope.scanner.util.PdfHelper
 import dev.accessscope.scanner.ui.viewmodel.ScanViewModel
 
 @Composable
-fun HomeScreen(viewModel: ScanViewModel) {
+fun HomeScreen(
+    viewModel: ScanViewModel,
+    onOpenReport: () -> Unit,
+) {
+    val context = androidx.compose.ui.platform.LocalContext.current
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val snackbarHost = remember { SnackbarHostState() }
     var query by remember { mutableStateOf("") }
@@ -133,6 +142,7 @@ fun HomeScreen(viewModel: ScanViewModel) {
                         screens = uiState.scanState.scannedScreens,
                         talkBackFindings = uiState.scanState.screenReaderFindings.size,
                         isScanning = uiState.scanState.isScanning,
+                        onOpenReport = onOpenReport,
                         modifier = Modifier.padding(horizontal = 16.dp),
                     )
                 }
@@ -140,7 +150,11 @@ fun HomeScreen(viewModel: ScanViewModel) {
 
             uiState.scanState.lastPdfPath?.let { path ->
                 item {
-                    PdfResultCard(path = path, modifier = Modifier.padding(horizontal = 16.dp))
+                    PdfResultCard(
+                        path = path,
+                        onOpenPdf = { PdfHelper.openPdf(context, path) },
+                        modifier = Modifier.padding(horizontal = 16.dp),
+                    )
                 }
             }
 
@@ -219,6 +233,7 @@ fun HomeScreen(viewModel: ScanViewModel) {
                     selected = app.packageName in uiState.selectedPackages,
                     viewModel = viewModel,
                     onToggle = { viewModel.toggleApp(app.packageName) },
+                    onToggleFavorite = { viewModel.toggleFavorite(app.packageName) },
                     modifier = Modifier.padding(horizontal = 16.dp),
                 )
             }
@@ -227,18 +242,27 @@ fun HomeScreen(viewModel: ScanViewModel) {
 }
 
 @Composable
-private fun PdfResultCard(path: String, modifier: Modifier = Modifier) {
+private fun PdfResultCard(
+    path: String,
+    onOpenPdf: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
     Card(
         modifier = modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer),
         shape = RoundedCornerShape(16.dp),
     ) {
-        Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-            Icon(Icons.Outlined.PictureAsPdf, contentDescription = null, tint = BrandPrimary)
-            Spacer(Modifier.width(12.dp))
-            Column {
-                Text("Report PDF pronto", fontWeight = FontWeight.SemiBold)
-                Text(path, style = MaterialTheme.typography.bodySmall, color = TextSecondary)
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Outlined.OpenInNew, contentDescription = null, tint = BrandPrimary)
+                Spacer(Modifier.width(12.dp))
+                Column(Modifier.weight(1f)) {
+                    Text("Report PDF salvato", fontWeight = FontWeight.SemiBold)
+                    Text(path, style = MaterialTheme.typography.bodySmall, color = TextSecondary)
+                }
+            }
+            TextButton(onClick = onOpenPdf) {
+                Text("Apri file PDF")
             }
         }
     }
@@ -250,12 +274,11 @@ private fun AppRow(
     selected: Boolean,
     viewModel: ScanViewModel,
     onToggle: () -> Unit,
+    onToggleFavorite: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Card(
-        modifier = modifier
-            .fillMaxWidth()
-            .clickable(onClick = onToggle),
+        modifier = modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(
             containerColor = if (selected) BrandPrimary.copy(alpha = 0.12f) else MaterialTheme.colorScheme.surface,
         ),
@@ -263,6 +286,13 @@ private fun AppRow(
         elevation = CardDefaults.cardElevation(defaultElevation = if (selected) 2.dp else 0.dp),
     ) {
         Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+            IconButton(onClick = onToggleFavorite) {
+                Icon(
+                    imageVector = if (app.isFavorite) Icons.Filled.Star else Icons.Outlined.StarOutline,
+                    contentDescription = if (app.isFavorite) "Rimuovi dai preferiti" else "Aggiungi ai preferiti",
+                    tint = if (app.isFavorite) Color(0xFFFFB300) else TextSecondary,
+                )
+            }
             val drawable = remember(app.packageName) { viewModel.appIcon(app.packageName) }
             if (drawable != null) {
                 Image(
@@ -278,12 +308,19 @@ private fun AppRow(
                     Text(app.label.take(1).uppercase(), fontWeight = FontWeight.Bold, color = BrandPrimary)
                 }
             }
-            Spacer(Modifier.width(12.dp))
-            Column(Modifier.weight(1f)) {
+            Spacer(Modifier.width(8.dp))
+            Column(
+                Modifier
+                    .weight(1f)
+                    .clickable(onClick = onToggle),
+            ) {
                 Text(app.label, fontWeight = FontWeight.Medium)
                 Text(app.packageName, style = MaterialTheme.typography.bodySmall, color = TextSecondary)
                 if (app.isSystemApp) {
                     Text("App di sistema", style = MaterialTheme.typography.labelSmall, color = TextSecondary)
+                }
+                if (app.isFavorite) {
+                    Text("Preferita", style = MaterialTheme.typography.labelSmall, color = Color(0xFFFFB300))
                 }
             }
             FilterChip(

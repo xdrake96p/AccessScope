@@ -38,6 +38,7 @@ data class NodeSnapshot(
     val unlabeledActionCount: Int,
     val minTextHeightPx: Int,
     val minTouchTargetPx: Int,
+    val sectionTitle: String? = null,
 ) {
     fun boundsLabel() = "${bounds.width()}×${bounds.height()} px @(${bounds.left},${bounds.top})"
 
@@ -113,6 +114,7 @@ fun AccessibilityNodeInfo.toSnapshot(
     traversalIndex: Int,
     minTextHeightPx: Int,
     minTouchTargetPx: Int,
+    sectionTitle: String? = null,
 ): NodeSnapshot? {
     if (!isVisibleToUser) return null
     val bounds = Rect()
@@ -185,6 +187,7 @@ fun AccessibilityNodeInfo.toSnapshot(
         unlabeledActionCount = unlabeledActions,
         minTextHeightPx = minTextHeightPx,
         minTouchTargetPx = minTouchTargetPx,
+        sectionTitle = sectionTitle,
     )
 }
 

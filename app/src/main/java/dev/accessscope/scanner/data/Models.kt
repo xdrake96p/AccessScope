@@ -223,14 +223,19 @@ data class AccessibilityViolation(
     val details: String,
     val viewId: String? = null,
     val bounds: String? = null,
+    val sectionTitle: String? = null,
     val confidence: Float = 1.0f,
     val timestampMs: Long = System.currentTimeMillis(),
 ) {
     val area: ViolationArea get() = type.area
     val simpleExplanation: String get() = type.plainHint
 
+    /** Sottosezione UI (es. «Credenziali» dentro «Login»). */
+    val reportSection: String
+        get() = sectionTitle?.takeIf { it.isNotBlank() } ?: screenTitle
+
     val dedupeKey: String
-        get() = "${type.name}|$packageName|$screenTitle|$viewClassName|$details|$viewId|$bounds"
+        get() = "${type.name}|$packageName|$screenTitle|$reportSection|$viewClassName|$details|$viewId|$bounds"
 }
 
 data class ScreenReaderFinding(
@@ -240,12 +245,17 @@ data class ScreenReaderFinding(
     val announcedText: String?,
     val issue: String,
     val viewId: String? = null,
-)
+    val sectionTitle: String? = null,
+) {
+    val reportSection: String
+        get() = sectionTitle?.takeIf { it.isNotBlank() } ?: screenTitle
+}
 
 data class InstalledAppInfo(
     val packageName: String,
     val label: String,
     val isSystemApp: Boolean = false,
+    val isFavorite: Boolean = false,
 )
 
 data class ScanSessionState(

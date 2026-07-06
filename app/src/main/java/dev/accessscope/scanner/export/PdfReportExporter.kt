@@ -11,9 +11,9 @@ import android.os.Environment
 import android.provider.MediaStore
 import dev.accessscope.scanner.data.AccessibilityViolation
 import dev.accessscope.scanner.data.ScreenReaderFinding
-import dev.accessscope.scanner.data.ViolationArea
 import dev.accessscope.scanner.data.ViolationSeverity
 import dev.accessscope.scanner.data.ViolationType
+import dev.accessscope.scanner.report.ReportHelper
 import java.io.File
 import java.io.FileOutputStream
 import java.text.SimpleDateFormat
@@ -29,21 +29,14 @@ class PdfReportExporter(private val context: Context) {
         screenReaderFindings: List<ScreenReaderFinding>,
         scannedScreens: Int,
     ): Result<String> = runCatching {
-        val filtered = violations.filter { it.confidence >= MIN_CONFIDENCE }
+        val filtered = ReportHelper.filterViolations(violations)
         val document = PdfDocument()
         val ctx = PdfContext(document)
 
         drawCover(ctx, targetPackages, scannedScreens, filtered.size, screenReaderFindings.size)
         drawSummary(ctx, filtered, screenReaderFindings)
         drawHowToRead(ctx)
-
-        ViolationArea.entries.forEach { area ->
-            val areaViolations = filtered.filter { it.area == area }
-            val areaTalkBack = if (area == ViolationArea.SCREEN_READER) screenReaderFindings else emptyList()
-            if (areaViolations.isNotEmpty() || areaTalkBack.isNotEmpty()) {
-                drawAreaSection(ctx, area, areaViolations, areaTalkBack)
-            }
-        }
+        drawScreenSections(ctx, filtered, screenReaderFindings)
 
         drawGlossary(ctx)
         ctx.finish()
@@ -66,13 +59,8 @@ class PdfReportExporter(private val context: Context) {
         y += 28f
 
         val date = SimpleDateFormat("dd MMMM yyyy, HH:mm", Locale.ITALY).format(Date())
-        val score = computeScore(issues, screens)
-        val scoreLabel = when {
-            score >= 85 -> "Ottimo"
-            score >= 70 -> "Buono"
-            score >= 50 -> "Da migliorare"
-            else -> "Critico"
-        }
+        val score = ReportHelper.computeScore(issues, screens)
+        val scoreLabel = ReportHelper.scoreLabel(score)
 
         listOf(
             "📅  Data scansione: $date",
@@ -97,23 +85,68 @@ class PdfReportExporter(private val context: Context) {
 
     private fun drawSummary(ctx: PdfContext, violations: List<AccessibilityViolation>, talkBack: List<ScreenReaderFinding>) {
         ctx.ensureSpace(80f)
-        ctx.drawText("Panoramica per area", 40f, ctx.y, ctx.headingPaint, COLOR_BRAND_DARK)
+        ctx.drawText("Panoramica per schermata", 40f, ctx.y, ctx.headingPaint, COLOR_BRAND_DARK)
         ctx.y += 28f
 
-        ViolationArea.entries.forEach { area ->
-            val count = violations.count { it.area == area }
-            val tb = if (area == ViolationArea.SCREEN_READER) talkBack.size else 0
-            val total = count + tb
-            if (total == 0) return@forEach
-
-            ctx.ensureSpace(36f)
-            val barW = (total.coerceAtMost(20) / 20f) * (CONTENT_W - 120f)
-            ctx.fillRect(40f, ctx.y - 10f, barW + 80f, 22f, 0xFFE8F5F4.toInt())
-            ctx.drawText("${area.emoji}  ${area.title}", 48f, ctx.y + 4f, ctx.bodyBoldPaint, COLOR_TEXT)
+        ReportHelper.screenTotals(violations).toSortedMap().forEach { (screen, total) ->
+            ctx.ensureSpace(28f)
+            ctx.drawText(screen, 48f, ctx.y + 4f, ctx.bodyBoldPaint, COLOR_TEXT)
             ctx.drawText("$total", PAGE_W - 60f, ctx.y + 4f, ctx.bodyBoldPaint, COLOR_BRAND)
-            ctx.y += 28f
+            ctx.y += 24f
         }
         ctx.y += 12f
+    }
+
+    private fun drawScreenSections(
+        ctx: PdfContext,
+        violations: List<AccessibilityViolation>,
+        talkBack: List<ScreenReaderFinding>,
+    ) {
+        val talkBackBySection = ReportHelper.groupTalkBackBySection(talkBack)
+        ReportHelper.groupViolationsBySection(violations).forEach { (section, sectionViolations) ->
+            val sectionTalkBack = talkBackBySection[section].orEmpty()
+            if (sectionViolations.isEmpty() && sectionTalkBack.isEmpty()) return@forEach
+
+            ctx.ensureSpace(80f)
+            ctx.fillRect(40f, ctx.y - 8f, CONTENT_W, 34f, COLOR_BRAND_LIGHT)
+            ctx.drawText(section.screenTitle, 48f, ctx.y + 12f, ctx.areaTitlePaint, COLOR_BRAND_DARK)
+            ctx.y += 38f
+            if (section.hasSubsection) {
+                ctx.drawText("Sezione: ${section.sectionTitle}", 48f, ctx.y, ctx.bodyBoldPaint, COLOR_BRAND)
+                ctx.y += 18f
+            }
+
+            ReportHelper.SEVERITY_ORDER.forEach { severity ->
+                val items = sectionViolations.filter { it.type.severity == severity }
+                if (items.isEmpty()) return@forEach
+                ctx.ensureSpace(28f)
+                ctx.drawText(
+                    "${ReportHelper.severityEmoji(severity)} ${ReportHelper.severityGroupTitle(severity)} (${items.size})",
+                    48f,
+                    ctx.y,
+                    ctx.bodyBoldPaint,
+                    severityColor(severity),
+                )
+                ctx.y += 20f
+                items.take(MAX_PER_TYPE).forEach { drawViolationCard(ctx, it) }
+                if (items.size > MAX_PER_TYPE) {
+                    ctx.drawText("… altri ${items.size - MAX_PER_TYPE} simili", 56f, ctx.y, ctx.metaPaint, COLOR_MUTED)
+                    ctx.y += 16f
+                }
+            }
+
+            if (sectionTalkBack.isNotEmpty()) {
+                ctx.ensureSpace(36f)
+                ctx.drawText("Simulazione TalkBack", 48f, ctx.y, ctx.bodyBoldPaint, COLOR_BRAND)
+                ctx.y += 18f
+                sectionTalkBack.take(20).forEach { f ->
+                    ctx.ensureSpace(44f)
+                    ctx.drawWrapped("• ${f.issue}", 56f, ctx.y, CONTENT_W - 24f, ctx.bodyPaint, COLOR_TEXT)
+                    ctx.y += 10f
+                }
+            }
+            ctx.y += 16f
+        }
     }
 
     private fun drawHowToRead(ctx: PdfContext) {
@@ -125,6 +158,7 @@ class PdfReportExporter(private val context: Context) {
             "🟠 Grave — ostacolo serio, da correggere presto.",
             "🟡 Medio — miglioramento consigliato.",
             "⚪ Lieve — rifinitura, bassa priorità.",
+            "🟢 Verde (dashboard) — metriche OK, non problemi.",
             "Confidenza % — quanto siamo sicuri del rilevamento (più alto = più affidabile).",
         )
         tips.forEach { tip ->
@@ -133,53 +167,6 @@ class PdfReportExporter(private val context: Context) {
             ctx.y += 8f
         }
         ctx.y += 16f
-    }
-
-    private fun drawAreaSection(
-        ctx: PdfContext,
-        area: ViolationArea,
-        violations: List<AccessibilityViolation>,
-        talkBack: List<ScreenReaderFinding>,
-    ) {
-        ctx.ensureSpace(100f)
-        ctx.fillRect(40f, ctx.y - 8f, CONTENT_W, 36f, COLOR_BRAND_LIGHT)
-        ctx.drawText("${area.emoji}  ${area.title}", 48f, ctx.y + 14f, ctx.areaTitlePaint, COLOR_BRAND_DARK)
-        ctx.y += 44f
-        ctx.drawWrapped(area.subtitle, 48f, ctx.y, CONTENT_W - 16f, ctx.metaPaint, COLOR_MUTED)
-        ctx.y += 28f
-
-        val byScreen = violations.groupBy { it.screenTitle }.toSortedMap()
-        byScreen.forEach { (screen, items) ->
-            ctx.ensureSpace(60f)
-            ctx.drawText("Schermata: $screen", 48f, ctx.y, ctx.bodyBoldPaint, COLOR_BRAND)
-            ctx.y += 20f
-
-            items.groupBy { it.type }.forEach { (type, typeItems) ->
-                typeItems.take(MAX_PER_TYPE).forEach { v ->
-                    drawViolationCard(ctx, v)
-                }
-                if (typeItems.size > MAX_PER_TYPE) {
-                    ctx.drawText("… altri ${typeItems.size - MAX_PER_TYPE} simili", 56f, ctx.y, ctx.metaPaint, COLOR_MUTED)
-                    ctx.y += 16f
-                }
-            }
-        }
-
-        if (talkBack.isNotEmpty()) {
-            ctx.ensureSpace(40f)
-            ctx.drawText("Simulazione TalkBack", 48f, ctx.y, ctx.bodyBoldPaint, COLOR_BRAND)
-            ctx.y += 20f
-            talkBack.take(30).forEach { f ->
-                ctx.ensureSpace(50f)
-                ctx.drawWrapped("• ${f.issue}", 56f, ctx.y, CONTENT_W - 24f, ctx.bodyPaint, COLOR_TEXT)
-                ctx.y += 4f
-                f.announcedText?.let {
-                    ctx.drawWrapped("  Annuncio: \"$it\"", 64f, ctx.y, CONTENT_W - 32f, ctx.metaPaint, COLOR_MUTED)
-                }
-                ctx.y += 12f
-            }
-        }
-        ctx.y += 20f
     }
 
     private fun drawViolationCard(ctx: PdfContext, v: AccessibilityViolation) {
@@ -224,12 +211,6 @@ class PdfReportExporter(private val context: Context) {
             ctx.drawWrapped(def, 56f, ctx.y, CONTENT_W - 16f, ctx.bodyPaint, COLOR_MUTED)
             ctx.y += 20f
         }
-    }
-
-    private fun computeScore(issues: Int, screens: Int): Int {
-        if (screens == 0) return 100
-        val density = issues.toFloat() / screens
-        return (100 - density * 8).roundToInt().coerceIn(0, 100)
     }
 
     private fun severityColor(s: ViolationSeverity) = when (s) {
@@ -361,7 +342,6 @@ class PdfReportExporter(private val context: Context) {
         private const val PAGE_W = 595f
         private const val PAGE_H = 842f
         private const val CONTENT_W = PAGE_W - 80f
-        private const val MIN_CONFIDENCE = 0.60f
         private const val MAX_PER_TYPE = 25
         private const val COLOR_BRAND = 0xFF0D7377.toInt()
         private const val COLOR_BRAND_DARK = 0xFF0A4F52.toInt()

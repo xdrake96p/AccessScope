@@ -38,7 +38,7 @@ class ScanSessionRepository {
 
     fun addScreenReaderFindings(findings: List<ScreenReaderFinding>) {
         val newOnes = findings.filter {
-            val key = "${it.packageName}|${it.screenTitle}|${it.nodeClassName}|${it.issue}|${it.viewId}"
+            val key = "${it.packageName}|${it.screenTitle}|${it.reportSection}|${it.nodeClassName}|${it.issue}|${it.viewId}"
             screenReaderKeys.add(key)
         }
         if (newOnes.isEmpty()) return

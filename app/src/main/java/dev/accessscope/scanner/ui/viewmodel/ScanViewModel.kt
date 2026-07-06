@@ -23,6 +23,7 @@ import kotlinx.coroutines.withContext
 data class HomeUiState(
     val apps: List<InstalledAppInfo> = emptyList(),
     val selectedPackages: Set<String> = emptySet(),
+    val favoritePackages: Set<String> = emptySet(),
     val scanState: ScanSessionState = ScanSessionState(),
     val accessibilityGranted: Boolean = false,
     val overlayGranted: Boolean = false,
@@ -34,6 +35,7 @@ data class HomeUiState(
 class ScanViewModel(application: Application) : AndroidViewModel(application) {
 
     private val repository = (application as AccessScopeApp).scanRepository
+    private val favoriteAppsStore = (application as AccessScopeApp).favoriteAppsStore
     private val pdfExporter = PdfReportExporter(application)
 
     private val _uiState = MutableStateFlow(HomeUiState())
@@ -41,6 +43,8 @@ class ScanViewModel(application: Application) : AndroidViewModel(application) {
 
     init {
         repository.stopCallback = { stopScan() }
+        val favorites = favoriteAppsStore.getFavorites()
+        _uiState.update { it.copy(selectedPackages = favorites, favoritePackages = favorites) }
         viewModelScope.launch {
             repository.state.collect { scanState ->
                 _uiState.update { it.copy(scanState = scanState) }
@@ -70,7 +74,45 @@ class ScanViewModel(application: Application) : AndroidViewModel(application) {
             val apps = withContext(Dispatchers.IO) {
                 PackageHelper.loadInstalledApps(getApplication(), includeSystem)
             }
-            _uiState.update { it.copy(apps = apps, isLoadingApps = false) }
+            val favorites = favoriteAppsStore.getFavorites()
+            val enriched = apps.map { app ->
+                app.copy(isFavorite = app.packageName in favorites)
+            }.sortedWith(
+                compareByDescending<InstalledAppInfo> { it.isFavorite }
+                    .thenBy { !it.isSystemApp }
+                    .thenBy { it.label.lowercase() },
+            )
+            _uiState.update { state ->
+                state.copy(
+                    apps = enriched,
+                    favoritePackages = favorites,
+                    selectedPackages = state.selectedPackages.union(favorites),
+                    isLoadingApps = false,
+                )
+            }
+        }
+    }
+
+    fun toggleFavorite(packageName: String) {
+        val favorites = favoriteAppsStore.toggle(packageName)
+        _uiState.update { state ->
+            val selected = state.selectedPackages.toMutableSet()
+            if (packageName in favorites) {
+                selected.add(packageName)
+            } else {
+                selected.remove(packageName)
+            }
+            state.copy(
+                favoritePackages = favorites,
+                selectedPackages = selected,
+                apps = state.apps.map { app ->
+                    app.copy(isFavorite = app.packageName in favorites)
+                }.sortedWith(
+                    compareByDescending<InstalledAppInfo> { it.isFavorite }
+                        .thenBy { !it.isSystemApp }
+                        .thenBy { it.label.lowercase() },
+                ),
+            )
         }
     }
 

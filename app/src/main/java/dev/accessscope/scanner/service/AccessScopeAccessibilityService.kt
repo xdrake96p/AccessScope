@@ -11,6 +11,7 @@ import android.view.accessibility.AccessibilityNodeInfo
 import androidx.annotation.RequiresApi
 import dev.accessscope.scanner.AccessScopeApp
 import dev.accessscope.scanner.analyzer.DynamicContentTracker
+import dev.accessscope.scanner.analyzer.ScreenTitleResolver
 import dev.accessscope.scanner.analyzer.NodeAccessibilityAnalyzer
 import dev.accessscope.scanner.data.ScanSessionRepository
 import java.util.concurrent.ConcurrentHashMap
@@ -130,31 +131,11 @@ class AccessScopeAccessibilityService : AccessibilityService() {
         screenshot: Bitmap?,
         analyzer: NodeAccessibilityAnalyzer,
     ) {
-        val screenTitle = resolveScreenTitle(root, event)
+        val screenTitle = ScreenTitleResolver.resolve(root, event)
         val result = analyzer.analyzeTree(root, packageName, screenTitle, screenshot)
         repository.addViolations(result.violations)
         repository.addScreenReaderFindings(result.screenReaderFindings)
         repository.incrementScreenCount()
-    }
-
-    private fun resolveScreenTitle(root: AccessibilityNodeInfo, event: AccessibilityEvent): String {
-        event.text?.firstOrNull()?.toString()?.takeIf { it.isNotBlank() }?.let { return it }
-        findFirstHeadingOrToolbar(root)?.text?.toString()?.takeIf { it.isNotBlank() }?.let { return it }
-        event.className?.toString()?.substringAfterLast('.')?.let { return it }
-        return "Schermata"
-    }
-
-    private fun findFirstHeadingOrToolbar(root: AccessibilityNodeInfo): AccessibilityNodeInfo? {
-        val queue = ArrayDeque<AccessibilityNodeInfo>()
-        queue.add(root)
-        while (queue.isNotEmpty()) {
-            val node = queue.removeFirst()
-            val className = node.className?.toString().orEmpty()
-            if (className.contains("Toolbar", true) && !node.text.isNullOrBlank()) return node
-            if (node.collectionItemInfo?.let { android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P && it.isHeading } == true && !node.text.isNullOrBlank()) return node
-            for (i in 0 until node.childCount) node.getChild(i)?.let(queue::add)
-        }
-        return null
     }
 
     override fun onInterrupt() = Unit
