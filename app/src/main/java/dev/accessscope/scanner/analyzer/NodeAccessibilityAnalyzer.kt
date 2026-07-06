@@ -2,7 +2,6 @@ package dev.accessscope.scanner.analyzer
 
 import android.graphics.Bitmap
 import android.graphics.Rect
-import android.os.Build
 import android.view.accessibility.AccessibilityNodeInfo
 import dev.accessscope.scanner.data.AccessibilityViolation
 import dev.accessscope.scanner.data.ScreenReaderFinding
@@ -14,6 +13,7 @@ class NodeAccessibilityAnalyzer(
     private val minTextHeightPx: Int,
     private val recommendedTextHeightPx: Int,
     private val density: Float,
+    private val dynamicContentSilent: Boolean = false,
 ) {
 
     fun analyzeTree(
@@ -24,226 +24,196 @@ class NodeAccessibilityAnalyzer(
     ): AnalysisResult {
         val violations = mutableListOf<AccessibilityViolation>()
         val snapshots = mutableListOf<NodeSnapshot>()
-        collectSnapshots(root, snapshots)
+        var traversalIndex = 0
+        collectSnapshots(root, snapshots) { traversalIndex++ }
 
         snapshots.forEach { snap ->
-            checkSingleNode(snap, packageName, screenTitle, violations, screenshot)
+            checkSingleNode(snap, snapshots, packageName, screenTitle, violations, screenshot)
         }
 
         checkCrossNodeIssues(snapshots, packageName, screenTitle, violations)
         checkModalTitle(root, packageName, screenTitle, violations)
         checkCollectionStructure(root, packageName, screenTitle, violations)
+        checkWebViews(snapshots, packageName, screenTitle, violations)
+        checkTables(snapshots, packageName, screenTitle, violations)
+        checkDuplicateViewIds(snapshots, packageName, screenTitle, violations)
+        checkDuplicateLinks(snapshots, packageName, screenTitle, violations)
 
-        val screenReaderFindings = TalkBackSimulator().simulate(root, packageName, screenTitle)
+        violations += FocusOrderAnalyzer.analyze(snapshots, packageName, screenTitle)
+        violations += FocusOrderAnalyzer.analyzeHeadingLevels(snapshots, packageName, screenTitle)
 
-        return AnalysisResult(violations, screenReaderFindings)
-    }
-
-    private fun collectSnapshots(node: AccessibilityNodeInfo, output: MutableList<NodeSnapshot>) {
-        if (!node.isVisibleToUser) {
-            recycleChildren(node)
-            return
-        }
-
-        val bounds = Rect()
-        node.getBoundsInScreen(bounds)
-        if (bounds.width() > 0 && bounds.height() > 0) {
-            output += NodeSnapshot(
-                className = node.className?.toString() ?: "unknown",
-                bounds = bounds,
-                viewId = node.viewIdResourceName,
-                text = node.text?.toString(),
-                contentDescription = node.contentDescription?.toString(),
-                hintText = node.hintText?.toString(),
-                isClickable = node.isClickable,
-                isLongClickable = node.isLongClickable,
-                isFocusable = node.isFocusable,
-                isEditable = node.isEditable || node.className?.toString().orEmpty().contains("EditText", true),
-                isCheckable = node.isCheckable,
-                isChecked = node.isChecked,
-                isScrollable = node.isScrollable,
-                isEnabled = node.isEnabled,
-                isPassword = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) node.isPassword else false,
-                isHeading = node.collectionItemInfo?.heading == true,
-                hasLabeledBy = node.labeledBy != null,
-                hasLabelFor = node.labelFor != null,
-                errorText = node.error?.toString(),
-                stateDescription = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-                    node.stateDescription?.toString()
-                } else {
-                    null
-                },
-                isExpanded = resolveExpanded(node),
-                collectionRow = node.collectionItemInfo?.rowIndex ?: -1,
-                collectionColumn = node.collectionItemInfo?.columnIndex ?: -1,
-                childCount = node.childCount,
+        if (dynamicContentSilent) {
+            violations += AccessibilityViolation(
+                type = ViolationType.DYNAMIC_CONTENT_SILENT,
+                viewClassName = "Schermata",
+                screenTitle = screenTitle,
+                packageName = packageName,
+                details = "Il contenuto è cambiato più volte senza annunci TalkBack.",
+                confidence = 0.85f,
             )
         }
 
-        val childCount = node.childCount
-        for (i in 0 until childCount) {
+        val screenReaderFindings = TalkBackSimulator().simulate(root, packageName, screenTitle)
+        return AnalysisResult(violations, screenReaderFindings)
+    }
+
+    private fun collectSnapshots(
+        node: AccessibilityNodeInfo,
+        output: MutableList<NodeSnapshot>,
+        nextIndex: () -> Int,
+    ) {
+        val index = nextIndex()
+        node.toSnapshot(index, minTextHeightPx, minTouchTargetPx)?.let(output::add)
+        for (i in 0 until node.childCount) {
             val child = node.getChild(i) ?: continue
-            collectSnapshots(child, output)
+            collectSnapshots(child, output, nextIndex)
             child.recycle()
         }
     }
 
-    private fun recycleChildren(node: AccessibilityNodeInfo) {
-        for (i in 0 until node.childCount) {
-            node.getChild(i)?.recycle()
-        }
-    }
-
-    private fun resolveExpanded(node: AccessibilityNodeInfo): Boolean? {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-            val state = node.stateDescription?.toString()?.lowercase().orEmpty()
-            if (state.contains("espans") || state.contains("expand")) return true
-            if (state.contains("collass") || state.contains("collaps")) return false
-        }
-        val className = node.className?.toString().orEmpty()
-        if (className.contains("Expandable", ignoreCase = true)) {
-            return null
-        }
-        return null
-    }
-
     private fun checkSingleNode(
         snap: NodeSnapshot,
+        all: List<NodeSnapshot>,
         packageName: String,
         screenTitle: String,
         violations: MutableList<AccessibilityViolation>,
         screenshot: Bitmap?,
     ) {
-        val boundsLabel = snap.boundsLabel()
-        val className = snap.className
-
         if (snap.isInteractiveClickable()) {
-            if (!snap.hasAccessibleName()) {
-                violations += violation(
-                    ViolationType.MISSING_LABEL, snap, packageName, screenTitle,
-                    "Elemento cliccabile senza contentDescription, testo o hint.",
-                )
+            if (!snap.hasAccessibleName() && !PrecisionRules.isIconInsideLabeledButton(snap, all)) {
+                violations += v(ViolationType.MISSING_LABEL, snap, packageName, screenTitle,
+                    "Nessuna etichetta (testo, descrizione o hint).", 0.95f)
             }
-            if (snap.bounds.width() < minTouchTargetPx || snap.bounds.height() < minTouchTargetPx) {
-                violations += violation(
-                    ViolationType.SMALL_TOUCH_TARGET, snap, packageName, screenTitle,
-                    "Dimensioni ${snap.bounds.width()}x${snap.bounds.height()} px (minimo $minTouchTargetPx px).",
-                )
+            if (!PrecisionRules.shouldSkipTouchTargetCheck(snap, all)) {
+                if (snap.bounds.width() < minTouchTargetPx || snap.bounds.height() < minTouchTargetPx) {
+                    violations += v(ViolationType.SMALL_TOUCH_TARGET, snap, packageName, screenTitle,
+                        "Misura ${snap.bounds.width()}×${snap.bounds.height()} px, minimo ${minTouchTargetPx} px.", 0.92f)
+                }
             }
         }
 
         if (snap.shouldBeFocusable() && !snap.isFocusable) {
-            violations += violation(
-                ViolationType.NOT_FOCUSABLE, snap, packageName, screenTitle,
-                "Elemento interattivo non focalizzabile per screen reader.",
-            )
+            violations += v(ViolationType.NOT_FOCUSABLE, snap, packageName, screenTitle,
+                "Interattivo ma non raggiungibile con TalkBack.", 0.9f)
         }
 
         if (snap.isEditable && !snap.hasInputLabel()) {
-            violations += violation(
-                ViolationType.INPUT_LABEL, snap, packageName, screenTitle,
-                "Campo di input senza hint, label o contentDescription.",
-            )
+            violations += v(ViolationType.INPUT_LABEL, snap, packageName, screenTitle,
+                "Campo senza etichetta associata.", 0.95f)
         }
 
-        if (snap.isEditable && snap.isEnabled && snap.errorText.isNullOrBlank() && snap.text.isNullOrBlank()) {
-            // Campo vuoto senza errore esplicito non è violazione; controlliamo hint mancante sopra
-        }
-
-        if (snap.isEditable && !snap.isEnabled && snap.errorText.isNullOrBlank()) {
-            // potenziale campo con validazione visiva ma senza error text accessibile
-        }
-
-        if (snap.isEditable && snap.hintText.isNullOrBlank() && snap.hasAccessibleName() &&
-            snap.text?.contains("error", ignoreCase = true) == true && snap.errorText.isNullOrBlank()
+        if (snap.isEditable && snap.errorText.isNullOrBlank() &&
+            snap.text?.contains("error", true) == true
         ) {
-            violations += violation(
-                ViolationType.INPUT_ERROR_MISSING, snap, packageName, screenTitle,
-                "Possibile stato di errore visivo senza messaggio accessibile associato.",
-            )
+            violations += v(ViolationType.INPUT_ERROR_MISSING, snap, packageName, screenTitle,
+                "Errore visivo probabile senza messaggio accessibile.", 0.7f)
         }
 
-        if (snap.looksLikeStructuralHeading() && !snap.isHeading && !className.contains("Toolbar", true)) {
-            violations += violation(
-                ViolationType.HEADING_HIERARCHY, snap, packageName, screenTitle,
-                "Testo strutturale non marcato come heading.",
-            )
+        if (snap.isEditable && snap.isEnabled &&
+            !PrecisionRules.isRequiredFieldHint(snap.hintText, snap.text, snap.contentDescription) &&
+            snap.hintText?.contains('*') != true &&
+            snap.className.contains("required", true)
+        ) {
+            violations += v(ViolationType.REQUIRED_FIELD_UNMARKED, snap, packageName, screenTitle,
+                "Campo probabilmente obbligatorio non marcato.", 0.65f)
         }
 
-        if (snap.hasVisibleText() && snap.bounds.height() < minTextHeightPx) {
-            violations += violation(
-                ViolationType.TEXT_TOO_SMALL, snap, packageName, screenTitle,
-                "Altezza testo stimata ${snap.bounds.height()} px (< $minTextHeightPx px, ~12sp).",
-            )
-        } else if (snap.hasVisibleText() && snap.bounds.height() < recommendedTextHeightPx && snap.isClickable) {
-            violations += violation(
-                ViolationType.TEXT_TOO_SMALL, snap, packageName, screenTitle,
-                "Testo cliccabile piccolo: ${snap.bounds.height()} px (consigliato ≥ $recommendedTextHeightPx px).",
-            )
+        if (snap.looksLikeStructuralHeading() && !snap.isHeading && !snap.className.contains("Toolbar", true)) {
+            violations += v(ViolationType.HEADING_HIERARCHY, snap, packageName, screenTitle,
+                "Titolo visibile non marcato come heading.", 0.85f)
         }
 
-        val textValue = snap.text.orEmpty()
-        if (textValue.endsWith("…") || textValue.endsWith("...")) {
-            if (snap.contentDescription.isNullOrBlank()) {
-                violations += violation(
-                    ViolationType.TEXT_TRUNCATED, snap, packageName, screenTitle,
-                    "Testo troncato senza contentDescription con testo completo.",
-                )
+        if (snap.hasVisibleText() && !PrecisionRules.shouldSkipSmallTextCheck(snap)) {
+            if (snap.bounds.height() < minTextHeightPx) {
+                violations += v(ViolationType.TEXT_TOO_SMALL, snap, packageName, screenTitle,
+                    "Altezza ~${snap.bounds.height()} px (< ${minTextHeightPx} px, circa 12sp).", 0.88f)
+            } else if (snap.isInteractiveClickable() && snap.bounds.height() < recommendedTextHeightPx) {
+                violations += v(ViolationType.TEXT_TOO_SMALL, snap, packageName, screenTitle,
+                    "Testo cliccabile piccolo: ${snap.bounds.height()} px (consigliato ≥ $recommendedTextHeightPx px).", 0.75f)
             }
         }
 
-        if (snap.isImageWithoutAlt()) {
-            violations += violation(
-                ViolationType.IMAGE_MISSING_ALT, snap, packageName, screenTitle,
-                "Immagine o icona senza testo alternativo.",
-            )
+        val textValue = snap.text.orEmpty()
+        if ((textValue.endsWith("…") || textValue.endsWith("...")) && snap.contentDescription.isNullOrBlank()) {
+            violations += v(ViolationType.TEXT_TRUNCATED, snap, packageName, screenTitle,
+                "Testo troncato senza descrizione completa.", 0.9f)
         }
 
-        if (snap.isLikelyLink() && snap.hasAccessibleName() && isNonDescriptiveLink(snap.accessibleName())) {
-            violations += violation(
-                ViolationType.LINK_NOT_DESCRIPTIVE, snap, packageName, screenTitle,
-                "Link con testo generico: \"${snap.accessibleName()}\".",
-            )
+        when {
+            snap.isImageWithoutAlt() && !PrecisionRules.isDecorative(snap) &&
+                !PrecisionRules.isIconInsideLabeledButton(snap, all) -> {
+                violations += v(ViolationType.IMAGE_MISSING_ALT, snap, packageName, screenTitle,
+                    "Immagine senza testo alternativo.", 0.95f)
+            }
+            PrecisionRules.isDecorative(snap) && snap.hasAccessibleName() -> {
+                violations += v(ViolationType.DECORATIVE_IMAGE_LABELED, snap, packageName, screenTitle,
+                    "Immagine decorativa con etichetta superflua.", 0.8f)
+            }
+        }
+
+        snap.contentDescription?.let { cd ->
+            if (snap.isImageClass() && PrecisionRules.isPoorAltText(cd)) {
+                violations += v(ViolationType.POOR_ALT_TEXT, snap, packageName, screenTitle,
+                    "Descrizione generica: \"$cd\".", 0.85f)
+            }
+        }
+
+        if (snap.isLikelyLink() && snap.hasAccessibleName() && isNonDescriptiveLink(snap.accessibleName()!!)) {
+            violations += v(ViolationType.LINK_NOT_DESCRIPTIVE, snap, packageName, screenTitle,
+                "Link generico: \"${snap.accessibleName()}\".", 0.9f)
         }
 
         if (snap.isScrollable && !snap.hasAccessibleName()) {
-            violations += violation(
-                ViolationType.SCROLLABLE_WITHOUT_LABEL, snap, packageName, screenTitle,
-                "Contenitore scrollabile senza nome accessibile.",
-            )
+            violations += v(ViolationType.SCROLLABLE_WITHOUT_LABEL, snap, packageName, screenTitle,
+                "Area scrollabile senza nome.", 0.88f)
         }
 
         if (!snap.isEnabled && snap.isInteractiveClickable() && snap.stateDescription.isNullOrBlank()) {
-            violations += violation(
-                ViolationType.DISABLED_WITHOUT_INDICATION, snap, packageName, screenTitle,
-                "Controllo disabilitato senza stateDescription.",
-            )
+            violations += v(ViolationType.DISABLED_WITHOUT_INDICATION, snap, packageName, screenTitle,
+                "Controllo disabilitato senza stato esposto.", 0.82f)
         }
 
-        if (snap.className.contains("Expandable", ignoreCase = true) && snap.isExpanded == null) {
-            violations += violation(
-                ViolationType.EXPANDABLE_STATE_MISSING, snap, packageName, screenTitle,
-                "Elemento espandibile senza stato espanso/collassato esposto.",
-            )
+        if (snap.className.contains("Expandable", true) && snap.isExpanded == null) {
+            violations += v(ViolationType.EXPANDABLE_STATE_MISSING, snap, packageName, screenTitle,
+                "Espandibile senza stato aperto/chiuso.", 0.8f)
         }
 
-        if (snap.isEditable && snap.isPassword.not() && snap.className.contains("password", true)) {
-            violations += violation(
-                ViolationType.PASSWORD_NOT_MASKED, snap, packageName, screenTitle,
-                "Campo password non marcato come isPassword.",
-            )
+        if (snap.isEditable && !snap.isPassword && snap.className.contains("password", true)) {
+            violations += v(ViolationType.PASSWORD_NOT_MASKED, snap, packageName, screenTitle,
+                "Campo password non marcato isPassword.", 0.95f)
         }
 
         if (snap.isClickable && snap.isCustomView() && !snap.hasAccessibleName() && !snap.hasStandardRole()) {
-            violations += violation(
-                ViolationType.ROLE_UNDEFINED, snap, packageName, screenTitle,
-                "View personalizzata cliccabile senza ruolo o etichetta semantica.",
-            )
+            violations += v(ViolationType.ROLE_UNDEFINED, snap, packageName, screenTitle,
+                "View custom cliccabile senza ruolo semantico.", 0.85f)
         }
 
-        screenshot?.let { bitmap ->
-            checkContrast(snap, packageName, screenTitle, violations, bitmap)
+        if (snap.rangeMin != null && snap.rangeMax != null &&
+            (snap.rangeCurrent == null || snap.className.contains("SeekBar", true) || snap.className.contains("Slider", true))
+        ) {
+            val hasValue = snap.stateDescription?.isNotBlank() == true || snap.contentDescription?.contains("%") == true
+            if (!hasValue && snap.rangeCurrent == snap.rangeMin) {
+                violations += v(ViolationType.SLIDER_VALUE_MISSING, snap, packageName, screenTitle,
+                    "Slider/progresso senza valore annunciato.", 0.78f)
+            }
         }
+
+        if (!snap.tooltipText.isNullOrBlank() && snap.contentDescription.isNullOrBlank() && !snap.isFocusable) {
+            violations += v(ViolationType.TOOLTIP_INACCESSIBLE, snap, packageName, screenTitle,
+                "Tooltip \"${snap.tooltipText}\" non accessibile a TalkBack.", 0.8f)
+        }
+
+        if (snap.unlabeledActionCount > 0) {
+            violations += v(ViolationType.CUSTOM_ACTION_UNLABELED, snap, packageName, screenTitle,
+                "${snap.unlabeledActionCount} azione/i personalizzata/e senza etichetta.", 0.88f)
+        }
+
+        if (snap.isMediaControl() && !snap.hasAccessibleName()) {
+            violations += v(ViolationType.MEDIA_CONTROL_UNLABELED, snap, packageName, screenTitle,
+                "Controllo media senza etichetta.", 0.92f)
+        }
+
+        screenshot?.let { checkContrast(snap, packageName, screenTitle, violations, it) }
     }
 
     private fun checkContrast(
@@ -253,28 +223,22 @@ class NodeAccessibilityAnalyzer(
         violations: MutableList<AccessibilityViolation>,
         bitmap: Bitmap,
     ) {
-        val fg = WcagContrast.sampleForeground(bitmap, snap.bounds) ?: return
-        val bg = WcagContrast.sampleBackground(bitmap, snap.bounds) ?: return
-        val ratio = WcagContrast.contrastRatio(fg, bg)
-
         if (snap.hasVisibleText()) {
-            val threshold = if (WcagContrast.isLargeText(snap.bounds.height(), density)) {
-                WcagContrast.MIN_LARGE_TEXT_CONTRAST
-            } else {
-                WcagContrast.MIN_TEXT_CONTRAST
+            val large = WcagContrast.isLargeText(snap.bounds.height(), density)
+            val result = WcagContrast.measureTextContrast(bitmap, snap.bounds, large) ?: return
+            val threshold = if (large) WcagContrast.MIN_LARGE_TEXT_CONTRAST else WcagContrast.MIN_TEXT_CONTRAST
+            if (result.ratio < threshold) {
+                violations += v(ViolationType.LOW_COLOR_CONTRAST, snap, packageName, screenTitle,
+                    "Contrasto ${"%.2f".format(result.ratio)}:1 (serve ≥ $threshold:1). " +
+                        "${result.samplesUsed} campioni, confidenza ${(result.confidence * 100).toInt()}%.",
+                    result.confidence)
             }
-            if (ratio < threshold) {
-                violations += violation(
-                    ViolationType.LOW_COLOR_CONTRAST, snap, packageName, screenTitle,
-                    "Contrasto stimato ${"%.2f".format(ratio)}:1 (richiesto ≥ $threshold:1).",
-                )
-            }
-        } else if (snap.isInteractiveClickable() || snap.isImageWithoutAlt().not() && snap.isImageClass()) {
-            if (ratio < WcagContrast.MIN_NON_TEXT_CONTRAST) {
-                violations += violation(
-                    ViolationType.LOW_NON_TEXT_CONTRAST, snap, packageName, screenTitle,
-                    "Contrasto UI stimato ${"%.2f".format(ratio)}:1 (richiesto ≥ ${WcagContrast.MIN_NON_TEXT_CONTRAST}:1).",
-                )
+        } else if (snap.isInteractiveClickable() || snap.isImageClass()) {
+            val result = WcagContrast.measureUiContrast(bitmap, snap.bounds) ?: return
+            if (result.ratio < WcagContrast.MIN_NON_TEXT_CONTRAST) {
+                violations += v(ViolationType.LOW_NON_TEXT_CONTRAST, snap, packageName, screenTitle,
+                    "Contrasto UI ${"%.2f".format(result.ratio)}:1 (serve ≥ ${WcagContrast.MIN_NON_TEXT_CONTRAST}:1).",
+                    result.confidence)
             }
         }
     }
@@ -286,98 +250,129 @@ class NodeAccessibilityAnalyzer(
         violations: MutableList<AccessibilityViolation>,
     ) {
         val clickables = snapshots.filter { it.isInteractiveClickable() }
-        val nameGroups = snapshots
-            .mapNotNull { snap -> snap.accessibleName()?.let { it.lowercase() to snap } }
-            .groupBy({ it.first }, { it.second })
 
-        nameGroups.forEach { (name, nodes) ->
-            if (name.isNotBlank() && nodes.size > 1) {
-                nodes.forEach { snap ->
-                    violations += violation(
-                        ViolationType.DUPLICATE_ACCESSIBLE_NAME, snap, packageName, screenTitle,
-                        "Nome accessibile \"$name\" duplicato su più elementi.",
-                    )
+        snapshots.mapNotNull { snap -> snap.accessibleName()?.lowercase()?.let { it to snap } }
+            .groupBy({ it.first }, { it.second })
+            .forEach { (name, nodes) ->
+                if (name.isBlank() || nodes.size < 2) return@forEach
+                val distinctBounds = nodes.map { it.bounds }.distinctBy { "${it.left},${it.top},${it.right},${it.bottom}" }
+                if (distinctBounds.size < nodes.size) {
+                    nodes.forEach { snap ->
+                        violations += v(ViolationType.DUPLICATE_ACCESSIBLE_NAME, snap, packageName, screenTitle,
+                            "Nome \"$name\" duplicato su elementi distinti.", 0.9f)
+                    }
                 }
             }
-        }
 
         for (i in clickables.indices) {
             for (j in i + 1 until clickables.size) {
                 val a = clickables[i]
                 val b = clickables[j]
+                if (a.bounds.contains(b.bounds) || b.bounds.contains(a.bounds)) continue
                 if (Rect.intersects(a.bounds, b.bounds)) {
                     val overlap = overlapArea(a.bounds, b.bounds)
-                    val minArea = minOf(a.bounds.width() * a.bounds.height(), b.bounds.width() * b.bounds.height())
-                    if (overlap > minArea * 0.25) {
-                        violations += violation(
-                            ViolationType.OVERLAPPING_TOUCH_TARGETS, a, packageName, screenTitle,
-                            "Target sovrapposto con ${b.className} (${overlap}px²).",
-                        )
+                    val minArea = minOf(a.area(), b.area())
+                    if (overlap > minArea * 0.3) {
+                        violations += v(ViolationType.OVERLAPPING_TOUCH_TARGETS, a, packageName, screenTitle,
+                            "Sovrapposizione ${overlap}px² con ${b.className}.", 0.88f)
                     }
                 } else {
                     val distance = edgeDistance(a.bounds, b.bounds)
-                    if (distance in 0 until minTouchSpacingPx) {
-                        violations += violation(
-                            ViolationType.INSUFFICIENT_TOUCH_SPACING, a, packageName, screenTitle,
-                            "Distanza ${distance}px da altro target (< $minTouchSpacingPx px).",
-                        )
+                    if (distance in 1 until minTouchSpacingPx) {
+                        violations += v(ViolationType.INSUFFICIENT_TOUCH_SPACING, a, packageName, screenTitle,
+                            "Solo ${distance}px da un altro pulsante.", 0.85f)
                     }
                 }
             }
         }
 
         snapshots.forEach { parent ->
-            if (!parent.hasAccessibleName()) return@forEach
+            if (!parent.hasAccessibleName() || parent.isInteractiveClickable()) return@forEach
             snapshots.forEach { child ->
-                if (parent == child) return@forEach
-                if (!parent.bounds.contains(child.bounds)) return@forEach
-                if (parent.accessibleName() == child.accessibleName() && child.hasAccessibleName()) {
-                    violations += violation(
-                        ViolationType.REDUNDANT_ACCESSIBLE_NAME, child, packageName, screenTitle,
-                        "Nome accessibile ridondante con contenitore padre.",
-                    )
+                if (parent == child || !parent.bounds.contains(child.bounds)) return@forEach
+                if (parent.accessibleName() == child.accessibleName() && child.hasAccessibleName() && !child.isInteractiveClickable()) {
+                    violations += v(ViolationType.REDUNDANT_ACCESSIBLE_NAME, child, packageName, screenTitle,
+                        "Nome ripetuto dal contenitore.", 0.75f)
                 }
             }
         }
     }
 
-    private fun checkModalTitle(
-        root: AccessibilityNodeInfo,
-        packageName: String,
-        screenTitle: String,
-        violations: MutableList<AccessibilityViolation>,
-    ) {
-        val className = root.className?.toString().orEmpty()
-        val isModal = className.contains("Dialog", true) ||
-            className.contains("BottomSheet", true) ||
-            className.contains("Popup", true) ||
-            className.contains("AlertDialog", true)
+    private fun checkWebViews(snapshots: List<NodeSnapshot>, packageName: String, screenTitle: String, violations: MutableList<AccessibilityViolation>) {
+        snapshots.filter { it.isWebView() && it.childCount <= 1 && it.bounds.width() > 100 }.forEach { snap ->
+            violations += v(ViolationType.WEBVIEW_BARRIER, snap, packageName, screenTitle,
+                "WebView senza contenuto accessibile esposto (${snap.bounds.width()}×${snap.bounds.height()} px).", 0.9f)
+        }
+    }
 
-        if (!isModal) return
-        if (screenTitle == "Schermata" || screenTitle.isBlank()) {
+    private fun checkTables(snapshots: List<NodeSnapshot>, packageName: String, screenTitle: String, violations: MutableList<AccessibilityViolation>) {
+        val gridItems = snapshots.filter { it.collectionRow >= 0 && it.collectionColumn >= 0 }
+        if (gridItems.size < 6) return
+        val rows = gridItems.map { it.collectionRow }.distinct().size
+        val cols = gridItems.map { it.collectionColumn }.distinct().size
+        if (rows < 2 || cols < 2) return
+        val hasHeader = gridItems.any { it.isHeading || it.collectionRow == 0 || it.collectionColumn == 0 }
+        if (!hasHeader) {
+            violations += AccessibilityViolation(
+                type = ViolationType.TABLE_HEADER_MISSING,
+                viewClassName = "Collection/Grid",
+                screenTitle = screenTitle,
+                packageName = packageName,
+                details = "Griglia ${rows}×${cols} senza intestazioni marcate.",
+                confidence = 0.8f,
+            )
+        }
+    }
+
+    private fun checkDuplicateViewIds(snapshots: List<NodeSnapshot>, packageName: String, screenTitle: String, violations: MutableList<AccessibilityViolation>) {
+        snapshots.mapNotNull { snap -> snap.viewId?.let { it to snap } }
+            .groupBy({ it.first }, { it.second })
+            .filter { it.value.size > 1 }
+            .forEach { (id, nodes) ->
+                nodes.forEach { snap ->
+                    violations += v(ViolationType.DUPLICATE_VIEW_ID, snap, packageName, screenTitle,
+                        "ID $id condiviso da ${nodes.size} elementi.", 0.95f)
+                }
+            }
+    }
+
+    private fun checkDuplicateLinks(snapshots: List<NodeSnapshot>, packageName: String, screenTitle: String, violations: MutableList<AccessibilityViolation>) {
+        snapshots.filter { it.isLikelyLink() && it.hasAccessibleName() }
+            .groupBy { it.accessibleName()!!.lowercase() }
+            .filter { it.value.size > 1 }
+            .forEach { (text, links) ->
+                val distinctIds = links.mapNotNull { it.viewId }.distinct()
+                if (distinctIds.size > 1 || links.map { it.bounds }.distinct().size > 1) {
+                    links.forEach { snap ->
+                        violations += v(ViolationType.DUPLICATE_LINK_TEXT, snap, packageName, screenTitle,
+                            "Link \"$text\" ripetuto con destinazioni probabilmente diverse.", 0.82f)
+                    }
+                }
+            }
+    }
+
+    private fun checkModalTitle(root: AccessibilityNodeInfo, packageName: String, screenTitle: String, violations: MutableList<AccessibilityViolation>) {
+        val className = root.className?.toString().orEmpty()
+        val isModal = listOf("Dialog", "BottomSheet", "Popup", "AlertDialog").any { className.contains(it, true) }
+        if (isModal && (screenTitle == "Schermata" || screenTitle.isBlank())) {
             violations += AccessibilityViolation(
                 type = ViolationType.MODAL_WITHOUT_TITLE,
                 viewClassName = className,
                 screenTitle = screenTitle,
                 packageName = packageName,
-                details = "Finestra modale senza titolo accessibile rilevato.",
-                bounds = null,
+                details = "Modale senza titolo accessibile.",
+                confidence = 0.9f,
             )
         }
     }
 
-    private fun checkCollectionStructure(
-        root: AccessibilityNodeInfo,
-        packageName: String,
-        screenTitle: String,
-        violations: MutableList<AccessibilityViolation>,
-    ) {
+    private fun checkCollectionStructure(root: AccessibilityNodeInfo, packageName: String, screenTitle: String, violations: MutableList<AccessibilityViolation>) {
         val queue = ArrayDeque<AccessibilityNodeInfo>()
         queue.add(root)
         while (queue.isNotEmpty()) {
             val node = queue.removeFirst()
             val collection = node.collectionInfo
-            if (collection != null && node.childCount > 3) {
+            if (collection != null && node.childCount > 4) {
                 val hasStructure = collection.rowCount > 0 || collection.columnCount > 0
                 if (!hasStructure) {
                     violations += AccessibilityViolation(
@@ -385,14 +380,13 @@ class NodeAccessibilityAnalyzer(
                         viewClassName = node.className?.toString() ?: "unknown",
                         screenTitle = screenTitle,
                         packageName = packageName,
-                        details = "Lista/griglia con ${node.childCount} figli senza metadati di struttura.",
+                        details = "Lista con ${node.childCount} elementi senza struttura esposta.",
                         viewId = node.viewIdResourceName,
+                        confidence = 0.85f,
                     )
                 }
             }
-            for (i in 0 until node.childCount) {
-                node.getChild(i)?.let(queue::add)
-            }
+            for (i in 0 until node.childCount) node.getChild(i)?.let(queue::add)
         }
     }
 
@@ -419,129 +413,34 @@ class NodeAccessibilityAnalyzer(
     }
 
     private fun isNonDescriptiveLink(name: String): Boolean {
-        val normalized = name.trim().lowercase()
-        return NON_DESCRIPTIVE_LINKS.any { normalized == it || normalized.matches(Regex("^$it\\W*")) }
+        val n = name.trim().lowercase()
+        return NON_DESCRIPTIVE_LINKS.any { n == it || n.matches(Regex("^$it\\W*")) }
     }
 
-    private fun violation(
-        type: ViolationType,
-        snap: NodeSnapshot,
-        packageName: String,
-        screenTitle: String,
-        details: String,
-    ) = AccessibilityViolation(
-        type = type,
-        viewClassName = snap.className,
-        screenTitle = screenTitle,
-        packageName = packageName,
-        details = details,
-        viewId = snap.viewId,
-        bounds = snap.boundsLabel(),
-    )
+    private fun v(type: ViolationType, snap: NodeSnapshot, pkg: String, screen: String, details: String, confidence: Float) =
+        AccessibilityViolation(type, snap.className, screen, pkg, details, snap.viewId, snap.boundsLabel(), confidence)
+
+    private fun NodeSnapshot.area() = bounds.width() * bounds.height()
 
     data class AnalysisResult(
         val violations: List<AccessibilityViolation>,
         val screenReaderFindings: List<ScreenReaderFinding>,
     )
 
-    data class NodeSnapshot(
-        val className: String,
-        val bounds: Rect,
-        val viewId: String?,
-        val text: String?,
-        val contentDescription: String?,
-        val hintText: String?,
-        val isLongClickable: Boolean,
-        val isClickable: Boolean,
-        val isFocusable: Boolean,
-        val isEditable: Boolean,
-        val isCheckable: Boolean,
-        val isChecked: Boolean,
-        val isScrollable: Boolean,
-        val isEnabled: Boolean,
-        val isPassword: Boolean,
-        val isHeading: Boolean,
-        val hasLabeledBy: Boolean,
-        val hasLabelFor: Boolean,
-        val errorText: String?,
-        val stateDescription: String?,
-        val isExpanded: Boolean?,
-        val collectionRow: Int,
-        val collectionColumn: Int,
-        val childCount: Int,
-    ) {
-        fun boundsLabel() = "${bounds.width()}x${bounds.height()} @(${bounds.left},${bounds.top})"
-
-        fun hasAccessibleName(): Boolean =
-            !contentDescription.isNullOrBlank() || !text.isNullOrBlank() ||
-                !hintText.isNullOrBlank() || hasLabeledBy
-
-        fun accessibleName(): String? =
-            contentDescription?.takeIf { it.isNotBlank() }
-                ?: text?.takeIf { it.isNotBlank() }
-                ?: hintText?.takeIf { it.isNotBlank() }
-
-        fun hasInputLabel(): Boolean = hasAccessibleName() || hasLabeledBy || hasLabelFor || !errorText.isNullOrBlank()
-
-        fun hasVisibleText(): Boolean = !text.isNullOrBlank()
-
-        fun isInteractiveClickable(): Boolean {
-            if (isClickable || isLongClickable) return true
-            return className.contains("Button", true) ||
-                className.contains("ImageButton", true) ||
-                className.contains("CheckBox", true) ||
-                className.contains("Switch", true) ||
-                className.contains("Toggle", true)
-        }
-
-        fun shouldBeFocusable(): Boolean =
-            isClickable || isCheckable || isEditable || isScrollable
-
-        fun looksLikeStructuralHeading(): Boolean {
-            val value = text?.trim().orEmpty()
-            if (value.isEmpty() || value.length > 80) return false
-            return className.contains("TextView", true) && !isClickable && value.split(" ").size <= 12
-        }
-
-        fun isImageClass(): Boolean =
-            className.contains("Image", true) || className.contains("Icon", true)
-
-        fun isImageWithoutAlt(): Boolean =
-            isImageClass() && contentDescription.isNullOrBlank() && text.isNullOrBlank()
-
-        fun isLikelyLink(): Boolean =
-            isClickable && (
-                className.contains("TextView", true) ||
-                    accessibleName()?.contains("http", true) == true ||
-                    className.contains("Link", true)
-                )
-
-        fun isCustomView(): Boolean {
-            val standard = listOf("Button", "TextView", "Image", "Edit", "Check", "Switch", "Radio", "Spinner")
-            return standard.none { className.contains(it, ignoreCase = true) }
-        }
-
-        fun hasStandardRole(): Boolean =
-            className.contains("Button", true) ||
-                className.contains("CheckBox", true) ||
-                className.contains("Switch", true) ||
-                className.contains("EditText", true)
-    }
-
     companion object {
         private val NON_DESCRIPTIVE_LINKS = setOf(
-            "click here", "tap here", "here", "more", "read more", "learn more",
-            "details", "link", "continue", "go", "ok", "submit",
-            "clicca qui", "qui", "altro", "leggi", "leggi tutto", "scopri",
-            "continua", "dettagli", "vai", "info", "apri", "tap",
+            "click here", "tap here", "here", "more", "read more", "learn more", "details", "link",
+            "continue", "go", "ok", "submit", "clicca qui", "qui", "altro", "leggi", "leggi tutto",
+            "scopri", "continua", "dettagli", "vai", "info", "apri", "tap",
         )
 
-        fun create(density: Float): NodeAccessibilityAnalyzer = NodeAccessibilityAnalyzer(
+        fun create(density: Float, dynamicContentSilent: Boolean = false) = NodeAccessibilityAnalyzer(
             minTouchTargetPx = (48 * density).toInt(),
             minTouchSpacingPx = (8 * density).toInt(),
             minTextHeightPx = (12 * density).toInt(),
             recommendedTextHeightPx = (16 * density).toInt(),
             density = density,
+            dynamicContentSilent = dynamicContentSilent,
         )
     }
 }

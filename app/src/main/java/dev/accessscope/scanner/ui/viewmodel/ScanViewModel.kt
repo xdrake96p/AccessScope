@@ -99,6 +99,7 @@ class ScanViewModel(application: Application) : AndroidViewModel(application) {
         }
 
         repository.startScan(selected)
+        AccessScopeAccessibilityService.instance?.resetDynamicTracking()
         ScanOverlayService.start(context)
         _uiState.update { it.copy(statusMessage = "Scansione avviata. Apri le app selezionate e interagisci.") }
     }

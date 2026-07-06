@@ -10,6 +10,7 @@ import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
 import androidx.annotation.RequiresApi
 import dev.accessscope.scanner.AccessScopeApp
+import dev.accessscope.scanner.analyzer.DynamicContentTracker
 import dev.accessscope.scanner.analyzer.NodeAccessibilityAnalyzer
 import dev.accessscope.scanner.data.ScanSessionRepository
 import java.util.concurrent.ConcurrentHashMap
@@ -25,14 +26,13 @@ class AccessScopeAccessibilityService : AccessibilityService() {
     private val density: Float
         get() = resources.displayMetrics.density
 
-    private val analyzer: NodeAccessibilityAnalyzer by lazy {
-        NodeAccessibilityAnalyzer.create(density)
-    }
-
+    private val dynamicTracker = DynamicContentTracker()
     private val executor = Executors.newSingleThreadExecutor()
     private val lastScanByWindow = ConcurrentHashMap<String, Long>()
     private val screenshotInFlight = AtomicBoolean(false)
     private val debounceMs = 800L
+
+    fun resetDynamicTracking() = dynamicTracker.reset()
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
         if (event == null) return
@@ -45,7 +45,13 @@ class AccessScopeAccessibilityService : AccessibilityService() {
         when (event.eventType) {
             AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED,
             AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED,
-            -> scheduleScan(packageName, event)
+            -> {
+                dynamicTracker.onContentChanged(packageName, event.windowId)
+                scheduleScan(packageName, event)
+            }
+            AccessibilityEvent.TYPE_ANNOUNCEMENT -> {
+                dynamicTracker.onAnnouncement(packageName)
+            }
         }
     }
 
@@ -56,12 +62,15 @@ class AccessScopeAccessibilityService : AccessibilityService() {
         if (now - last < debounceMs) return
         lastScanByWindow[windowKey] = now
 
+        val silentDynamic = dynamicTracker.isSilentDynamicContent(packageName, event.windowId)
+        val analyzer = NodeAccessibilityAnalyzer.create(density, silentDynamic)
+
         executor.execute {
             val root = rootInActiveWindow ?: event.source ?: return@execute
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
                 captureScreenshot { bitmap ->
                     try {
-                        scanRoot(root, packageName, event, bitmap)
+                        scanRoot(root, packageName, event, bitmap, analyzer)
                     } finally {
                         bitmap?.recycle()
                         root.recycle()
@@ -69,7 +78,7 @@ class AccessScopeAccessibilityService : AccessibilityService() {
                 }
             } else {
                 try {
-                    scanRoot(root, packageName, event, null)
+                    scanRoot(root, packageName, event, null, analyzer)
                 } finally {
                     root.recycle()
                 }
@@ -92,8 +101,7 @@ class AccessScopeAccessibilityService : AccessibilityService() {
             object : TakeScreenshotCallback {
                 override fun onSuccess(result: ScreenshotResult) {
                     screenshotInFlight.set(false)
-                    val bitmap = result.hardwareBuffer.toBitmap(result.colorSpace)
-                    onResult(bitmap)
+                    onResult(result.hardwareBuffer.toBitmap(result.colorSpace))
                 }
 
                 override fun onFailure(errorCode: Int) {
@@ -120,6 +128,7 @@ class AccessScopeAccessibilityService : AccessibilityService() {
         packageName: String,
         event: AccessibilityEvent,
         screenshot: Bitmap?,
+        analyzer: NodeAccessibilityAnalyzer,
     ) {
         val screenTitle = resolveScreenTitle(root, event)
         val result = analyzer.analyzeTree(root, packageName, screenTitle, screenshot)
@@ -130,8 +139,7 @@ class AccessScopeAccessibilityService : AccessibilityService() {
 
     private fun resolveScreenTitle(root: AccessibilityNodeInfo, event: AccessibilityEvent): String {
         event.text?.firstOrNull()?.toString()?.takeIf { it.isNotBlank() }?.let { return it }
-        val titleNode = findFirstHeadingOrToolbar(root)
-        titleNode?.text?.toString()?.takeIf { it.isNotBlank() }?.let { return it }
+        findFirstHeadingOrToolbar(root)?.text?.toString()?.takeIf { it.isNotBlank() }?.let { return it }
         event.className?.toString()?.substringAfterLast('.')?.let { return it }
         return "Schermata"
     }
@@ -142,15 +150,9 @@ class AccessScopeAccessibilityService : AccessibilityService() {
         while (queue.isNotEmpty()) {
             val node = queue.removeFirst()
             val className = node.className?.toString().orEmpty()
-            if (className.contains("Toolbar", ignoreCase = true) && !node.text.isNullOrBlank()) {
-                return node
-            }
-            if (node.collectionItemInfo?.heading == true && !node.text.isNullOrBlank()) {
-                return node
-            }
-            for (i in 0 until node.childCount) {
-                node.getChild(i)?.let(queue::add)
-            }
+            if (className.contains("Toolbar", true) && !node.text.isNullOrBlank()) return node
+            if (node.collectionItemInfo?.heading == true && !node.text.isNullOrBlank()) return node
+            for (i in 0 until node.childCount) node.getChild(i)?.let(queue::add)
         }
         return null
     }
@@ -158,6 +160,7 @@ class AccessScopeAccessibilityService : AccessibilityService() {
     override fun onInterrupt() = Unit
 
     override fun onDestroy() {
+        dynamicTracker.reset()
         executor.shutdown()
         try {
             executor.awaitTermination(2, TimeUnit.SECONDS)
@@ -171,8 +174,6 @@ class AccessScopeAccessibilityService : AccessibilityService() {
         @Volatile
         var instance: AccessScopeAccessibilityService? = null
             private set
-
-        fun isRunning(): Boolean = instance != null
     }
 
     override fun onServiceConnected() {
