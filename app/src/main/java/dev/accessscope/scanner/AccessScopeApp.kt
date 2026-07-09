@@ -11,7 +11,7 @@ import dev.accessscope.scanner.data.ScanSessionRepository
 import dev.accessscope.scanner.export.PdfReportExporter
 import dev.accessscope.scanner.export.ScanReliabilityReportExporter
 import dev.accessscope.scanner.service.ScanOverlayService
-import dev.accessscope.scanner.util.DebugTrace
+import dev.accessscope.scanner.util.AppFileLogger
 import dev.accessscope.scanner.util.FavoriteAppsStore
 import dev.accessscope.scanner.util.ScanHistoryStore
 import dev.accessscope.scanner.util.ScanSettingsStore
@@ -59,6 +59,8 @@ class AccessScopeApp : Application() {
      */
     override fun onCreate() {
         super.onCreate()
+        AppFileLogger.init(this)
+        installCrashHandler()
         scanRepository = ScanSessionRepository(this)
         scanRepository.stopCallback = { stopScanSession(fromOverlay = true) }
 
@@ -66,12 +68,28 @@ class AccessScopeApp : Application() {
             ScanOverlayService.start(this)
         }
 
-        // #region agent log
-        DebugTrace.log("H1", "AccessScopeApp.onCreate", "app_started", mapOf(
-            "pid" to android.os.Process.myPid(),
-            "restoredScan" to scanRepository.state.value.isScanning,
-        ))
-        // #endregion
+        AppFileLogger.info("AccessScopeApp", "started pid=${android.os.Process.myPid()} restoredScan=${scanRepository.state.value.isScanning}")
+    }
+
+    private fun installCrashHandler() {
+        val defaultHandler = Thread.getDefaultUncaughtExceptionHandler()
+        Thread.setDefaultUncaughtExceptionHandler { thread, throwable ->
+            val snapshot = if (::scanRepository.isInitialized) scanRepository.state.value else null
+            AppFileLogger.error(
+                "Crash",
+                buildString {
+                    append("Uncaught on thread=${thread.name}")
+                    snapshot?.let {
+                        append(" scanning=${it.isScanning}")
+                        append(" violations=${it.violations.size}")
+                        append(" screens=${it.uniqueScreens}")
+                        append(" packages=${it.selectedPackages.joinToString()}")
+                    }
+                },
+                throwable,
+            )
+            defaultHandler?.uncaughtException(thread, throwable)
+        }
     }
 
     /**
@@ -90,16 +108,10 @@ class AccessScopeApp : Application() {
             snapshot.violations.isNotEmpty() ||
             snapshot.uniqueScreens > 0
 
-        // #region agent log
-        DebugTrace.log("H-STOP2", "AccessScopeApp.stopScanSession", "called", mapOf(
-            "fromOverlay" to fromOverlay,
-            "isScanning" to snapshot.isScanning,
-            "violations" to snapshot.violations.size,
-            "screens" to snapshot.uniqueScreens,
-            "analyses" to snapshot.scanAnalyses,
-            "hadActiveSession" to hadActiveSession,
-        ))
-        // #endregion
+        AppFileLogger.info(
+            "AccessScopeApp",
+            "stopScan fromOverlay=$fromOverlay scanning=${snapshot.isScanning} violations=${snapshot.violations.size}",
+        )
 
         if (hadActiveSession) {
             val filtered = ReportHelper.filterViolations(snapshot.violations)
@@ -149,13 +161,11 @@ class AccessScopeApp : Application() {
                 onSuccess = { path ->
                     scanRepository.setPdfPath(path)
                     lastArchivedSessionId?.let { scanHistoryStore.updateSessionPdfPath(it, path) }
-                    DebugTrace.log("H-STOP2", "stopScanSession", "pdf_ok", mapOf("path" to path))
+                    AppFileLogger.info("AccessScopeApp", "pdf_ok path=$path")
                 },
                 onFailure = { error ->
                     scanRepository.setError(error.message ?: "Errore export PDF")
-                    DebugTrace.log("H-STOP2", "stopScanSession", "pdf_fail", mapOf(
-                        "error" to (error.message ?: "unknown"),
-                    ))
+                    AppFileLogger.error("AccessScopeApp", "pdf_fail ${error.message}")
                 },
             )
 
@@ -177,12 +187,10 @@ class AccessScopeApp : Application() {
                 mdResult.fold(
                     onSuccess = { mdPath ->
                         scanRepository.setReliabilityMdPath(mdPath)
-                        DebugTrace.log("H-STOP2", "stopScanSession", "reliability_md_ok", mapOf("path" to mdPath))
+                        AppFileLogger.info("AccessScopeApp", "reliability_md_ok path=$mdPath")
                     },
                     onFailure = { error ->
-                        DebugTrace.log("H-STOP2", "stopScanSession", "reliability_md_fail", mapOf(
-                            "error" to (error.message ?: "unknown"),
-                        ))
+                        AppFileLogger.error("AccessScopeApp", "reliability_md_fail ${error.message}")
                     },
                 )
             }

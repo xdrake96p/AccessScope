@@ -144,6 +144,79 @@ class PlatformPatternsRegressionTest {
         assertTrue(PrecisionRules.shouldSkipOverlapBetween(a, b, all, "com.example", 1080))
     }
 
+    @Test
+    fun clickableLayoutShells_overlapSkipped_generic() {
+        val grid = snap(
+            id = "gridview",
+            bounds = Rect(0, 200, 1080, 1800),
+            className = "android.widget.GridView",
+            clickable = true,
+        )
+        val tileA = snap(
+            id = "tile",
+            bounds = Rect(26, 300, 350, 550),
+            className = "android.widget.FrameLayout",
+            clickable = true,
+        )
+        val tileB = snap(
+            id = "tile",
+            bounds = Rect(377, 300, 702, 550),
+            className = "android.widget.FrameLayout",
+            clickable = true,
+        )
+        val all = listOf(grid, tileA, tileB)
+        assertTrue(PrecisionRules.isClickableLayoutShell(tileA))
+        assertTrue(PrecisionRules.shouldSkipOverlapBetween(tileA, tileB, all, "com.any.app", 1080))
+    }
+
+    @Test
+    fun realButtonInsideCard_overlapNotSkippedAsShell() {
+        val card = snap(
+            id = "card",
+            bounds = Rect(0, 400, 1080, 900),
+            className = "android.widget.FrameLayout",
+            clickable = true,
+        )
+        val renew = snap(
+            id = "renew",
+            bounds = Rect(800, 800, 980, 880),
+            className = "android.widget.ImageButton",
+            clickable = true,
+        )
+        val all = listOf(card, renew)
+        assertFalse(PrecisionRules.isLayoutShellOverlap(card, renew, all))
+        assertTrue(PrecisionRules.isSemanticClickTarget(renew))
+    }
+
+    @Test
+    fun touchSpacing_insideDenseGrid_skipped() {
+        val recycler = snap(
+            id = "recycler",
+            bounds = Rect(0, 100, 1080, 2000),
+            className = "androidx.recyclerview.widget.RecyclerView",
+            scrollable = true,
+        )
+        val a = snap(id = "cta_a", bounds = Rect(50, 300, 400, 420), className = "android.widget.Button", clickable = true)
+        val b = snap(id = "cta_b", bounds = Rect(50, 430, 400, 550), className = "android.widget.Button", clickable = true)
+        val all = listOf(recycler, a, b)
+        val screenArea = 1080 * 2400
+        assertTrue(PrecisionRules.shouldSkipTouchSpacingBetween(a, b, all, screenArea))
+    }
+
+    @Test
+    fun webViewDescendant_overlapSkipped() {
+        val web = snap(
+            id = "webview",
+            bounds = Rect(0, 200, 1080, 2000),
+            className = "android.webkit.WebView",
+        )
+        val a = snap(id = "btn_a", bounds = Rect(100, 400, 500, 500), className = "android.widget.Button", clickable = true)
+        val b = snap(id = "btn_b", bounds = Rect(120, 420, 520, 520), className = "android.widget.Button", clickable = true)
+        val all = listOf(web, a, b)
+        assertTrue(PrecisionRules.isInsideWebView(a, all))
+        assertTrue(PrecisionRules.shouldSkipOverlapBetween(a, b, all, "com.any.app", 1080))
+    }
+
     private fun viewport() = snap(
         id = "content",
         bounds = Rect(0, 0, 1080, 2400),
@@ -157,6 +230,7 @@ class PlatformPatternsRegressionTest {
         className: String = "android.widget.TextView",
         clickable: Boolean = false,
         childCount: Int = 0,
+        scrollable: Boolean = false,
     ) = NodeSnapshot(
         className = className,
         bounds = bounds,
@@ -171,7 +245,7 @@ class PlatformPatternsRegressionTest {
         isEditable = false,
         isCheckable = false,
         isChecked = false,
-        isScrollable = false,
+        isScrollable = scrollable,
         isEnabled = true,
         isPassword = false,
         isHeading = false,

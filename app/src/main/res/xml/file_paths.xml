@@ -3,4 +3,7 @@
     <external-path
         name="downloads"
         path="Download/" />
+    <files-path
+        name="internal_logs"
+        path="logs/" />
 </paths>

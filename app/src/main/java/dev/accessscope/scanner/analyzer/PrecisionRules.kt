@@ -625,6 +625,9 @@ object PrecisionRules {
         }
         if (isObscuredByModalOverlay(a, all) || isObscuredByModalOverlay(b, all)) return true
         if (isInsideMapOrMediaSurface(a, all) && isInsideMapOrMediaSurface(b, all)) return true
+        if (isInsideWebView(a, all) || isInsideWebView(b, all)) return true
+        if (isClickableLayoutShell(a) && isClickableLayoutShell(b)) return true
+        if (isLayoutShellOverlap(a, b, all)) return true
         if (a.isWebView() || b.isWebView()) return true
         if (!isHomeScreenContext(all, packageName)) return false
         return shouldSkipHomeWidgetAnalysis(a, all, packageName) ||
@@ -1176,9 +1179,21 @@ object PrecisionRules {
      * @param b Secondo snapshot del nodo da valutare.
      * @return `true` se il controllo spacing touch va saltato; `false` altrimenti.
      */
-    fun shouldSkipTouchSpacingBetween(a: NodeSnapshot, b: NodeSnapshot): Boolean {
+    fun shouldSkipTouchSpacingBetween(
+        a: NodeSnapshot,
+        b: NodeSnapshot,
+        all: List<NodeSnapshot> = emptyList(),
+        screenArea: Int = 0,
+    ): Boolean {
         if (shouldSkipDrawerNode(a) || shouldSkipDrawerNode(b)) return true
         if (isTopBarControl(a) || isTopBarControl(b)) return true
+        if (isInsideWebView(a, all) || isInsideWebView(b, all)) return true
+        if (all.isNotEmpty() && screenArea > 0 &&
+            isInsideDenseScrollGrid(a, all, screenArea) &&
+            isInsideDenseScrollGrid(b, all, screenArea)
+        ) {
+            return true
+        }
         val ids = setOf(viewIdShort(a), viewIdShort(b))
         if ("topbar_title" in ids && ids.any { it.startsWith("topbar") || it.startsWith("layout_topbar") }) {
             return true
@@ -1544,6 +1559,74 @@ object PrecisionRules {
                 host.isWebView() &&
                 host.bounds.contains(snap.bounds.centerX(), snap.bounds.centerY())
         }
+
+    /**
+     * Target cliccabile semantico (pulsante, switch, checkbox) — esclude layout container clickable.
+     * Usato per overlap/spacing: evita FP su FrameLayout/ScrollView clickable senza perdere Button reali.
+     */
+    fun isSemanticClickTarget(snap: NodeSnapshot): Boolean {
+        if (!snap.isInteractiveClickable()) return false
+        return !isClickableLayoutShell(snap)
+    }
+
+    /**
+     * Contenitore layout reso clickable (card intera, riga lista) — non un controllo UI autonomo.
+     */
+    fun isClickableLayoutShell(snap: NodeSnapshot): Boolean {
+        if (!snap.isInteractiveClickable()) return false
+        val cls = snap.className
+        if (cls.contains("Button", ignoreCase = true) ||
+            cls.contains("Chip", ignoreCase = true) ||
+            snap.isCheckable
+        ) {
+            return false
+        }
+        val id = viewIdShort(snap)
+        if (id in setOf("gridview", "recycler", "scrollview_port", "scroll", "content")) return true
+        return cls.contains("Layout", ignoreCase = true) ||
+            cls.contains("ViewGroup", ignoreCase = true) ||
+            cls.contains("ScrollView", ignoreCase = true) ||
+            cls.contains("RecyclerView", ignoreCase = true) ||
+            cls.contains("GridView", ignoreCase = true) ||
+            (snap.isScrollable && snap.bounds.area() > snap.minTouchTargetPx * snap.minTouchTargetPx * 6)
+    }
+
+    /**
+     * Overlap tra shell layout e discendente strutturale (non doppio target reale).
+     * Mantiene segnalazioni card+Button quando il controllo interno è un vero pulsante.
+     */
+    fun isLayoutShellOverlap(a: NodeSnapshot, b: NodeSnapshot, all: List<NodeSnapshot>): Boolean {
+        if (!Rect.intersects(a.bounds, b.bounds)) return false
+        val (shell, other) = when {
+            isClickableLayoutShell(a) && !isClickableLayoutShell(b) -> a to b
+            isClickableLayoutShell(b) && !isClickableLayoutShell(a) -> b to a
+            else -> return false
+        }
+        if (!shell.bounds.contains(other.bounds.centerX(), other.bounds.centerY())) return false
+        val otherIsRealControl = other.className.contains("Button", ignoreCase = true) ||
+            other.className.contains("ImageButton", ignoreCase = true)
+        if (otherIsRealControl) return false
+        return isScrollContainer(shell) ||
+            shell.className.contains("FrameLayout", ignoreCase = true) ||
+            shell.className.contains("ConstraintLayout", ignoreCase = true) ||
+            shell.bounds.area() > other.bounds.area() * 2
+    }
+
+    /** Nodo dentro RecyclerView/GridView/ScrollView ampio (griglia densa — spacing intenzionale). */
+    fun isInsideDenseScrollGrid(snap: NodeSnapshot, all: List<NodeSnapshot>, screenArea: Int): Boolean {
+        if (screenArea <= 0) return false
+        return all.any { host ->
+            host != snap &&
+                host.bounds.contains(snap.bounds.centerX(), snap.bounds.centerY()) &&
+                host.bounds.area() > screenArea * 0.22f &&
+                (
+                    host.isScrollable ||
+                        host.className.contains("RecyclerView", ignoreCase = true) ||
+                        host.className.contains("GridView", ignoreCase = true) ||
+                        host.className.contains("ScrollView", ignoreCase = true)
+                    )
+        }
+    }
 
     /**
      * Salta l'analisi per nodi che generano rumore strutturale su pattern UI comuni.

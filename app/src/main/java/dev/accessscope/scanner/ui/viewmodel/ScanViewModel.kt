@@ -21,10 +21,12 @@ import dev.accessscope.scanner.service.AccessScopeAccessibilityService
 import dev.accessscope.scanner.service.ScanOverlayService
 import dev.accessscope.scanner.util.AppIconCache
 import dev.accessscope.scanner.util.AppLaunchHelper
+import dev.accessscope.scanner.util.AppFileLogger
 import dev.accessscope.scanner.util.DebugTrace
 import dev.accessscope.scanner.util.PackageHelper
 import dev.accessscope.scanner.util.PermissionHelper
 import dev.accessscope.scanner.util.ThemePreferencesStore
+import dev.accessscope.scanner.ui.selection.AppSelectionPolicy
 import dev.accessscope.scanner.ui.theme.AppThemeMode
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -54,12 +56,17 @@ import kotlinx.coroutines.withContext
  * @param scanScope Ambiti di analisi attivi per la prossima sessione (etichette, contrasto, TalkBack, ecc.).
  * @param statusMessage Messaggio temporaneo da mostrare all'utente (es. errori, conferme); null se assente.
  * @param themeMode Preferenza tema interfaccia (chiaro, scuro o sistema).
- * @param liveDebugPanelEnabled Se true, mostra il pannello debug live durante la scansione.
  * @param reliabilityReportEnabled Se true, genera report Markdown di affidabilità a fine scansione.
  * @param latestArchivedSession Ultima sessione archiviata per l'app principale selezionata.
  * @param sessionComparison Confronto numerico ultima vs penultima sessione archiviata.
  * @param historyPackageName Package usato per cronologia e confronto.
+ * @param selectionLimitDialog Dialog da mostrare quando si supera il limite di app monitorabili.
  */
+data class AppSelectionLimitDialog(
+    val message: String,
+    val blockedPackage: String? = null,
+)
+
 data class HomeUiState(
     val apps: List<InstalledAppInfo> = emptyList(),
     val selectedPackages: Set<String> = emptySet(),
@@ -74,11 +81,11 @@ data class HomeUiState(
     val scanScope: ScanScope = ScanScope.FULL,
     val statusMessage: String? = null,
     val themeMode: AppThemeMode = AppThemeMode.SYSTEM,
-    val liveDebugPanelEnabled: Boolean = false,
     val reliabilityReportEnabled: Boolean = false,
     val latestArchivedSession: ArchivedScanSession? = null,
     val sessionComparison: SessionComparison? = null,
     val historyPackageName: String? = null,
+    val selectionLimitDialog: AppSelectionLimitDialog? = null,
 )
 
 /**
@@ -97,7 +104,6 @@ data class AppListUiState(
  */
 data class ScanDashboardUiState(
     val scanState: ScanSessionState = ScanSessionState(),
-    val liveDebugPanelEnabled: Boolean = false,
     val selectedPackages: Set<String> = emptySet(),
     val accessibilityGranted: Boolean = false,
     val overlayGranted: Boolean = false,
@@ -114,8 +120,8 @@ data class ScanDashboardUiState(
 class ScanViewModel(application: Application) : AndroidViewModel(application) {
 
     companion object {
-        /** Massimo numero di app monitorabili con lancio automatico attivo. */
-        const val MAX_APPS_WITH_AUTO_LAUNCH = 1
+        /** Massimo numero di app monitorabili per sessione (alias per UI e impostazioni). */
+        val MAX_APPS_WITH_AUTO_LAUNCH: Int = AppSelectionPolicy.MAX_MONITORED_APPS
     }
 
     private val repository = (application as AccessScopeApp).scanRepository
@@ -151,7 +157,6 @@ class ScanViewModel(application: Application) : AndroidViewModel(application) {
         .map {
             ScanDashboardUiState(
                 scanState = it.scanState,
-                liveDebugPanelEnabled = it.liveDebugPanelEnabled,
                 selectedPackages = it.selectedPackages,
                 accessibilityGranted = it.accessibilityGranted,
                 overlayGranted = it.overlayGranted,
@@ -165,7 +170,19 @@ class ScanViewModel(application: Application) : AndroidViewModel(application) {
 
     init {
         val favorites = favoriteAppsStore.getFavorites()
-        _uiState.update { it.copy(selectedPackages = favorites, favoritePackages = favorites) }
+        _uiState.update {
+            it.copy(
+                favoritePackages = favorites,
+                selectedPackages = emptySet(),
+            )
+        }
+        logSelection(
+            "init",
+            mapOf(
+                "favoritesCount" to favorites.size,
+                "initialSelected" to "-",
+            ),
+        )
         viewModelScope.launch {
             repository.state.collect { scanState ->
                 val wasScanning = _uiState.value.scanState.isScanning
@@ -194,7 +211,6 @@ class ScanViewModel(application: Application) : AndroidViewModel(application) {
                 autoLaunchEnabled = scanSettingsStore.autoLaunchEnabled,
                 scanScope = scanSettingsStore.getScanScope(),
                 themeMode = themePreferencesStore.getThemeMode(),
-                liveDebugPanelEnabled = scanSettingsStore.liveDebugPanelEnabled,
                 reliabilityReportEnabled = scanSettingsStore.reliabilityReportEnabled,
             )
         }
@@ -212,40 +228,32 @@ class ScanViewModel(application: Application) : AndroidViewModel(application) {
     fun toggleAutoLaunch() {
         val state = _uiState.value
         val enabled = !state.autoLaunchEnabled
-        if (enabled && state.selectedPackages.size > MAX_APPS_WITH_AUTO_LAUNCH) {
-            val trimmed = state.selectedPackages.take(MAX_APPS_WITH_AUTO_LAUNCH).toSet()
+        if (enabled) {
+            val trimmed = AppSelectionPolicy.enforceMax(state.selectedPackages)
             scanSettingsStore.autoLaunchEnabled = true
             _uiState.update {
                 it.copy(
                     autoLaunchEnabled = true,
                     selectedPackages = trimmed,
-                    statusMessage = "Lancio automatico attivo: selezione limitata a $MAX_APPS_WITH_AUTO_LAUNCH app.",
+                    statusMessage = if (trimmed.size < state.selectedPackages.size) {
+                        "Lancio automatico attivo: selezione limitata a $MAX_APPS_WITH_AUTO_LAUNCH app."
+                    } else {
+                        it.statusMessage
+                    },
                 )
             }
+            logSelection("toggle_auto_launch", mapOf("enabled" to true, "trimmed" to trimmed.joinToString()))
             return
         }
         scanSettingsStore.autoLaunchEnabled = enabled
         _uiState.update { it.copy(autoLaunchEnabled = enabled) }
-    }
-
-    /** Inverte il pannello debug live e persiste la preferenza. */
-    fun toggleLiveDebugPanel() {
-        val enabled = !_uiState.value.liveDebugPanelEnabled
-        scanSettingsStore.liveDebugPanelEnabled = enabled
-        _uiState.update { it.copy(liveDebugPanelEnabled = enabled) }
+        logSelection("toggle_auto_launch", mapOf("enabled" to enabled))
     }
 
     /**
      * Verifica se si può aggiungere un'app alla selezione rispettando il limite auto-launch.
      */
-    private fun canSelectMore(selected: Set<String>, packageName: String): Boolean {
-        if (packageName in selected) return true
-        if (!_uiState.value.autoLaunchEnabled) return true
-        return selected.size < MAX_APPS_WITH_AUTO_LAUNCH
-    }
-
-    private fun autoLaunchLimitMessage() =
-        "Con lancio automatico attivo puoi selezionare solo $MAX_APPS_WITH_AUTO_LAUNCH app."
+    private fun autoLaunchLimitMessage() = AppSelectionPolicy.limitMessage()
 
     /**
      * Attiva o disattiva un singolo ambito di scansione.
@@ -322,7 +330,19 @@ class ScanViewModel(application: Application) : AndroidViewModel(application) {
             val apps = withContext(Dispatchers.IO) {
                 PackageHelper.loadInstalledApps(getApplication(), includeSystem)
             }
-            val favorites = favoriteAppsStore.getFavorites()
+            val storedFavorites = favoriteAppsStore.getFavorites()
+            val installedPackages = apps.map { it.packageName }.toSet()
+            val beforeSelected = _uiState.value.selectedPackages
+            val primaryFavorite = apps.firstOrNull { it.packageName in storedFavorites }?.packageName
+            val (favorites, selected) = AppSelectionPolicy.sanitizeAgainstInstalled(
+                selected = beforeSelected,
+                favorites = storedFavorites,
+                installed = installedPackages,
+                preferredPrimary = primaryFavorite,
+            )
+            if (favorites != storedFavorites) {
+                favoriteAppsStore.setFavorites(favorites)
+            }
             val enriched = apps.map { app ->
                 app.copy(isFavorite = app.packageName in favorites)
             }.sortedWith(
@@ -340,10 +360,18 @@ class ScanViewModel(application: Application) : AndroidViewModel(application) {
                 state.copy(
                     apps = enriched,
                     favoritePackages = favorites,
-                    selectedPackages = state.selectedPackages.union(favorites),
+                    selectedPackages = selected,
                     isLoadingApps = false,
                 )
             }
+            logSelection(
+                "load_apps_done",
+                mapOf(
+                    "appCount" to enriched.size,
+                    "favoriteCount" to favorites.size,
+                    "selected" to _uiState.value.selectedPackages.joinToString(),
+                ),
+            )
         }
     }
 
@@ -353,34 +381,19 @@ class ScanViewModel(application: Application) : AndroidViewModel(application) {
      * @param packageName Identificativo del pacchetto Android dell'app.
      */
     fun toggleFavorite(packageName: String) {
+        val stateBefore = _uiState.value
+        val wasFavorite = packageName in stateBefore.favoritePackages
         val favorites = favoriteAppsStore.toggle(packageName)
+        val isNowFavorite = packageName in favorites
         _uiState.update { state ->
-            val selected = state.selectedPackages.toMutableSet()
-            if (packageName in favorites) {
-                if (state.autoLaunchEnabled) {
-                    selected.clear()
-                    selected.add(packageName)
-                } else if (!canSelectMore(selected, packageName)) {
-                    return@update state.copy(
-                        favoritePackages = favorites,
-                        statusMessage = autoLaunchLimitMessage(),
-                        apps = state.apps.map { app ->
-                            app.copy(isFavorite = app.packageName in favorites)
-                        }.sortedWith(
-                            compareByDescending<InstalledAppInfo> { it.isFavorite }
-                                .thenBy { !it.isSystemApp }
-                                .thenBy { it.label.lowercase() },
-                        ),
-                    )
-                } else {
-                    selected.add(packageName)
-                }
-            } else {
-                selected.remove(packageName)
+            val selected = when {
+                isNowFavorite -> AppSelectionPolicy.selectOnFavoriteAdded(packageName)
+                else -> AppSelectionPolicy.selectOnFavoriteRemoved(state.selectedPackages, packageName)
             }
             state.copy(
                 favoritePackages = favorites,
                 selectedPackages = selected,
+                selectionLimitDialog = null,
                 apps = state.apps.map { app ->
                     app.copy(isFavorite = app.packageName in favorites)
                 }.sortedWith(
@@ -390,6 +403,16 @@ class ScanViewModel(application: Application) : AndroidViewModel(application) {
                 ),
             )
         }
+        logSelection(
+            "toggle_favorite",
+            mapOf(
+                "package" to packageName,
+                "wasFavorite" to wasFavorite,
+                "isFavorite" to isNowFavorite,
+                "selectedAfter" to _uiState.value.selectedPackages.joinToString(),
+            ),
+        )
+        refreshScanHistory(_uiState.value.selectedPackages)
     }
 
     /** Inverte il filtro per mostrare o nascondere le app di sistema e ricarica l'elenco. */
@@ -404,19 +427,73 @@ class ScanViewModel(application: Application) : AndroidViewModel(application) {
      * @param packageName Identificativo del pacchetto Android dell'app.
      */
     fun toggleApp(packageName: String) {
-        _uiState.update { state ->
-            val updated = state.selectedPackages.toMutableSet()
-            if (packageName in updated) {
-                updated.remove(packageName)
-            } else if (state.autoLaunchEnabled) {
-                updated.clear()
-                updated.add(packageName)
-            } else {
-                updated.add(packageName)
+        val stateBefore = _uiState.value
+        if (packageName in stateBefore.selectedPackages &&
+            AppSelectionPolicy.isFavoriteProtectedFromDeselect(packageName, stateBefore.favoritePackages)
+        ) {
+            logSelection(
+                "toggle_app_blocked_favorite",
+                mapOf("package" to packageName),
+            )
+            _uiState.update {
+                it.copy(
+                    selectionLimitDialog = AppSelectionLimitDialog(
+                        message = AppSelectionPolicy.favoriteDeselectBlockedMessage(),
+                        blockedPackage = packageName,
+                    ),
+                )
             }
-            state.copy(selectedPackages = updated)
+            return
         }
+        _uiState.update { state ->
+            when (
+                val result = AppSelectionPolicy.toggleSelection(
+                    current = state.selectedPackages,
+                    packageName = packageName,
+                    replaceOnLimit = state.autoLaunchEnabled,
+                )
+            ) {
+                is AppSelectionPolicy.ToggleResult.Updated ->
+                    state.copy(selectedPackages = result.selected, selectionLimitDialog = null)
+                is AppSelectionPolicy.ToggleResult.LimitReached ->
+                    state.copy(
+                        selectionLimitDialog = AppSelectionLimitDialog(
+                            message = result.message,
+                            blockedPackage = result.blockedPackage,
+                        ),
+                    )
+            }
+        }
+        logSelection(
+            "toggle_app",
+            mapOf(
+                "package" to packageName,
+                "selectedAfter" to _uiState.value.selectedPackages.joinToString(),
+                "dialog" to (_uiState.value.selectionLimitDialog != null),
+            ),
+        )
         refreshScanHistory(_uiState.value.selectedPackages)
+    }
+
+    /** Chiude il dialog mostrato quando si supera il limite di app monitorabili. */
+    fun dismissSelectionLimitDialog() {
+        _uiState.update { it.copy(selectionLimitDialog = null) }
+        logSelection("dismiss_selection_dialog")
+    }
+
+    private fun logSelection(event: String, extras: Map<String, Any?> = emptyMap()) {
+        val state = _uiState.value
+        AppFileLogger.log(
+            hypothesisId = "SEL",
+            location = "AppSelection",
+            message = event,
+            data = extras + mapOf(
+                "selected" to state.selectedPackages.joinToString().ifBlank { "-" },
+                "favorites" to state.favoritePackages.joinToString().ifBlank { "-" },
+                "autoLaunch" to state.autoLaunchEnabled,
+                "scanning" to state.scanState.isScanning,
+            ),
+        )
     }
 
     /**
@@ -428,30 +505,54 @@ class ScanViewModel(application: Application) : AndroidViewModel(application) {
         val context = getApplication<Application>()
         val current = _uiState.value
         val selected = current.selectedPackages
-        if (selected.isEmpty()) {
-            _uiState.update { it.copy(statusMessage = "Seleziona almeno una app da monitorare.") }
+        val monitored = AppSelectionPolicy.enforceMax(selected)
+        if (monitored.size != selected.size) {
+            logSelection(
+                "start_scan_trimmed",
+                mapOf(
+                    "requested" to selected.joinToString(),
+                    "monitored" to monitored.joinToString(),
+                ),
+            )
+            _uiState.update {
+                it.copy(
+                    selectedPackages = monitored,
+                    selectionLimitDialog = AppSelectionLimitDialog(autoLaunchLimitMessage()),
+                )
+            }
             return
         }
-        if (current.autoLaunchEnabled && selected.size > MAX_APPS_WITH_AUTO_LAUNCH) {
-            _uiState.update { it.copy(statusMessage = autoLaunchLimitMessage()) }
+        if (monitored.isEmpty()) {
+            logSelection("start_scan_blocked_empty")
+            _uiState.update { it.copy(statusMessage = "Seleziona almeno una app da monitorare.") }
             return
         }
         refreshPermissions()
         val state = _uiState.value
         if (!state.accessibilityGranted) {
+            logSelection("start_scan_blocked_a11y")
             _uiState.update { it.copy(statusMessage = "Abilita il servizio di accessibilità AccessScope.") }
             return
         }
         if (!state.overlayGranted) {
+            logSelection("start_scan_blocked_overlay")
             _uiState.update { it.copy(statusMessage = "Concedi il permesso di sovrapposizione.") }
             return
         }
 
-        repository.startScan(selected, state.scanScope)
+        repository.startScan(monitored, state.scanScope)
+        logSelection(
+            "start_scan",
+            mapOf(
+                "packages" to monitored.joinToString(),
+                "scanScope" to state.scanScope.label(),
+                "autoLaunch" to state.autoLaunchEnabled,
+            ),
+        )
         AccessScopeAccessibilityService.instance?.resetDynamicTracking()
         // #region agent log
         DebugTrace.log("H1", "ViewModel.startScan", "scan_requested", mapOf(
-            "packages" to selected.joinToString(","),
+            "packages" to monitored.joinToString(","),
             "serviceConnected" to (AccessScopeAccessibilityService.instance != null),
             "accessibilityGranted" to state.accessibilityGranted,
         ))
@@ -460,7 +561,7 @@ class ScanViewModel(application: Application) : AndroidViewModel(application) {
 
         var message = "Scansione avviata. Apri le app selezionate e interagisci."
         if (state.autoLaunchEnabled) {
-            val launched = AppLaunchHelper.launchFirstAvailable(context, selected)
+            val launched = AppLaunchHelper.launchFirstAvailable(context, monitored)
             message = if (launched != null) {
                 val label = state.apps.find { it.packageName == launched }?.label ?: launched
                 "Scansione avviata. Aperta: $label"
@@ -473,11 +574,23 @@ class ScanViewModel(application: Application) : AndroidViewModel(application) {
 
     /** Interrompe la sessione di scansione corrente. */
     fun stopScan() {
+        logSelection("stop_scan_requested")
         (getApplication<AccessScopeApp>()).stopScanSession(fromOverlay = false)
     }
 
     /**
-     * Restituisce l'icona bitmap di un'app, caricandola dalla cache se necessario.
+     * Esporta i log diagnostici in Download e apre il chooser di condivisione.
+     */
+    fun exportDiagnosticLogs(onResult: (Result<String>) -> Unit) {
+        viewModelScope.launch {
+            val result = withContext(Dispatchers.IO) {
+                dev.accessscope.scanner.export.DiagnosticLogExporter(getApplication()).export()
+            }
+            onResult(result)
+        }
+    }
+
+    /** Restituisce l'icona bitmap di un'app, caricandola dalla cache se necessario.
      *
      * @param packageName Identificativo del pacchetto Android dell'app.
      * @return Bitmap dell'icona, oppure null se non disponibile.
@@ -488,25 +601,25 @@ class ScanViewModel(application: Application) : AndroidViewModel(application) {
     /** Seleziona tutte le app attualmente visibili nell'elenco. */
     fun selectAllVisible() {
         _uiState.update { state ->
-            val all = state.apps.map { it.packageName }
-            val selected = if (state.autoLaunchEnabled) {
-                all.take(MAX_APPS_WITH_AUTO_LAUNCH).toSet()
-            } else {
-                all.toSet()
+            val first = state.apps.firstOrNull()?.packageName
+            when {
+                first == null -> state
+                state.selectedPackages.isNotEmpty() -> state.copy(
+                    selectionLimitDialog = AppSelectionLimitDialog(autoLaunchLimitMessage()),
+                )
+                else -> state.copy(selectedPackages = setOf(first))
             }
-            val message = if (state.autoLaunchEnabled && all.size > MAX_APPS_WITH_AUTO_LAUNCH) {
-                autoLaunchLimitMessage()
-            } else {
-                null
-            }
-            state.copy(selectedPackages = selected, statusMessage = message)
         }
+        logSelection("select_all_visible", mapOf("selected" to _uiState.value.selectedPackages.joinToString()))
     }
 
-    /** Deseleziona tutte le app dal monitoraggio. */
+    /** Azzera la selezione di monitoraggio. */
     fun clearSelection() {
-        _uiState.update { it.copy(selectedPackages = emptySet()) }
-        refreshScanHistory(emptySet())
+        _uiState.update { state ->
+            state.copy(selectedPackages = emptySet())
+        }
+        logSelection("clear_selection", mapOf("selected" to _uiState.value.selectedPackages.joinToString()))
+        refreshScanHistory(_uiState.value.selectedPackages)
     }
 
     /** Azzera il messaggio di stato temporaneo mostrato all'utente. */

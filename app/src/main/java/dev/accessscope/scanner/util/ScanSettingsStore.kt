@@ -27,13 +27,6 @@ class ScanSettingsStore(context: Context) {
         set(value) = prefs.edit().putBoolean(KEY_AUTO_LAUNCH, value).apply()
 
     /**
-     * Se true, mostra il pannello debug live durante la scansione (overlay + Home).
-     */
-    var liveDebugPanelEnabled: Boolean
-        get() = prefs.getBoolean(KEY_LIVE_DEBUG, false)
-        set(value) = prefs.edit().putBoolean(KEY_LIVE_DEBUG, value).apply()
-
-    /**
      * Recupera l'ambito di scansione salvato dalle preferenze.
      *
      * @return [ScanScope.FULL] se nessuna preferenza è salvata o l'insieme risulta vuoto.
@@ -91,7 +84,6 @@ class ScanSettingsStore(context: Context) {
     companion object {
         private const val PREFS_NAME = "accessscope_settings"
         private const val KEY_AUTO_LAUNCH = "auto_launch_enabled"
-        private const val KEY_LIVE_DEBUG = "live_debug_panel_enabled"
         private const val KEY_RELIABILITY_REPORT = "reliability_report_enabled"
         private const val KEY_ENABLED_AREAS = "enabled_areas"
         private const val KEY_OVERLAY_X = "overlay_position_x"

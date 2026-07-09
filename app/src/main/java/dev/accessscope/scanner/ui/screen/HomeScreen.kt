@@ -33,22 +33,18 @@ import androidx.compose.material.icons.automirrored.outlined.OpenInNew
 import androidx.compose.material.icons.outlined.PlayArrow
 import androidx.compose.material.icons.outlined.SelectAll
 import androidx.compose.material.icons.outlined.Stop
-import androidx.compose.material.icons.outlined.Visibility
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
@@ -71,7 +67,6 @@ import dev.accessscope.scanner.ui.components.AppSearchField
 import dev.accessscope.scanner.ui.components.AppSelectionInfoBanner
 import dev.accessscope.scanner.ui.components.FeatureHighlights
 import dev.accessscope.scanner.ui.components.HeroHeader
-import dev.accessscope.scanner.ui.components.LiveDebugPanel
 import dev.accessscope.scanner.ui.components.PermissionsCard
 import dev.accessscope.scanner.ui.components.ScanDashboard
 import dev.accessscope.scanner.ui.components.ScanHistoryEntryButton
@@ -94,7 +89,6 @@ private val WideLayoutBreakpoint = 720.dp
 /**
  * Schermata Home con elenco app, permessi e controlli di scansione.
  */
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun HomeScreen(
     viewModel: ScanViewModel,
@@ -110,7 +104,6 @@ fun HomeScreen(
     val scope = rememberCoroutineScope()
     var query by remember { mutableStateOf("") }
     var debouncedQuery by remember { mutableStateOf("") }
-    var showLiveDebug by remember { mutableStateOf(false) }
     val listState = rememberLazyListState()
     val secondaryTextColor = contentSecondary()
     val toggleApp = viewModel::toggleApp
@@ -130,6 +123,19 @@ fun HomeScreen(
             snackbarHost.showSnackbar(message)
             viewModel.clearStatus()
         }
+    }
+
+    uiState.selectionLimitDialog?.let { dialog ->
+        AlertDialog(
+            onDismissRequest = viewModel::dismissSelectionLimitDialog,
+            title = { Text("Una sola app per sessione") },
+            text = { Text(dialog.message) },
+            confirmButton = {
+                TextButton(onClick = viewModel::dismissSelectionLimitDialog) {
+                    Text("OK")
+                }
+            },
+        )
     }
 
     val filteredApps by remember {
@@ -163,7 +169,6 @@ fun HomeScreen(
                 modifier = Modifier.navigationBarsPadding(),
                 onStart = viewModel::startScan,
                 onStop = viewModel::stopScan,
-                onOpenLiveDebug = { showLiveDebug = true },
             )
         },
     ) { padding ->
@@ -356,18 +361,6 @@ fun HomeScreen(
                 }
             }
         }
-
-        if (showLiveDebug && scanUi.liveDebugPanelEnabled && scanUi.scanState.isScanning) {
-            ModalBottomSheet(
-                onDismissRequest = { showLiveDebug = false },
-                sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
-            ) {
-                LiveDebugPanel(
-                    scanState = scanUi.scanState,
-                    packageLabels = packageLabels,
-                )
-            }
-        }
     }
 }
 
@@ -389,7 +382,11 @@ private fun AppSelectionPanel(
         AppSearchField(query = query, onQueryChange = onQueryChange)
         AppSelectionInfoBanner(
             autoLaunchEnabled = appListState.autoLaunchEnabled,
-            maxWithAutoLaunch = ScanViewModel.MAX_APPS_WITH_AUTO_LAUNCH,
+        )
+        Text(
+            "La stella aggiunge ai preferiti e attiva subito il monitoraggio (una sola app per sessione).",
+            style = MaterialTheme.typography.bodySmall,
+            color = contentSecondary(),
         )
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -406,7 +403,7 @@ private fun AppSelectionPanel(
             TextButton(onClick = viewModel::selectAllVisible) {
                 Icon(Icons.Outlined.SelectAll, contentDescription = null, modifier = Modifier.size(18.dp))
                 Spacer(Modifier.width(4.dp))
-                Text(if (appListState.autoLaunchEnabled) "Prima" else "Tutte")
+                Text("Prima visibile")
             }
             TextButton(onClick = viewModel::clearSelection) {
                 Text("Nessuna")
@@ -442,7 +439,6 @@ private fun HomeScanActionBar(
     modifier: Modifier = Modifier,
     onStart: () -> Unit,
     onStop: () -> Unit,
-    onOpenLiveDebug: () -> Unit,
 ) {
     val isScanning = scanUi.scanState.isScanning
     val canStart = scanUi.selectedPackages.isNotEmpty() &&
@@ -451,11 +447,9 @@ private fun HomeScanActionBar(
     ScanActionBar(
         modifier = modifier,
         isScanning = isScanning,
-        liveDebugEnabled = scanUi.liveDebugPanelEnabled,
         canStart = canStart,
         onStart = onStart,
         onStop = onStop,
-        onOpenLiveDebug = onOpenLiveDebug,
     )
 }
 
@@ -463,11 +457,9 @@ private fun HomeScanActionBar(
 private fun ScanActionBar(
     modifier: Modifier = Modifier,
     isScanning: Boolean,
-    liveDebugEnabled: Boolean,
     canStart: Boolean,
     onStart: () -> Unit,
     onStop: () -> Unit,
-    onOpenLiveDebug: () -> Unit,
 ) {
     val isDark = MaterialTheme.colorScheme.background.luminance() < 0.5f
     Row(
@@ -482,21 +474,6 @@ private fun ScanActionBar(
         horizontalArrangement = Arrangement.spacedBy(12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        if (isScanning && liveDebugEnabled) {
-            IconButton(
-                onClick = onOpenLiveDebug,
-                modifier = Modifier
-                    .clip(ControlShape)
-                    .background(MaterialTheme.colorScheme.primaryContainer)
-                    .size(56.dp),
-            ) {
-                Icon(
-                    Icons.Outlined.Visibility,
-                    contentDescription = "Debug live",
-                    tint = MaterialTheme.colorScheme.primary,
-                )
-            }
-        }
         AnimatedContent(
             targetState = isScanning,
             modifier = Modifier.weight(1f),

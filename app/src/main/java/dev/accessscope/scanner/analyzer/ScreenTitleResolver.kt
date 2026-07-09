@@ -12,6 +12,7 @@ package dev.accessscope.scanner.analyzer
 import android.os.Build
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
+import dev.accessscope.scanner.util.AppFileLogger
 import java.util.ArrayDeque
 import java.util.concurrent.ConcurrentHashMap
 
@@ -63,57 +64,199 @@ object ScreenTitleResolver {
         val packageKey = root.packageName?.toString()
             ?: event.packageName?.toString()
             ?: ""
+        val rootIds = collectViewIdShorts(root)
 
-        /**
-         * Normalizza il titolo, aggiorna la cache per pacchetto se consentito e lo restituisce.
-         *
-         * @param title Titolo candidato da restituire.
-         * @return Lo stesso [title], eventualmente dopo la scrittura in cache.
-         */
         fun storeAndReturn(title: String): String {
             if (title != "Schermata" && title != "Menu" && packageKey.isNotBlank() &&
-                shouldCacheTitle(root, title)
+                shouldCacheTitle(root, title, rootIds)
             ) {
                 lastTitleByPackage[packageKey] = title
             }
             return title
         }
 
+        val candidates = mutableListOf<TitleCandidate>()
+
         event.text?.firstOrNull()?.toString()?.trim()?.takeIf { it.isNotBlank() }?.let {
-            if (!looksLikeAmount(it)) return storeAndReturn(humanizeTitle(it))
+            if (!looksLikeAmount(it)) candidates += TitleCandidate(humanizeTitle(it), 85, "event_text")
         }
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
             root.paneTitle?.toString()?.trim()?.takeIf { it.isNotBlank() }?.let {
-                return storeAndReturn(humanizeTitle(it))
+                candidates += TitleCandidate(humanizeTitle(it), 95, "pane_title")
             }
         }
 
-        findPinScreen(root)?.let { return storeAndReturn(it) }
-        findModalTitle(root)?.let { return storeAndReturn(it) }
+        findPinScreen(root)?.let { candidates += TitleCandidate(it, 96, "pin") }
+        findModalTitle(root)?.let { candidates += TitleCandidate(it, 88, "modal") }
 
-        // Toolbar/topbar prima dei titoli di sezione: stabile durante scroll (qualsiasi app).
-        findTopBarTitle(root)?.let { return storeAndReturn(it) }
+        inferTitleFromContentMarkers(rootIds)?.let {
+            candidates += TitleCandidate(it, 100, "content_markers")
+        }
 
-        findSectionTitle(root)?.let { return storeAndReturn(it) }
-        findKnownNexiTitles(root)?.let { return storeAndReturn(it) }
-        findByDistinctiveIds(root)?.let { return storeAndReturn(it) }
-        findProminentHeading(root)?.let { return storeAndReturn(it) }
+        findByDistinctiveIds(root)?.let {
+            candidates += TitleCandidate(it, 82, "distinctive_ids")
+        }
+
+        findTopBarTitle(root)?.let { toolbar ->
+            val weight = when {
+                !isToolbarConsistentWithContent(toolbar, rootIds) -> 20
+                rootIds.count { it.startsWith("nav_") } >= 3 -> 45
+                else -> 72
+            }
+            candidates += TitleCandidate(toolbar, weight, "toolbar")
+        }
+
+        findSectionTitle(root)?.let { candidates += TitleCandidate(it, 74, "section_title") }
+        findKnownNexiTitles(root)?.let { candidates += TitleCandidate(it, 76, "nexi_text") }
+        findProminentHeading(root)?.let { candidates += TitleCandidate(it, 58, "heading") }
 
         event.contentDescription?.toString()?.trim()?.takeIf { it.isNotBlank() }?.let {
-            if (!looksLikeAmount(it)) return storeAndReturn(humanizeTitle(it))
+            if (!looksLikeAmount(it)) candidates += TitleCandidate(humanizeTitle(it), 52, "content_desc")
         }
 
         val activityName = event.className?.toString()?.substringAfterLast('.').orEmpty()
-        if (activityName.isNotBlank()) return storeAndReturn(humanizeActivityName(activityName))
+        if (activityName.isNotBlank() && !activityName.equals("View", ignoreCase = true)) {
+            val activityWeight = if (isGenericActivityName(activityName)) 28 else 64
+            candidates += TitleCandidate(humanizeActivityName(activityName), activityWeight, "activity")
+        }
 
         if (packageKey.isNotBlank()) {
             lastTitleByPackage[packageKey]?.let { cached ->
-                if (canReuseCachedTitle(root, cached)) return cached
+                if (canReuseCachedTitle(root, cached, rootIds)) {
+                    candidates += TitleCandidate(cached, 38, "cache")
+                }
             }
         }
 
+        val chosen = pickBestTitle(candidates, rootIds)
+        if (chosen != null) {
+            val toolbar = candidates.firstOrNull { it.source == "toolbar" }?.title
+            val content = candidates.firstOrNull { it.source == "content_markers" }?.title
+            if (toolbar != null && content != null && !toolbar.equals(content, ignoreCase = true)) {
+                AppFileLogger.info(
+                    "ScreenTitle",
+                    "resolved toolbar='$toolbar' content='$content' chosen='$chosen' ids=${rootIds.take(8)}",
+                )
+            }
+            return storeAndReturn(chosen)
+        }
+
         return "Schermata"
+    }
+
+    internal data class TitleCandidate(val title: String, val weight: Int, val source: String)
+
+    /**
+     * Inferisce il titolo schermata dai viewId del contenuto visibile (generico multi-app).
+     */
+    internal fun inferTitleFromContentMarkers(ids: Set<String>): String? {
+        if (ids.isEmpty()) return null
+
+        val landingMarkers = setOf("titlehello", "titlehelp", "buttonaltro", "productslist", "policyname", "policynumber")
+        val documentMarkers = setOf(
+            "label_documents_element_policy_nr", "recycler_documents", "documents_list",
+            "documentcard", "label_documents",
+        )
+        val rubricaMarkers = setOf("labelcontacts", "edt_ragione_sociale", "text_input_ragione_sociale", "iban_account")
+
+        val landingHits = ids.count { it in landingMarkers }
+        val documentHits = ids.count { it in documentMarkers || (it == "name" && ids.contains("numero")) }
+        val rubricaHits = ids.count { it in rubricaMarkers }
+
+        if (landingHits >= 2 && documentHits == 0) return "Home"
+        if (documentHits >= 2 && landingHits == 0) return "I miei documenti"
+        if (rubricaHits >= 2) return "RUBRICA"
+        if (hasHomeMarkers(ids)) return findTopBarTitleFromIds(ids) ?: "Home"
+        return null
+    }
+
+    /** Toolbar coerente col fingerprint del contenuto (evita tab host fuorviante). */
+    internal fun isToolbarConsistentWithContent(toolbarTitle: String, ids: Set<String>): Boolean {
+        val toolbar = toolbarTitle.lowercase()
+        val contentTitle = inferTitleFromContentMarkers(ids) ?: return true
+
+        if (contentTitle.equals("Home", ignoreCase = true)) {
+            val docToolbar = toolbar.contains("document") || toolbar.contains("documenti")
+            val landingPresent = ids.any { it in setOf("titlehello", "buttonaltro", "productslist", "policyname") }
+            if (docToolbar && landingPresent) return false
+        }
+        if (contentTitle.equals("I miei documenti", ignoreCase = true)) {
+            val landingPresent = ids.any { it in setOf("titlehello", "buttonaltro", "productslist", "policyname") }
+            if (landingPresent) return false
+        }
+        if (contentTitle.equals("RUBRICA", ignoreCase = true) &&
+            !toolbar.contains("rubric")
+        ) {
+            return false
+        }
+        return true
+    }
+
+    private val SOURCE_PRIORITY = mapOf(
+        "content_markers" to 100,
+        "pane_title" to 90,
+        "pin" to 88,
+        "modal" to 85,
+        "distinctive_ids" to 80,
+        "toolbar" to 70,
+        "section_title" to 65,
+        "nexi_text" to 60,
+        "event_text" to 55,
+        "activity" to 40,
+        "heading" to 35,
+        "content_desc" to 30,
+        "cache" to 10,
+    )
+
+    internal fun pickBestTitle(candidates: List<TitleCandidate>, ids: Set<String>): String? {
+        if (candidates.isEmpty()) return null
+        return candidates
+            .filter { it.title.isNotBlank() && it.title != "Schermata" && !isGenericScreenTitle(it.title) }
+            .maxWithOrNull(
+                compareBy<TitleCandidate> { it.weight }
+                    .thenBy { SOURCE_PRIORITY[it.source] ?: 0 }
+                    .thenBy { it.title.length },
+            )
+            ?.title
+            ?.let { humanizeTitle(it) }
+    }
+
+    /** Titoli generici che non aiutano a distinguere sezioni nel report. */
+    private fun isGenericScreenTitle(title: String): Boolean {
+        val normalized = title.trim().lowercase()
+        return normalized in setOf("menu", "indietro", "back", "close", "chiudi", "annulla", "ok")
+    }
+
+    internal fun titleCandidateForTest(title: String, weight: Int, source: String) =
+        TitleCandidate(title, weight, source)
+
+    private fun isGenericActivityName(name: String): Boolean {
+        val simple = name
+            .removeSuffix("Activity")
+            .removeSuffix("Fragment")
+            .removeSuffix("Screen")
+            .lowercase()
+        return simple in GENERIC_ACTIVITY_NAMES || simple.length <= 4
+    }
+
+    private val GENERIC_ACTIVITY_NAMES = setOf(
+        "main", "home", "host", "container", "base", "wrapper", "shell",
+        "flutter", "navigation", "single", "launcher", "root",
+    )
+
+    private fun findTopBarTitleFromIds(ids: Set<String>): String? = null
+
+    private fun shouldCacheTitle(root: AccessibilityNodeInfo, title: String, ids: Set<String>): Boolean {
+        if (title.equals("Ultimi insoluti", ignoreCase = true) && hasHomeMarkers(ids)) return false
+        if (ids.any { it.startsWith("nav_") }) return false
+        val contentTitle = inferTitleFromContentMarkers(ids)
+        if (contentTitle != null && !title.equals(contentTitle, ignoreCase = true) &&
+            !isToolbarConsistentWithContent(title, ids)
+        ) {
+            return false
+        }
+        return true
     }
 
     /**
@@ -149,34 +292,9 @@ object ScreenTitleResolver {
     )
 
     /**
-     * Indica se un titolo risolto può essere memorizzato in cache per il pacchetto corrente.
-     *
-     * Esclude titoli ambigui in home (es. widget insoluti), schermate con navigazione drawer
-     * aperta e altri casi in cui la cache indurrebbe falsi positivi.
-     *
-     * @param root Nodo radice usato per raccogliere i viewId del layout corrente.
-     * @param title Titolo candidato da valutare per la cache.
-     * @return `true` se il titolo può essere salvato in [lastTitleByPackage].
-     */
-    private fun shouldCacheTitle(root: AccessibilityNodeInfo, title: String): Boolean {
-        val ids = collectViewIdShorts(root)
-        if (title.equals("Ultimi insoluti", ignoreCase = true) && hasHomeMarkers(ids)) return false
-        if (ids.any { it.startsWith("nav_") }) return false
-        return true
-    }
-
-    /**
      * Verifica se un titolo in cache è ancora valido per il layout corrente.
-     *
-     * Impedisce il riuso quando il drawer è visibile, quando si è in home con widget insoluti,
-     * quando compaiono marker di altre sezioni o quando l'albero espone un titolo fresco diverso.
-     *
-     * @param root Nodo radice del layout corrente.
-     * @param cached Titolo precedentemente memorizzato per il pacchetto.
-     * @return `true` se [cached] può essere restituito come titolo della schermata attuale.
      */
-    private fun canReuseCachedTitle(root: AccessibilityNodeInfo, cached: String): Boolean {
-        val ids = collectViewIdShorts(root)
+    private fun canReuseCachedTitle(root: AccessibilityNodeInfo, cached: String, ids: Set<String>): Boolean {
         if (ids.any { it.startsWith("nav_") }) return false
         if (cached.equals("Ultimi insoluti", ignoreCase = true) && hasHomeMarkers(ids)) return false
         if (cached.equals("Ultimi insoluti", ignoreCase = true) &&
@@ -184,7 +302,13 @@ object ScreenTitleResolver {
         ) {
             return false
         }
-        // Scroll nella stessa activity: riusa il titolo in cache se il chrome strutturale è presente.
+        inferTitleFromContentMarkers(ids)?.let { contentTitle ->
+            if (!cached.equals(contentTitle, ignoreCase = true) &&
+                !isToolbarConsistentWithContent(cached, ids)
+            ) {
+                return false
+            }
+        }
         if (hasScrollableContent(root) && hasActivityChrome(ids)) {
             findTopBarTitle(root)?.let { top ->
                 return top.equals(cached, ignoreCase = true)
@@ -339,6 +463,10 @@ object ScreenTitleResolver {
             val node = queue.removeFirst()
             val className = node.className?.toString().orEmpty()
             val viewId = node.viewIdResourceName.orEmpty().lowercase()
+            if (isBottomNavigationNode(viewId, className)) {
+                for (i in 0 until node.childCount) node.getChild(i)?.let(queue::add)
+                continue
+            }
             val isBar = className.contains("Toolbar", true) ||
                 className.contains("ActionBar", true) ||
                 className.contains("AppBar", true) ||
@@ -362,6 +490,15 @@ object ScreenTitleResolver {
         }
         return null
     }
+
+    /** Esclude bottom navigation e tab bar dal candidato toolbar (etichette tab fuorvianti). */
+    private fun isBottomNavigationNode(viewId: String, className: String): Boolean =
+        viewId.contains("bottom_nav") ||
+            viewId.contains("bottomnavigation") ||
+            viewId.contains("navigation_bar") ||
+            viewId.startsWith("nav_") ||
+            className.contains("BottomNavigationView", true) ||
+            className.contains("NavigationBarView", true)
 
     /**
      * Cerca il testo del titolo all'interno di un nodo barra (toolbar/topbar).
@@ -689,7 +826,7 @@ object ScreenTitleResolver {
         if (ids.any { it.startsWith("nav_") }) return null
 
         return when {
-            hasHomeMarkers(ids) -> findTopBarTitle(root) ?: "Home"
+            hasHomeMarkers(ids) -> "Home"
             ids.contains("labelcontacts") || ids.contains("iban_account") -> "RUBRICA"
             ids.contains("content_pagamento") -> findTitleNearContentPagamento(root) ?: "NUOVO PAGAMENTO"
             ids.contains("recycler_distinte") && ids.contains("vop_info") -> "AUTORIZZA DISTINTE"

@@ -22,11 +22,9 @@ import dev.accessscope.scanner.analyzer.DynamicContentTracker
 import dev.accessscope.scanner.analyzer.ScreenTitleResolver
 import dev.accessscope.scanner.analyzer.NodeAccessibilityAnalyzer
 import dev.accessscope.scanner.analyzer.ScreenFingerprint
-import dev.accessscope.scanner.data.LiveDebugFinding
-import dev.accessscope.scanner.data.LiveScanSnapshot
 import dev.accessscope.scanner.data.ViolationArea
 import dev.accessscope.scanner.data.ScanSessionRepository
-import dev.accessscope.scanner.util.DebugTrace
+import dev.accessscope.scanner.util.AppFileLogger
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
@@ -42,7 +40,7 @@ class AccessScopeAccessibilityService : AccessibilityService() {
 
     init {
         // #region agent log
-        DebugTrace.log("H1", "A11yService.<init>", "constructed", emptyMap())
+        AppFileLogger.log("H1", "A11yService.<init>", "constructed", emptyMap())
         // #endregion
     }
 
@@ -89,7 +87,7 @@ class AccessScopeAccessibilityService : AccessibilityService() {
 
         // #region agent log
         if (packageName != applicationContext.packageName) {
-            DebugTrace.log("H3", "A11yService.onEvent", "event_received", mapOf(
+            AppFileLogger.log("H3", "A11yService.onEvent", "event_received", mapOf(
                 "pkg" to packageName,
                 "type" to event.eventType,
                 "isScanning" to isScanning,
@@ -136,6 +134,8 @@ class AccessScopeAccessibilityService : AccessibilityService() {
         if (now - last < debounce) return
         lastScanByWindow[windowKey] = now
 
+        val eventSourceSnapshot = obtainEventSourceSnapshot(event)
+
         val silentDynamic = dynamicTracker.isSilentDynamicContent(packageName, event.windowId)
         val scanScope = repository.currentScanScope()
         val analyzer = NodeAccessibilityAnalyzer.create(density, silentDynamic, scanScope)
@@ -143,44 +143,59 @@ class AccessScopeAccessibilityService : AccessibilityService() {
             Build.VERSION.SDK_INT >= Build.VERSION_CODES.R
 
         executor.execute {
-            val roots = obtainRootsForScan(packageName, event)
-            if (roots.isEmpty()) {
+            try {
+                val roots = obtainRootsForScan(packageName, eventSourceSnapshot)
+                if (roots.isEmpty()) {
+                    // #region agent log
+                    AppFileLogger.log("H4", "scheduleScan", "no_root", mapOf(
+                        "targetPkg" to packageName,
+                        "activePkg" to rootInActiveWindow?.packageName?.toString(),
+                    ))
+                    // #endregion
+                    return@execute
+                }
                 // #region agent log
-                DebugTrace.log("H4", "scheduleScan", "no_root", mapOf(
+                AppFileLogger.log("H2", "scheduleScan", "roots_obtained", mapOf(
                     "targetPkg" to packageName,
-                    "activePkg" to rootInActiveWindow?.packageName?.toString(),
+                    "rootCount" to roots.size,
                 ))
                 // #endregion
-                return@execute
-            }
-            // #region agent log
-            DebugTrace.log("H2", "scheduleScan", "roots_obtained", mapOf(
-                "targetPkg" to packageName,
-                "rootCount" to roots.size,
-            ))
-            // #endregion
-            if (needsScreenshot) {
-                captureScreenshot { bitmap ->
+                if (needsScreenshot) {
+                    captureScreenshot { bitmap ->
+                        try {
+                            roots.forEach { root ->
+                                scanRoot(root, packageName, event, bitmap, analyzer)
+                            }
+                        } finally {
+                            bitmap?.recycle()
+                            roots.forEach { it.recycle() }
+                        }
+                    }
+                } else {
                     try {
                         roots.forEach { root ->
-                            scanRoot(root, packageName, event, bitmap, analyzer)
+                            scanRoot(root, packageName, event, null, analyzer)
                         }
                     } finally {
-                        bitmap?.recycle()
                         roots.forEach { it.recycle() }
                     }
                 }
-            } else {
-                try {
-                    roots.forEach { root ->
-                        scanRoot(root, packageName, event, null, analyzer)
-                    }
-                } finally {
-                    roots.forEach { it.recycle() }
-                }
+            } finally {
+                eventSourceSnapshot?.recycle()
             }
         }
     }
+
+    /**
+     * Clona [AccessibilityEvent.source] sul thread dell'evento, prima che venga riciclato dal framework.
+     */
+    private fun obtainEventSourceSnapshot(event: AccessibilityEvent): AccessibilityNodeInfo? =
+        try {
+            event.source?.let { AccessibilityNodeInfo.obtain(it) }
+        } catch (e: IllegalStateException) {
+            AppFileLogger.info("A11yService", "event_source_not_sealed type=${event.eventType}")
+            null
+        }
 
     /**
      * Raccoglie le radici [AccessibilityNodeInfo] da analizzare per il pacchetto target.
@@ -190,12 +205,12 @@ class AccessScopeAccessibilityService : AccessibilityService() {
      * tramite [selectRootsToScan] e [prioritizeRoots].
      *
      * @param targetPackage Pacchetto dell'app di cui ottenere le radici.
-     * @param event Evento di accessibilità associato alla richiesta di scansione.
+     * @param eventSource Snapshot clonato di `event.source` (main thread), oppure null.
      * @return Lista di radici clonate da analizzare; il chiamante deve chiamare [AccessibilityNodeInfo.recycle].
      */
     private fun obtainRootsForScan(
         targetPackage: String,
-        event: AccessibilityEvent,
+        eventSource: AccessibilityNodeInfo?,
     ): List<AccessibilityNodeInfo> {
         val roots = mutableListOf<AccessibilityNodeInfo>()
 
@@ -214,7 +229,7 @@ class AccessScopeAccessibilityService : AccessibilityService() {
         }
 
         if (roots.isEmpty()) {
-            event.source?.let { source ->
+            eventSource?.let { source ->
                 roots.add(AccessibilityNodeInfo.obtain(source))
             }
             rootInActiveWindow?.let { active ->
@@ -395,44 +410,12 @@ class AccessScopeAccessibilityService : AccessibilityService() {
             repository.registerUniqueScreen(fingerprint, screenTitle)
         }
         // #region agent log
-        DebugTrace.log("H-PASS", "scanRoot", "pass_summary", mapOf(
-            "screen" to screenTitle,
-            "fingerprintPrefix" to fingerprint.take(80),
-            "isNewScreen" to isNewScreen,
-            "violationsInPass" to result.violations.size,
-            "talkBackInPass" to result.screenReaderFindings.size,
-            "uniqueScreens" to repository.state.value.uniqueScreens,
-            "sessionViolations" to repository.state.value.violations.size,
-            "sessionTalkBack" to repository.state.value.screenReaderFindings.size,
-            "analyses" to repository.state.value.scanAnalyses,
-        ))
+        AppFileLogger.info("A11yService", "pass_summary screen=$screenTitle violations=${result.violations.size}")
         // #endregion
-        val recentFindings = result.violations.takeLast(6).map { v ->
-            LiveDebugFinding(
-                title = v.type.displayName,
-                detail = v.elementLabel ?: v.viewId ?: v.simpleExplanation,
-                severity = v.type.severity,
-                screenTitle = v.screenTitle,
-            )
-        }
-        repository.updateLiveSnapshot(
-            LiveScanSnapshot(
-                packageName = packageName,
-                screenTitle = screenTitle,
-                analyzedAtMs = System.currentTimeMillis(),
-                newViolationsInPass = result.violations.size,
-                recentFindings = recentFindings,
-            ),
+        AppFileLogger.info(
+            "A11yService",
+            "analyzed pkg=$packageName screen=$screenTitle violations=${result.violations.size}",
         )
-        // #region agent log
-        DebugTrace.log("H5", "scanRoot", "analyzed", mapOf(
-            "pkg" to packageName,
-            "screen" to screenTitle,
-            "violations" to result.violations.size,
-            "talkback" to result.screenReaderFindings.size,
-            "hasScreenshot" to (screenshot != null),
-        ))
-        // #endregion
     }
 
     /**
@@ -472,7 +455,7 @@ class AccessScopeAccessibilityService : AccessibilityService() {
         super.onServiceConnected()
         instance = this
         // #region agent log
-        DebugTrace.log("H1", "onServiceConnected", "service_bound", emptyMap())
+        AppFileLogger.log("H1", "onServiceConnected", "service_bound", emptyMap())
         // #endregion
         if (executor.isShutdown) {
             executor = Executors.newSingleThreadExecutor()
@@ -489,7 +472,7 @@ class AccessScopeAccessibilityService : AccessibilityService() {
     override fun onUnbind(intent: android.content.Intent?): Boolean {
         instance = null
         // #region agent log
-        DebugTrace.log("H1", "onUnbind", "service_unbound", emptyMap())
+        AppFileLogger.log("H1", "onUnbind", "service_unbound", emptyMap())
         // #endregion
         return super.onUnbind(intent)
     }

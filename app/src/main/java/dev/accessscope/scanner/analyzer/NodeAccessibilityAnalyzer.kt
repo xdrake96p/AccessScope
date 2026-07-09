@@ -573,9 +573,11 @@ class NodeAccessibilityAnalyzer(
         violations: MutableList<AccessibilityViolation>,
         screenWidth: Int,
     ) {
+        val maxBottom = snapshots.maxOfOrNull { it.bounds.bottom } ?: 0
+        val screenArea = if (screenWidth > 0 && maxBottom > 0) screenWidth * maxBottom else 0
         val isMaterialCalendar = PrecisionRules.isMaterialCalendarContext(screenTitle, snapshots)
         val clickables = snapshots
-            .filter { it.isInteractiveClickable() }
+            .filter { PrecisionRules.isSemanticClickTarget(it) }
             .filterNot { PrecisionRules.isObscuredByModalOverlay(it, snapshots) }
             .filterNot { snap -> isMaterialCalendar && PrecisionRules.isMaterialCalendarDayCell(snap, screenTitle, snapshots) }
 
@@ -583,6 +585,7 @@ class NodeAccessibilityAnalyzer(
             .groupBy({ it.first }, { it.second })
             .forEach { (name, nodes) ->
                 if (name.isBlank() || nodes.size < 2) return@forEach
+                if (nodes.all { PrecisionRules.isInsideWebView(it, snapshots) }) return@forEach
                 val distinctBounds = nodes.map { it.bounds }.distinctBy { "${it.left},${it.top},${it.right},${it.bottom}" }
                 if (distinctBounds.size < nodes.size) {
                     nodes.forEach { snap ->
@@ -607,14 +610,14 @@ class NodeAccessibilityAnalyzer(
                 if (Rect.intersects(a.bounds, b.bounds)) {
                     val overlap = overlapArea(a.bounds, b.bounds)
                     val minArea = minOf(a.area(), b.area())
-                    if (overlap > minArea * 0.3) {
+                    if (overlap > minArea * 0.45) {
                         violations += v(ViolationType.OVERLAPPING_TOUCH_TARGETS, a, packageName, screenTitle,
                             "Sovrapposizione ${overlap}px² con ${b.className}.", 0.88f)
                     }
                 } else {
                     val distance = edgeDistance(a.bounds, b.bounds)
                     if (distance in 1 until minTouchSpacingPx &&
-                        !PrecisionRules.shouldSkipTouchSpacingBetween(a, b)
+                        !PrecisionRules.shouldSkipTouchSpacingBetween(a, b, snapshots, screenArea)
                     ) {
                         violations += v(ViolationType.INSUFFICIENT_TOUCH_SPACING, a, packageName, screenTitle,
                             "Solo ${distance}px da un altro pulsante.", 0.85f)
@@ -686,11 +689,15 @@ class NodeAccessibilityAnalyzer(
      * @param violations Lista mutabile a cui appendere le violazioni rilevate.
      */
     private fun checkDuplicateViewIds(snapshots: List<NodeSnapshot>, packageName: String, screenTitle: String, violations: MutableList<AccessibilityViolation>) {
+        val screenArea = snapshots.maxOfOrNull { it.bounds.right * it.bounds.bottom } ?: 0
         snapshots.mapNotNull { snap -> snap.viewId?.let { it to snap } }
             .groupBy({ it.first }, { it.second })
             .filter { it.value.size > 1 }
             .forEach { (id, nodes) ->
                 if (isListItemTemplate(id, nodes, packageName)) return@forEach
+                if (screenArea > 0 && nodes.all { PrecisionRules.isInsideDenseScrollGrid(it, snapshots, screenArea) }) {
+                    return@forEach
+                }
                 val representative = nodes.minByOrNull { it.traversalIndex } ?: return@forEach
                 violations += v(
                     ViolationType.DUPLICATE_VIEW_ID,

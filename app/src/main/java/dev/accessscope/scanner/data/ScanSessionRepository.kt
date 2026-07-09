@@ -8,6 +8,8 @@ package dev.accessscope.scanner.data
 
 import dev.accessscope.scanner.analyzer.CheckCollector
 import dev.accessscope.scanner.report.ReportHelper
+import dev.accessscope.scanner.ui.selection.AppSelectionPolicy
+import dev.accessscope.scanner.util.AppFileLogger
 import dev.accessscope.scanner.util.DebugTrace
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -45,7 +47,9 @@ class ScanSessionRepository(context: android.content.Context) {
      */
     fun restorePersistedScan(): Boolean {
         if (!prefs.getBoolean(KEY_SCANNING, false)) return false
-        val packages = prefs.getStringSet(KEY_PACKAGES, emptySet()).orEmpty()
+        val packages = AppSelectionPolicy.enforceMax(
+            prefs.getStringSet(KEY_PACKAGES, emptySet()).orEmpty(),
+        )
         if (packages.isEmpty()) {
             clearPersistedScan()
             return false
@@ -53,6 +57,12 @@ class ScanSessionRepository(context: android.content.Context) {
         _state.value = ScanSessionState(
             isScanning = true,
             selectedPackages = packages,
+        )
+        AppFileLogger.log(
+            "SCAN",
+            "ScanSession",
+            "restore_persisted",
+            mapOf("packages" to packages.joinToString()),
         )
         return true
     }
@@ -66,29 +76,53 @@ class ScanSessionRepository(context: android.content.Context) {
      * @param scanScope Ambito tematico dei controlli da eseguire.
      */
     fun startScan(selectedPackages: Set<String>, scanScope: ScanScope = ScanScope.FULL) {
+        val packages = AppSelectionPolicy.enforceMax(selectedPackages)
+        if (packages.isEmpty()) return
         violationKeys.clear()
         screenReaderKeys.clear()
         seenFingerprints.clear()
         scannedScreenTitles.clear()
         _state.value = ScanSessionState(
             isScanning = true,
-            selectedPackages = selectedPackages,
+            selectedPackages = packages,
             scanScope = scanScope,
             lastPdfPath = null,
             errorMessage = null,
             checkSummaries = emptyList(),
-            liveSnapshot = null,
         )
         prefs.edit()
             .putBoolean(KEY_SCANNING, true)
-            .putStringSet(KEY_PACKAGES, selectedPackages)
+            .putStringSet(KEY_PACKAGES, packages)
             .apply()
+        AppFileLogger.log(
+            "SCAN",
+            "ScanSession",
+            "start",
+            mapOf(
+                "packages" to packages.joinToString(),
+                "requestedCount" to selectedPackages.size,
+                "scope" to scanScope.label(),
+            ),
+        )
     }
 
     /** Arresta la scansione corrente e cancella lo stato persistito. */
     fun stopScan() {
+        val packages = _state.value.selectedPackages
+        val violations = _state.value.violations.size
+        val screens = _state.value.uniqueScreens
         _state.update { it.copy(isScanning = false) }
         clearPersistedScan()
+        AppFileLogger.log(
+            "SCAN",
+            "ScanSession",
+            "stop",
+            mapOf(
+                "packages" to packages.joinToString(),
+                "violations" to violations,
+                "screens" to screens,
+            ),
+        )
     }
 
     private fun clearPersistedScan() {
@@ -284,15 +318,6 @@ class ScanSessionRepository(context: android.content.Context) {
      * @return [ScanScope] attivo nello stato corrente.
      */
     fun currentScanScope(): ScanScope = _state.value.scanScope
-
-    /**
-     * Aggiorna l'istantanea live mostrata nel pannello debug.
-     *
-     * @param snapshot Dati dell'ultima analisi; `null` per azzerare.
-     */
-    fun updateLiveSnapshot(snapshot: LiveScanSnapshot?) {
-        _state.update { it.copy(liveSnapshot = snapshot) }
-    }
 
     /** Propaga la richiesta di arresto dall'overlay al [stopCallback] registrato. */
     fun requestStopFromOverlay() {

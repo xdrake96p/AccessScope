@@ -1,7 +1,7 @@
 /**
  * Servizio in primo piano che mostra l'overlay di scansione attiva.
  *
- * Pulsanti LIVE/STOP in una card semi-trasparente trascinabile dall'utente.
+ * Pulsante STOP in una card semi-trasparente trascinabile dall'utente.
  */
 package dev.accessscope.scanner.service
 
@@ -26,33 +26,21 @@ import android.view.MotionEvent
 import android.view.View
 import android.view.WindowManager
 import android.widget.LinearLayout
-import android.widget.ScrollView
 import android.widget.TextView
 import androidx.core.app.NotificationCompat
 import dev.accessscope.scanner.AccessScopeApp
 import dev.accessscope.scanner.MainActivity
 import dev.accessscope.scanner.R
-import dev.accessscope.scanner.data.ScanSessionState
-import dev.accessscope.scanner.util.DebugTrace
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.cancel
-import kotlinx.coroutines.flow.collectLatest
-import kotlinx.coroutines.launch
+import dev.accessscope.scanner.util.AppFileLogger
 
 /**
- * [Service] foreground con overlay STOP/LIVE in card trascinabile.
+ * [Service] foreground con overlay STOP in card trascinabile.
  */
 class ScanOverlayService : Service() {
 
     private var windowManager: WindowManager? = null
     private var overlayRoot: LinearLayout? = null
     private var overlayParams: WindowManager.LayoutParams? = null
-    private var debugPanel: ScrollView? = null
-    private var debugPanelText: TextView? = null
-    private var debugExpanded = false
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
 
     override fun onCreate() {
         super.onCreate()
@@ -70,23 +58,19 @@ class ScanOverlayService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onDestroy() {
-        scope.cancel()
         removeOverlay()
         super.onDestroy()
     }
 
     private fun stopScanNow(source: String) {
-        DebugTrace.log("H-STOP1", "OverlayService", "stop_$source", emptyMap())
+        AppFileLogger.info("OverlayService", "stop_$source")
         (application as AccessScopeApp).stopScanSession(fromOverlay = true)
     }
 
     private fun showOverlay() {
         windowManager = getSystemService(WINDOW_SERVICE) as WindowManager
-        val app = application as AccessScopeApp
-        val settings = app.scanSettingsStore
-        val debugEnabled = settings.liveDebugPanelEnabled
+        val settings = (application as AccessScopeApp).scanSettingsStore
         val density = resources.displayMetrics.density
-        val gap = (8 * density).toInt()
         val pad = (10 * density).toInt()
 
         val cardBg = GradientDrawable().apply {
@@ -116,22 +100,6 @@ class ScanOverlayService : Service() {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_HORIZONTAL
         }
-
-        if (debugEnabled) {
-            val debugButton = createPillButton(
-                label = "LIVE",
-                bgColor = 0xFF0891B2.toInt(),
-                onClick = {
-                    debugExpanded = !debugExpanded
-                    debugPanel?.visibility = if (debugExpanded) View.VISIBLE else View.GONE
-                    updateDebugPanel(app.scanRepository.state.value)
-                    clampAndUpdateOverlayPosition()
-                },
-            )
-            (debugButton.layoutParams as? LinearLayout.LayoutParams)?.marginEnd = gap
-            buttonRow.addView(debugButton)
-        }
-
         buttonRow.addView(
             createPillButton(
                 label = "STOP",
@@ -140,41 +108,6 @@ class ScanOverlayService : Service() {
             ),
         )
         root.addView(buttonRow)
-
-        if (debugEnabled) {
-            val panelText = TextView(this).apply {
-                setTextColor(Color.WHITE)
-                setTextSize(TypedValue.COMPLEX_UNIT_SP, 11f)
-                setLineSpacing(0f, 1.35f)
-                setPadding((12 * density).toInt(), (10 * density).toInt(), (12 * density).toInt(), (10 * density).toInt())
-                typeface = Typeface.MONOSPACE
-            }
-            debugPanelText = panelText
-
-            val panelBg = GradientDrawable().apply {
-                setColor(0xE61F2937.toInt())
-                cornerRadius = 12 * density
-            }
-            val scroll = ScrollView(this).apply {
-                background = panelBg
-                visibility = View.GONE
-                addView(panelText)
-                val lp = LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.MATCH_PARENT,
-                    (180 * density).toInt(),
-                )
-                lp.topMargin = gap
-                layoutParams = lp
-            }
-            debugPanel = scroll
-            root.addView(scroll)
-
-            scope.launch {
-                app.scanRepository.state.collectLatest { state ->
-                    if (debugExpanded) updateDebugPanel(state)
-                }
-            }
-        }
 
         val params = WindowManager.LayoutParams(
             WindowManager.LayoutParams.WRAP_CONTENT,
@@ -276,51 +209,10 @@ class ScanOverlayService : Service() {
         }
     }
 
-    private fun updateDebugPanel(state: ScanSessionState) {
-        val snap = state.liveSnapshot
-        val ok = state.checkSummaries.sumOf { it.passedCount }
-        val sb = StringBuilder()
-        sb.appendLine("AccessScope · debug")
-        sb.appendLine("────────────────")
-        if (snap != null) {
-            sb.appendLine("App: ${snap.packageName}")
-            sb.appendLine("Schermata:")
-            sb.appendLine("  ${snap.screenTitle}")
-            if (snap.newViolationsInPass > 0) {
-                sb.appendLine("+${snap.newViolationsInPass} nell'ultimo pass")
-            }
-        } else {
-            sb.appendLine("In attesa eventi…")
-        }
-        sb.appendLine("────────────────")
-        sb.appendLine("${state.violations.size} problemi · $ok OK")
-        sb.appendLine("${state.uniqueScreens} schermate · ${state.scanAnalyses} analisi")
-        val findings = snap?.recentFindings.orEmpty().ifEmpty {
-            state.violations.takeLast(4).map {
-                dev.accessscope.scanner.data.LiveDebugFinding(
-                    it.type.displayName,
-                    it.elementLabel ?: it.viewId ?: "",
-                    it.type.severity,
-                    it.screenTitle,
-                )
-            }
-        }
-        if (findings.isNotEmpty()) {
-            sb.appendLine("Ultimi:")
-            findings.forEach { f ->
-                sb.appendLine("• ${f.title}")
-                if (f.detail.isNotBlank()) sb.appendLine("  ${f.detail.take(40)}")
-            }
-        }
-        debugPanelText?.text = sb.toString().trimEnd()
-    }
-
     private fun removeOverlay() {
         overlayRoot?.let { windowManager?.removeView(it) }
         overlayRoot = null
         overlayParams = null
-        debugPanel = null
-        debugPanelText = null
     }
 
     private fun buildNotification(): Notification {

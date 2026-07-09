@@ -42,8 +42,19 @@ class FavoriteAppsStore(context: Context) {
     fun toggle(packageName: String): Set<String> {
         val updated = getFavorites().toMutableSet()
         if (!updated.add(packageName)) updated.remove(packageName)
-        prefs.edit().putStringSet(KEY_FAVORITES, updated).apply()
+        saveFavorites(updated)
         return updated
+    }
+
+    /**
+     * Sostituisce l'insieme dei preferiti (es. dopo rimozione package disinstallati).
+     */
+    fun setFavorites(packages: Set<String>) {
+        saveFavorites(packages)
+    }
+
+    private fun saveFavorites(packages: Set<String>) {
+        prefs.edit().putStringSet(KEY_FAVORITES, packages).apply()
     }
 
     companion object {

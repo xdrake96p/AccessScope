@@ -472,7 +472,6 @@ data class InstalledAppInfo(
  * @property lastPdfPath Percorso dell'ultimo report PDF generato, se presente.
  * @property lastReliabilityMdPath Percorso dell'ultimo report Markdown di affidabilità (debug).
  * @property errorMessage Ultimo messaggio di errore della sessione, se presente.
- * @property liveSnapshot Istantanea dell'ultima analisi in tempo reale per il pannello debug.
  */
 data class ScanSessionState(
     val isScanning: Boolean = false,
@@ -487,7 +486,6 @@ data class ScanSessionState(
     val lastPdfPath: String? = null,
     val lastReliabilityMdPath: String? = null,
     val errorMessage: String? = null,
-    val liveSnapshot: LiveScanSnapshot? = null,
 ) {
     /**
      * Alias retrocompatibile per [uniqueScreens].
@@ -496,35 +494,3 @@ data class ScanSessionState(
      */
     val scannedScreens: Int get() = uniqueScreens
 }
-
-/**
- * Istantanea dell'ultima analisi accessibilità per il pannello debug live.
- *
- * @property packageName Package dell'app analizzata nell'ultimo passaggio.
- * @property screenTitle Titolo della schermata rilevata.
- * @property analyzedAtMs Timestamp Unix dell'ultima analisi.
- * @property newViolationsInPass Numero di nuove violazioni trovate nell'ultimo passaggio.
- * @property recentFindings Ultimi problemi rilevati (max 6) per anteprima rapida.
- */
-data class LiveScanSnapshot(
-    val packageName: String,
-    val screenTitle: String,
-    val analyzedAtMs: Long = System.currentTimeMillis(),
-    val newViolationsInPass: Int = 0,
-    val recentFindings: List<LiveDebugFinding> = emptyList(),
-)
-
-/**
- * Singola voce mostrata nel pannello debug live.
- *
- * @property title Nome breve del problema (tipo violazione).
- * @property detail Dettaglio o elemento coinvolto.
- * @property severity Gravità WCAG.
- * @property screenTitle Schermata in cui è stato rilevato.
- */
-data class LiveDebugFinding(
-    val title: String,
-    val detail: String,
-    val severity: ViolationSeverity,
-    val screenTitle: String,
-)

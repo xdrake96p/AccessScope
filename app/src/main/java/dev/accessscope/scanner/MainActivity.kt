@@ -25,6 +25,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import dev.accessscope.scanner.ui.screen.HomeScreen
+import dev.accessscope.scanner.ui.screen.LogCheckerScreen
 import dev.accessscope.scanner.ui.screen.ReportScreen
 import dev.accessscope.scanner.ui.screen.ScanHistoryScreen
 import dev.accessscope.scanner.ui.screen.SettingsScreen
@@ -107,6 +108,19 @@ private fun AccessScopeNavHost(viewModel: ScanViewModel) {
             popExitTransition = { popExit },
         ) {
             SettingsScreen(
+                viewModel = viewModel,
+                onBack = { navController.popBackStack() },
+                onOpenLogChecker = { navController.navigate("log_checker") },
+            )
+        }
+        composable(
+            route = "log_checker",
+            enterTransition = { enter },
+            exitTransition = { exit },
+            popEnterTransition = { popEnter },
+            popExitTransition = { popExit },
+        ) {
+            LogCheckerScreen(
                 viewModel = viewModel,
                 onBack = { navController.popBackStack() },
             )

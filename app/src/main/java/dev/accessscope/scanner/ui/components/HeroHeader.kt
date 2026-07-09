@@ -138,7 +138,7 @@ fun HeroHeader(
                     )
                 }
                 HeaderChip(
-                    label = "$selectedCount app selezionate",
+                    label = if (selectedCount == 1) "1 app selezionata" else "$selectedCount app selezionate",
                     textColor = onHero,
                     bg = chipBg,
                 )

@@ -73,7 +73,9 @@ object AppPrecisionProfiles {
     /** Prefissi comuni per voci di navigazione nel drawer laterale. */
     val drawerNavPrefixes: List<String> = listOf("nav_", "menu_", "drawer_")
 
-    private val GENERIC_LIST_TEMPLATE_IDS = setOf("content", "item", "row", "cell")
+    private val GENERIC_LIST_TEMPLATE_IDS = setOf(
+        "content", "item", "row", "cell", "label", "title", "name", "root",
+    )
 
     private val NEXI_LIST_TEMPLATE_IDS = setOf(
         "layout_content", "amount_dist", "amount_effetti", "causale", "vop_info",
@@ -126,6 +128,11 @@ object AppPrecisionProfiles {
         "delete", "backspace", "key", "digit",
     )
 
+    /** ID/classi scroll container riconosciuti per tutte le app. */
+    private val GENERIC_MAIN_SCROLL_IDS = setOf(
+        "scrollview_port", "scroll", "card_home", "gridview", "recycler", "productslist",
+    )
+
     /**
      * Restituisce gli ID del testo decorativo nei grafici della home.
      *
@@ -162,7 +169,7 @@ object AppPrecisionProfiles {
      * @return Set di ID scroll principale; include "content" solo per app non Nexi.
      */
     fun mainContentScrollIds(packageName: String): Set<String> =
-        setOf("scrollview_port", "scroll", "card_home") + if (isNexi(packageName)) emptySet() else setOf("content")
+        GENERIC_MAIN_SCROLL_IDS + if (isNexi(packageName)) emptySet() else setOf("content")
 
     /**
      * ID di testo decorativo in carousel/lista dove il contrasto screenshot è inaffidabile.
