@@ -27,6 +27,7 @@ fun AppSearchField(
         onValueChange = onQueryChange,
         modifier = modifier.fillMaxWidth(),
         placeholder = { Text("Cerca app per nome o package…") },
+        label = { Text("Cerca app") },
         leadingIcon = {
             Icon(Icons.Outlined.Search, contentDescription = "Cerca")
         },

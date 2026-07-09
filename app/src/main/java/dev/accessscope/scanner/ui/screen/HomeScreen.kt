@@ -70,6 +70,10 @@ import dev.accessscope.scanner.ui.components.HeroHeader
 import dev.accessscope.scanner.ui.components.PermissionsCard
 import dev.accessscope.scanner.ui.components.ScanDashboard
 import dev.accessscope.scanner.ui.components.ScanHistoryEntryButton
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
+import dev.accessscope.scanner.ui.accessibility.asSectionHeading
 import dev.accessscope.scanner.ui.theme.AccessScopeMotion
 import dev.accessscope.scanner.ui.theme.BrandPrimary
 import dev.accessscope.scanner.ui.theme.CodeTextStyle
@@ -382,6 +386,7 @@ private fun AppSelectionPanel(
             style = MaterialTheme.typography.titleMedium,
             fontWeight = FontWeight.SemiBold,
             color = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.asSectionHeading(),
         )
         AppSearchField(query = query, onQueryChange = onQueryChange)
         AppSelectionInfoBanner(
@@ -453,6 +458,13 @@ private fun HomeScanActionBar(
         modifier = modifier,
         isScanning = isScanning,
         canStart = canStart,
+        disabledHint = when {
+            canStart -> null
+            scanUi.selectedPackages.isEmpty() -> "Seleziona almeno un'app da analizzare"
+            !scanUi.accessibilityGranted -> "Attiva il servizio di accessibilità"
+            !scanUi.overlayGranted -> "Concedi il permesso overlay"
+            else -> "Impossibile avviare la scansione"
+        },
         onStart = onStart,
         onStop = onStop,
     )
@@ -463,6 +475,7 @@ private fun ScanActionBar(
     modifier: Modifier = Modifier,
     isScanning: Boolean,
     canStart: Boolean,
+    disabledHint: String? = null,
     onStart: () -> Unit,
     onStop: () -> Unit,
 ) {
@@ -508,9 +521,16 @@ private fun ScanActionBar(
                     enabled = canStart,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(56.dp),
+                        .height(56.dp)
+                        .then(
+                            if (!canStart && disabledHint != null) {
+                                Modifier.semantics { stateDescription = disabledHint }
+                            } else {
+                                Modifier
+                            },
+                        ),
                     shape = ControlShape,
-                    colors = ButtonDefaults.buttonColors(containerColor = BrandPrimary),
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
                     elevation = ButtonDefaults.buttonElevation(
                         defaultElevation = 4.dp,
                         pressedElevation = 6.dp,
@@ -532,7 +552,8 @@ private fun ScanActionBar(
                 modifier = Modifier
                     .clip(ControlShape)
                     .background(Success.copy(alpha = 0.12f))
-                    .padding(horizontal = 14.dp, vertical = 10.dp),
+                    .padding(horizontal = 14.dp, vertical = 10.dp)
+                    .semantics { contentDescription = "Scansione in corso" },
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 CircularProgressIndicator(

@@ -31,6 +31,12 @@ val Typography = Typography(
         fontSize = 24.sp,
         lineHeight = 32.sp,
     ),
+    headlineSmall = TextStyle(
+        fontFamily = Sans,
+        fontWeight = FontWeight.SemiBold,
+        fontSize = 20.sp,
+        lineHeight = 28.sp,
+    ),
     titleLarge = TextStyle(
         fontFamily = Sans,
         fontWeight = FontWeight.SemiBold,
@@ -42,6 +48,12 @@ val Typography = Typography(
         fontWeight = FontWeight.Medium,
         fontSize = 18.sp,
         lineHeight = 26.sp,
+    ),
+    titleSmall = TextStyle(
+        fontFamily = Sans,
+        fontWeight = FontWeight.Medium,
+        fontSize = 16.sp,
+        lineHeight = 24.sp,
     ),
     bodyLarge = TextStyle(
         fontFamily = Sans,

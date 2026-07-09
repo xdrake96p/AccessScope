@@ -26,6 +26,8 @@ private val LightColors = lightColorScheme(
     onSecondaryContainer = VioletDark,
     tertiary = LavenderAccent,
     onTertiary = CardSurface,
+    tertiaryContainer = Color(0xFFEDE9FE),
+    onTertiaryContainer = VioletDark,
     background = SurfaceLight,
     onBackground = TextPrimary,
     surface = CardSurface,
@@ -48,6 +50,9 @@ private val DarkColors = darkColorScheme(
     secondaryContainer = Color(0xFF4C1D95),
     onSecondaryContainer = Color(0xFFEDE9FE),
     tertiary = VioletDeep,
+    onTertiary = TextPrimaryDark,
+    tertiaryContainer = Color(0xFF4C1D95),
+    onTertiaryContainer = Color(0xFFEDE9FE),
     background = SurfaceDark,
     onBackground = TextPrimaryDark,
     surface = CardSurfaceDark,
@@ -87,6 +92,7 @@ fun AccessScopeTheme(
     MaterialTheme(
         colorScheme = colorScheme,
         typography = Typography,
+        shapes = AccessScopeShapes,
         content = content,
     )
 }

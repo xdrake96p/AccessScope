@@ -4,8 +4,6 @@
 package dev.accessscope.scanner.ui.components
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -32,12 +30,15 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import dev.accessscope.scanner.data.InstalledAppInfo
+import dev.accessscope.scanner.ui.accessibility.minimumTouchTargetSize
 import dev.accessscope.scanner.ui.theme.CodeTextStyle
 import dev.accessscope.scanner.ui.theme.ControlShape
+import dev.accessscope.scanner.ui.theme.FavoriteAccent
 
 private val AppRowHeight = 64.dp
-private val FavoriteTint = Color(0xFFFFB300)
 
 /**
  * Riga compatta per la lista app installate.
@@ -58,7 +59,8 @@ fun AppListRow(
     val context = LocalContext.current
     val packageManager = remember(context) { context.packageManager }
     val selectedBg = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.32f)
-    val interactionSource = remember { MutableInteractionSource() }
+
+    val selectionState = if (selected) "Inclusa nella scansione" else "Esclusa dalla scansione"
 
     Row(
         modifier = modifier
@@ -67,24 +69,18 @@ fun AppListRow(
             .graphicsLayer { clip = true }
             .clip(ControlShape)
             .background(if (selected) selectedBg else Color.Transparent)
-            .clickable(
-                interactionSource = interactionSource,
-                indication = null,
-                enabled = interactionEnabled,
-                onClick = { if (interactionEnabled) onTogglePackage(app.packageName) },
-            )
             .padding(horizontal = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         IconButton(
             onClick = { if (interactionEnabled) onToggleFavoritePackage(app.packageName) },
-            modifier = Modifier.size(40.dp),
+            modifier = Modifier.minimumTouchTargetSize(),
             enabled = interactionEnabled,
         ) {
             Icon(
                 imageVector = if (app.isFavorite) Icons.Filled.Star else Icons.Outlined.StarOutline,
                 contentDescription = if (app.isFavorite) "Rimuovi dai preferiti" else "Aggiungi ai preferiti",
-                tint = if (app.isFavorite) FavoriteTint else secondaryTextColor,
+                tint = if (app.isFavorite) FavoriteAccent else secondaryTextColor,
                 modifier = Modifier.size(22.dp),
             )
         }
@@ -107,6 +103,9 @@ fun AppListRow(
             checked = selected,
             onCheckedChange = { if (interactionEnabled) onTogglePackage(app.packageName) },
             enabled = interactionEnabled,
+            modifier = Modifier.semantics {
+                stateDescription = selectionState
+            },
         )
     }
 }

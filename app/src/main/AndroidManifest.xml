@@ -19,9 +19,9 @@
     <application
         android:name=".AccessScopeApp"
         android:allowBackup="true"
-        android:icon="@mipmap/ic_launcher"
+        android:icon="@drawable/ic_access_scope_logo"
         android:label="@string/app_name"
-        android:roundIcon="@mipmap/ic_launcher_round"
+        android:roundIcon="@drawable/ic_access_scope_logo"
         android:supportsRtl="true"
         android:theme="@style/Theme.AccessScope"
         tools:targetApi="35">

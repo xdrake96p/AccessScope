@@ -9,7 +9,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.shape.RoundedCornerShape
+import dev.accessscope.scanner.ui.theme.ControlShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.RocketLaunch
@@ -41,7 +41,7 @@ fun AppSelectionInfoBanner(
 ) {
     Card(
         modifier = modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(14.dp),
+        shape = ControlShape,
         colors = CardDefaults.cardColors(
             containerColor = if (autoLaunchEnabled) {
                 MaterialTheme.colorScheme.primaryContainer
@@ -58,7 +58,7 @@ fun AppSelectionInfoBanner(
         ) {
             Icon(
                 if (autoLaunchEnabled) Icons.Outlined.RocketLaunch else Icons.Outlined.Info,
-                contentDescription = null,
+                contentDescription = if (autoLaunchEnabled) "Lancio automatico" else "Informazioni selezione",
                 tint = if (autoLaunchEnabled) {
                     MaterialTheme.colorScheme.primary
                 } else {

@@ -28,7 +28,12 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
+import dev.accessscope.scanner.ui.theme.CardShape
+import dev.accessscope.scanner.ui.theme.CompactShape
+import dev.accessscope.scanner.ui.theme.successContainer
+import dev.accessscope.scanner.ui.theme.successOnContainer
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.outlined.ExpandLess
@@ -446,7 +451,7 @@ private fun ScreenOverviewCard(entries: List<ReportHelper.ScreenOverviewEntry>) 
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(containerColor = brandHighlightContainer()),
-        shape = RoundedCornerShape(16.dp),
+        shape = CardShape,
     ) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Text("Panoramica schermate", fontWeight = FontWeight.SemiBold)
@@ -502,7 +507,7 @@ private fun SectionHeaderCard(
         modifier = Modifier
             .fillMaxWidth()
             .clickable(onClick = onToggle),
-        shape = RoundedCornerShape(16.dp),
+        shape = CardShape,
         elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
     ) {
         Row(
@@ -651,8 +656,8 @@ private fun CheckCoverageCard(
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = Color(0xFFE8F5E9)),
-        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = successContainer()),
+        shape = CardShape,
     ) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text("Copertura controlli per ambito", fontWeight = FontWeight.SemiBold)
@@ -660,7 +665,7 @@ private fun CheckCoverageCard(
                 val (passed, failed) = counts
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                     Text("${area.emoji} ${area.title}", style = MaterialTheme.typography.bodyMedium)
-                    Text("OK $passed · Problemi $failed", color = Color(0xFF2E7D32), fontWeight = FontWeight.Medium)
+                    Text("OK $passed · Problemi $failed", color = successOnContainer(), fontWeight = FontWeight.Medium)
                 }
             }
         }
@@ -676,11 +681,11 @@ private fun CheckCoverageCard(
 private fun PassedChecksCard(summaries: List<CheckAreaSummary>) {
     Card(
         modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = Color(0xFFF1F8E9)),
-        shape = RoundedCornerShape(12.dp),
+        colors = CardDefaults.cardColors(containerColor = successContainer()),
+        shape = CompactShape,
     ) {
         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            Text("✅ Controlli superati", fontWeight = FontWeight.SemiBold, color = Color(0xFF2E7D32))
+            Text("✅ Controlli superati", fontWeight = FontWeight.SemiBold, color = successOnContainer())
             summaries.forEach { summary ->
                 Text(
                     "${summary.area.emoji} ${summary.area.title}: ${summary.passedCount} OK",
@@ -716,7 +721,7 @@ private fun GlossaryCard() {
         modifier = Modifier
             .fillMaxWidth()
             .clickable { expanded = !expanded },
-        shape = RoundedCornerShape(16.dp),
+        shape = CardShape,
     ) {
         Column(Modifier.padding(16.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {

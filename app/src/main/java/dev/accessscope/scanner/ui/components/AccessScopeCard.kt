@@ -36,7 +36,7 @@ fun AccessScopeCard(
             containerColor = MaterialTheme.colorScheme.surface,
         ),
         elevation = CardDefaults.cardElevation(
-            defaultElevation = if (isDark) 0.dp else 3.dp,
+            defaultElevation = if (isDark) 0.dp else 2.dp,
         ),
         border = if (isDark) {
             BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f))

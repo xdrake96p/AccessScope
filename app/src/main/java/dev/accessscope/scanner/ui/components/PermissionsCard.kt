@@ -41,7 +41,10 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import dev.accessscope.scanner.service.AccessScopeAccessibilityService
+import dev.accessscope.scanner.ui.accessibility.asSectionHeading
 import dev.accessscope.scanner.ui.theme.BrandPrimary
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import dev.accessscope.scanner.ui.theme.ControlShape
 import dev.accessscope.scanner.ui.theme.Danger
 import dev.accessscope.scanner.ui.theme.Success
@@ -66,7 +69,7 @@ fun PermissionsCard(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Column {
-                Text("Permessi richiesti", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                Text("Permessi richiesti", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, modifier = Modifier.asSectionHeading())
                 Text(
                     "Necessari per analizzare altre app",
                     style = MaterialTheme.typography.bodySmall,
@@ -78,7 +81,11 @@ fun PermissionsCard(
 
         LinearProgressIndicator(
             progress = { grantedCount / 2f },
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier
+                .fillMaxWidth()
+                .semantics {
+                    contentDescription = "Permessi concessi: $grantedCount su 2"
+                },
             color = MaterialTheme.colorScheme.primary,
             trackColor = MaterialTheme.colorScheme.surfaceVariant,
         )
@@ -177,7 +184,7 @@ private fun PermissionItemCard(
                     .background(MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f)),
                 contentAlignment = Alignment.Center,
             ) {
-                Icon(icon, contentDescription = null, tint = BrandPrimary, modifier = Modifier.size(20.dp))
+                Icon(icon, contentDescription = title, tint = BrandPrimary, modifier = Modifier.size(20.dp))
             }
             Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
@@ -186,7 +193,7 @@ private fun PermissionItemCard(
             }
             Icon(
                 imageVector = if (granted) Icons.Outlined.CheckCircle else Icons.Outlined.Cancel,
-                contentDescription = null,
+                contentDescription = if (granted) "$title concesso" else "$title non concesso",
                 tint = if (granted) Success else Danger,
                 modifier = Modifier.size(22.dp),
             )

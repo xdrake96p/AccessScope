@@ -17,25 +17,19 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.outlined.Terminal
 import androidx.compose.material3.Button
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -49,6 +43,8 @@ import androidx.compose.ui.unit.dp
 import android.widget.Toast
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.accessscope.scanner.data.ViolationArea
+import dev.accessscope.scanner.ui.components.AccessScopeCard
+import dev.accessscope.scanner.ui.components.AccessScopeTopBar
 import dev.accessscope.scanner.ui.components.ThemeModeSelector
 import dev.accessscope.scanner.ui.theme.BrandPrimary
 import dev.accessscope.scanner.ui.theme.contentSecondary
@@ -74,14 +70,7 @@ fun SettingsScreen(
 
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = { Text("Impostazioni") },
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Outlined.ArrowBack, contentDescription = "Indietro")
-                    }
-                },
-            )
+            AccessScopeTopBar(title = "Impostazioni", onBack = onBack)
         },
     ) { padding ->
         Column(
@@ -92,209 +81,179 @@ fun SettingsScreen(
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(16.dp),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-            ) {
-                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Text("Preferenze di visualizzazione", fontWeight = FontWeight.SemiBold)
-                    Text(
-                        "Scegli come visualizzare l'interfaccia. La preferenza viene salvata sul dispositivo.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = contentSecondary(),
-                    )
-                    ThemeModeSelector(
-                        selected = uiState.themeMode,
-                        onSelect = viewModel::setThemeMode,
-                    )
-                }
+            AccessScopeCard(modifier = Modifier.fillMaxWidth()) {
+                Text("Preferenze di visualizzazione", fontWeight = FontWeight.SemiBold)
+                Text(
+                    "Scegli come visualizzare l'interfaccia. La preferenza viene salvata sul dispositivo.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = contentSecondary(),
+                )
+                ThemeModeSelector(
+                    selected = uiState.themeMode,
+                    onSelect = viewModel::setThemeMode,
+                )
             }
 
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(16.dp),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-            ) {
-                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("Scansione", fontWeight = FontWeight.SemiBold)
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Column(Modifier.weight(1f)) {
-                            Text("Apri app automaticamente")
-                            Text(
-                                "All'avvio apre automaticamente l'app selezionata. Puoi monitorare solo ${ScanViewModel.MAX_APPS_WITH_AUTO_LAUNCH} app.",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = contentSecondary(),
-                            )
-                        }
-                        Switch(
-                            checked = uiState.autoLaunchEnabled,
-                            onCheckedChange = { viewModel.toggleAutoLaunch() },
-                        )
-                    }
-                }
-            }
-
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(16.dp),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-            ) {
-                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("Debug interno", fontWeight = FontWeight.SemiBold)
-                    Text(
-                        "Strumenti per sviluppo e benchmark anti-allucinazione. I report non sono pensati per l'utente finale.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = contentSecondary(),
-                    )
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Column(Modifier.weight(1f)) {
-                            Text("Report affidabilità (Markdown)")
-                            Text(
-                                "A fine scansione salva in Download un file AccessScope_Reliability_*.md con violazioni, confidenza, pattern sospetti e confronto benchmark Nexi.",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = contentSecondary(),
-                            )
-                        }
-                        Switch(
-                            checked = uiState.reliabilityReportEnabled,
-                            onCheckedChange = { viewModel.toggleReliabilityReport() },
-                        )
-                    }
-                }
-            }
-
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(16.dp),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-            ) {
-                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Text("Diagnostica", fontWeight = FontWeight.SemiBold)
-                    Text(
-                        "Scarica i log dell'app per analizzare crash o comportamenti anomali durante le scansioni.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = contentSecondary(),
-                    )
-                    OutlinedButton(
-                        onClick = onOpenLogChecker,
-                        modifier = Modifier.fillMaxWidth(),
-                    ) {
-                        Icon(Icons.Outlined.Terminal, contentDescription = null)
-                        Text("Apri log checker (tempo reale)", modifier = Modifier.padding(start = 8.dp))
-                    }
-                    Button(
-                        onClick = {
-                            if (exportingLogs) return@Button
-                            exportingLogs = true
-                            viewModel.exportDiagnosticLogs { result ->
-                                exportingLogs = false
-                                result.fold(
-                                    onSuccess = { path ->
-                                        Toast.makeText(
-                                            context,
-                                            "Log salvati in $path",
-                                            Toast.LENGTH_LONG,
-                                        ).show()
-                                        dev.accessscope.scanner.export.DiagnosticLogExporter.shareExportedFile(context, path)
-                                    },
-                                    onFailure = { error ->
-                                        Toast.makeText(
-                                            context,
-                                            error.message ?: "Impossibile esportare i log",
-                                            Toast.LENGTH_LONG,
-                                        ).show()
-                                    },
-                                )
-                            }
-                        },
-                        enabled = !exportingLogs,
-                        modifier = Modifier.fillMaxWidth(),
-                    ) {
-                        Text(if (exportingLogs) "Esportazione…" else "Scarica log diagnostici")
-                    }
-                }
-            }
-
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(16.dp),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-            ) {
-                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Text("Ambiti di scansione", fontWeight = FontWeight.SemiBold)
-                    if (!scope.isFullScan) {
+            AccessScopeCard(modifier = Modifier.fillMaxWidth()) {
+                Text("Scansione", fontWeight = FontWeight.SemiBold)
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Apri app automaticamente")
                         Text(
-                            "La prossima scansione analizzerà solo gli ambiti selezionati.",
+                            "All'avvio apre automaticamente l'app selezionata. Puoi monitorare solo ${ScanViewModel.MAX_APPS_WITH_AUTO_LAUNCH} app.",
                             style = MaterialTheme.typography.bodySmall,
-                            color = BrandPrimary,
+                            color = contentSecondary(),
                         )
                     }
+                    Switch(
+                        checked = uiState.autoLaunchEnabled,
+                        onCheckedChange = { viewModel.toggleAutoLaunch() },
+                    )
+                }
+            }
+
+            AccessScopeCard(modifier = Modifier.fillMaxWidth()) {
+                Text("Debug interno", fontWeight = FontWeight.SemiBold)
+                Text(
+                    "Strumenti per sviluppo e benchmark anti-allucinazione. I report non sono pensati per l'utente finale.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = contentSecondary(),
+                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Report affidabilità (Markdown)")
+                        Text(
+                            "A fine scansione salva in Download un file AccessScope_Reliability_*.md con violazioni, confidenza, pattern sospetti e confronto benchmark Nexi.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = contentSecondary(),
+                        )
+                    }
+                    Switch(
+                        checked = uiState.reliabilityReportEnabled,
+                        onCheckedChange = { viewModel.toggleReliabilityReport() },
+                    )
+                }
+            }
+
+            AccessScopeCard(modifier = Modifier.fillMaxWidth()) {
+                Text("Diagnostica", fontWeight = FontWeight.SemiBold)
+                Text(
+                    "Scarica i log dell'app per analizzare crash o comportamenti anomali durante le scansioni.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = contentSecondary(),
+                )
+                OutlinedButton(
+                    onClick = onOpenLogChecker,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Icon(Icons.Outlined.Terminal, contentDescription = null)
+                    Text("Apri log checker (tempo reale)", modifier = Modifier.padding(start = 8.dp))
+                }
+                Button(
+                    onClick = {
+                        if (exportingLogs) return@Button
+                        exportingLogs = true
+                        viewModel.exportDiagnosticLogs { result ->
+                            exportingLogs = false
+                            result.fold(
+                                onSuccess = { path ->
+                                    Toast.makeText(
+                                        context,
+                                        "Log salvati in $path",
+                                        Toast.LENGTH_LONG,
+                                    ).show()
+                                    dev.accessscope.scanner.export.DiagnosticLogExporter.shareExportedFile(context, path)
+                                },
+                                onFailure = { error ->
+                                    Toast.makeText(
+                                        context,
+                                        error.message ?: "Impossibile esportare i log",
+                                        Toast.LENGTH_LONG,
+                                    ).show()
+                                },
+                            )
+                        }
+                    },
+                    enabled = !exportingLogs,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text(if (exportingLogs) "Esportazione…" else "Scarica log diagnostici")
+                }
+            }
+
+            AccessScopeCard(modifier = Modifier.fillMaxWidth()) {
+                Text("Ambiti di scansione", fontWeight = FontWeight.SemiBold)
+                if (!scope.isFullScan) {
+                    Text(
+                        "La prossima scansione analizzerà solo gli ambiti selezionati.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = BrandPrimary,
+                    )
+                }
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text("Analizza tutto")
+                    Switch(
+                        checked = scope.isFullScan,
+                        onCheckedChange = { enabled ->
+                            if (enabled) viewModel.setFullScan() else Unit
+                        },
+                    )
+                }
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    FilterChip(
+                        selected = scope.isFullScan,
+                        onClick = viewModel::setFullScan,
+                        label = { Text("Completa") },
+                    )
+                    FilterChip(
+                        selected = scope.enabledAreas == setOf(ViolationArea.SCREEN_READER),
+                        onClick = viewModel::applyTalkBackOnlyPreset,
+                        label = { Text("Solo TalkBack") },
+                    )
+                    FilterChip(
+                        selected = scope.enabledAreas == setOf(ViolationArea.LABELS),
+                        onClick = viewModel::applyLabelsOnlyPreset,
+                        label = { Text("Solo etichette") },
+                    )
+                    FilterChip(
+                        selected = scope.enabledAreas == setOf(ViolationArea.COLOR),
+                        onClick = viewModel::applyContrastOnlyPreset,
+                        label = { Text("Solo contrasto") },
+                    )
+                }
+                HorizontalDivider()
+                ViolationArea.entries.forEach { area ->
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        Text("Analizza tutto")
-                        Switch(
-                            checked = scope.isFullScan,
-                            onCheckedChange = { enabled ->
-                                if (enabled) viewModel.setFullScan() else Unit
-                            },
-                        )
-                    }
-                    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        FilterChip(
-                            selected = scope.isFullScan,
-                            onClick = viewModel::setFullScan,
-                            label = { Text("Completa") },
-                        )
-                        FilterChip(
-                            selected = scope.enabledAreas == setOf(ViolationArea.SCREEN_READER),
-                            onClick = viewModel::applyTalkBackOnlyPreset,
-                            label = { Text("Solo TalkBack") },
-                        )
-                        FilterChip(
-                            selected = scope.enabledAreas == setOf(ViolationArea.LABELS),
-                            onClick = viewModel::applyLabelsOnlyPreset,
-                            label = { Text("Solo etichette") },
-                        )
-                        FilterChip(
-                            selected = scope.enabledAreas == setOf(ViolationArea.COLOR),
-                            onClick = viewModel::applyContrastOnlyPreset,
-                            label = { Text("Solo contrasto") },
-                        )
-                    }
-                    HorizontalDivider()
-                    ViolationArea.entries.forEach { area ->
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            Column(Modifier.weight(1f).padding(end = 8.dp)) {
-                                Text("${area.emoji} ${area.title}", fontWeight = FontWeight.Medium)
-                                Text(
-                                    area.subtitle,
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = contentSecondary(),
-                                )
-                            }
-                            Switch(
-                                checked = scope.includes(area),
-                                onCheckedChange = { viewModel.toggleScanArea(area) },
+                        Column(Modifier.weight(1f).padding(end = 8.dp)) {
+                            Text("${area.emoji} ${area.title}", fontWeight = FontWeight.Medium)
+                            Text(
+                                area.subtitle,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = contentSecondary(),
                             )
                         }
-                        Spacer(Modifier.height(4.dp))
+                        Switch(
+                            checked = scope.includes(area),
+                            onCheckedChange = { viewModel.toggleScanArea(area) },
+                        )
                     }
+                    Spacer(Modifier.height(4.dp))
                 }
             }
         }

@@ -1,0 +1,37 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="120dp"
+    android:height="120dp"
+    android:viewportWidth="120"
+    android:viewportHeight="120">
+
+    <!-- Sfondo dell'icona adattiva -->
+    <path
+        android:pathData="M10,20 C10,10 10,10 20,10 L100,10 C110,10 110,10 110,20 L110,100 C110,110 110,110 100,110 L20,110 C10,110 10,110 10,20 Z"
+        android:fillColor="#0D2C54" />
+
+    <!-- La "A" del Brand (Forma principale) -->
+    <path
+        android:pathData="M60,15 L22,105 L44,105 L52,85 L68,85 L76,105 L98,105 Z M60,38 L65,70 L55,70 Z"
+        android:fillColor="#00A3A6" />
+
+    <!-- Il Mirino Centrale (Scope dell'accessibilità) -->
+    <path
+        android:pathData="M48,48 L54,48 M48,48 L48,54 M72,48 L66,48 M72,48 L72,54 M48,72 L54,72 M48,72 L48,66 M72,72 L66,72 M72,72 L72,66"
+        android:fillColor="#00000000"
+        android:strokeColor="#3DCCFF"
+        android:strokeWidth="2.5"
+        android:strokeLineCap="round" />
+
+    <!-- Lente d'ingrandimento -->
+    <path
+        android:pathData="M60,60 M60,60 a14,14 0,1 1,0.00001,0 Z"
+        android:fillColor="#00000000"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="3" />
+    <path
+        android:pathData="M70,70 L82,82"
+        android:fillColor="#00000000"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="4"
+        android:strokeLineCap="round" />
+</vector>
