@@ -253,6 +253,11 @@ class ScanSessionRepository(context: android.content.Context) {
         _state.update { it.copy(lastPdfPath = path, errorMessage = null) }
     }
 
+    /** Imposta il percorso del report Markdown di affidabilità (debug). */
+    fun setReliabilityMdPath(path: String?) {
+        _state.update { it.copy(lastReliabilityMdPath = path) }
+    }
+
     /**
      * Registra un messaggio di errore nella sessione corrente.
      *

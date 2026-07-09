@@ -20,6 +20,7 @@ import dev.accessscope.scanner.data.ScanScope
 import dev.accessscope.scanner.data.ScreenReaderFinding
 import dev.accessscope.scanner.data.ViolationArea
 import dev.accessscope.scanner.data.ViolationType
+import dev.accessscope.scanner.analyzer.AppPrecisionProfiles
 
 /**
  * Motore principale di analisi dell'accessibilità su un singolo albero di nodi.
@@ -215,9 +216,12 @@ class NodeAccessibilityAnalyzer(
         if (PrecisionRules.shouldSkipPinPadWhenNotPinScreen(snap, screenTitle, packageName)) return
         if (PrecisionRules.shouldSkipHomeWidgetAnalysis(snap, all, packageName)) return
         if (PrecisionRules.shouldSkipStructuralNoise(snap, viewport, screenWidth, packageName)) return
+        if (PrecisionRules.shouldSkipPlatformNoiseAnalysis(snap, all, packageName)) return
+        val inMaterialCalendar = PrecisionRules.isMaterialCalendarRelatedNode(snap, screenTitle, all)
 
         if (includes(ViolationArea.LABELS)) {
-            val missingLabel = (snap.isInteractiveClickable() || PrecisionRules.shouldReportMissingTopBarLabel(snap, all)) &&
+            val missingLabel = !inMaterialCalendar &&
+                (snap.isInteractiveClickable() || PrecisionRules.shouldReportMissingTopBarLabel(snap, all)) &&
                 !snap.hasAccessibleName() &&
                 !PrecisionRules.isIconInsideLabeledButton(snap, all) &&
                 !PrecisionRules.shouldSkipContainerLabelCheck(snap, all, packageName)
@@ -237,7 +241,7 @@ class NodeAccessibilityAnalyzer(
             }
         }
         if (snap.isInteractiveClickable() && includes(ViolationArea.TOUCH)) {
-            if (!PrecisionRules.shouldSkipTouchTargetCheck(snap, all, packageName)) {
+            if (!inMaterialCalendar && !PrecisionRules.shouldSkipTouchTargetCheck(snap, all, packageName)) {
                 if (snap.bounds.width() < minTouchTargetPx || snap.bounds.height() < minTouchTargetPx) {
                     violations += v(
                         ViolationType.SMALL_TOUCH_TARGET, snap, packageName, screenTitle,
@@ -257,7 +261,14 @@ class NodeAccessibilityAnalyzer(
             }
         }
 
-        if (includes(ViolationArea.SCREEN_READER) && snap.shouldBeFocusable() && !snap.isFocusable && !snap.isScrollable) {
+        if (!inMaterialCalendar &&
+            includes(ViolationArea.SCREEN_READER) &&
+            snap.shouldBeFocusable() &&
+            !snap.isFocusable &&
+            !snap.isScrollable
+        ) {
+            if (PrecisionRules.hasFocusableOrEditableDescendant(snap, all)) return
+            if (snap.isEditable && snap.hasAccessibleName()) return
             violations += v(ViolationType.NOT_FOCUSABLE, snap, packageName, screenTitle,
                 "Interattivo ma non raggiungibile con TalkBack.", 0.9f)
         }
@@ -300,6 +311,7 @@ class NodeAccessibilityAnalyzer(
             !PrecisionRules.shouldSkipSmallTextCheck(snap, viewport, packageName) &&
             !PrecisionRules.isOffScreenOrMarginalNode(snap, viewport, packageName)
         ) {
+            if (PrecisionRules.isAnomalousTouchBounds(snap)) return
             if (snap.bounds.height() < minTextHeightPx) {
                 violations += v(ViolationType.TEXT_TOO_SMALL, snap, packageName, screenTitle,
                     "Altezza ~${snap.bounds.height()} px (< ${minTextHeightPx} px, circa 12sp).", 0.88f)
@@ -374,6 +386,7 @@ class NodeAccessibilityAnalyzer(
 
         if (includes(ViolationArea.LABELS) && snap.isClickable && snap.isCustomView() &&
             !snap.hasAccessibleName() && !snap.hasStandardRole() &&
+            !inMaterialCalendar &&
             !PrecisionRules.shouldSkipContainerLabelCheck(snap, all, packageName) &&
             !PrecisionRules.isCarouselContentContainer(snap, all, packageName) &&
             !PrecisionRules.shouldSkipHomeWidgetAnalysis(snap, all, packageName) &&
@@ -398,7 +411,10 @@ class NodeAccessibilityAnalyzer(
                 "Tooltip \"${snap.tooltipText}\" non accessibile a TalkBack.", 0.8f)
         }
 
-        if (includes(ViolationArea.SCREEN_READER) && PrecisionRules.shouldReportCustomAction(snap, all, packageName)) {
+        if (!inMaterialCalendar &&
+            includes(ViolationArea.SCREEN_READER) &&
+            PrecisionRules.shouldReportCustomAction(snap, all, packageName)
+        ) {
             val actionKey = snap.viewId?.takeIf { it.isNotBlank() }
                 ?: "${snap.className}@${snap.bounds.hashCode()}"
             if (customActionEmitted.add(actionKey)) {
@@ -446,30 +462,46 @@ class NodeAccessibilityAnalyzer(
         if (PrecisionRules.isLayoutContainer(snap.className)) return
         if (PrecisionRules.isLikelyStatusBadge(snap)) return
         if (PrecisionRules.isHomeChartDecorativeText(snap, all, packageName)) return
-        if (PrecisionRules.isBrandedCtaText(snap, all, packageName)) return
+        if (PrecisionRules.isBrandedOrPrimaryCtaText(snap, all, packageName)) return
+        if (PrecisionRules.shouldSkipContrastCheck(snap, all, packageName)) return
         if (PrecisionRules.shouldSkipTopBarIconContrast(snap, all, viewport)) return
         val screenArea = bitmap.width * bitmap.height
         if (screenArea > 0 && snap.area() > screenArea * 0.6) return
 
-        if (snap.hasVisibleText()) {
+        val largeTextIds = AppPrecisionProfiles.largeTextViewIds(packageName)
+        val hintOnly = snap.isEditable && snap.text.isNullOrBlank() && !snap.hintText.isNullOrBlank()
+
+        if (snap.hasVisibleText() || hintOnly) {
             val isFieldLabel = PrecisionRules.isKnownContrastFieldLabel(snap, packageName)
             val sampleBounds = if (isFieldLabel) expandBoundsForMicroLabel(snap.bounds) else snap.bounds
-            val large = WcagContrast.isLargeText(snap.bounds.height(), density) || isFieldLabel
-            val result = WcagContrast.measureTextContrast(bitmap, sampleBounds, large) ?: return
+            val large = WcagContrast.isLargeText(snap, density, largeTextIds) || isFieldLabel
+            val result = if (PrecisionRules.isButtonLikeTapTarget(snap) && !hintOnly && !isFieldLabel) {
+                WcagContrast.measureTextContrastWithInnerBackground(bitmap, sampleBounds, large)
+            } else {
+                WcagContrast.measureTextContrast(bitmap, sampleBounds, large)
+            } ?: return
             if (!WcagContrast.isReliableMeasurement(result)) return
-            val minConfidence = when {
+            val baseMinConfidence = when {
                 PrecisionRules.viewIdShort(snap).startsWith("txt_data_") -> 0.45f
                 isFieldLabel -> 0.50f
+                hintOnly -> 0.55f
                 else -> 0.72f
             }
+            val minConfidence = WcagContrast.minConfidenceForMeasurement(
+                result = result,
+                boundsWidthPx = snap.bounds.width(),
+                boundsHeightPx = snap.bounds.height(),
+                density = density,
+                isSmallIcon = false,
+                baseMin = baseMinConfidence,
+            )
             if (result.confidence < minConfidence) return
-            if (!isFieldLabel &&
+            if (!isFieldLabel && !hintOnly &&
                 WcagContrast.relativeLuminance(result.foreground) > 0.80 &&
                 snap.bounds.height() <= (minTouchTargetPx * 0.85f).toInt()
             ) {
                 return
             }
-            // Field label micro (txt_data_*): non scartare per altezza px sotto soglia 12sp
             val threshold = if (large || isFieldLabel) {
                 WcagContrast.MIN_LARGE_TEXT_CONTRAST
             } else {
@@ -493,10 +525,19 @@ class NodeAccessibilityAnalyzer(
                 )
             }
         } else if (snap.isInteractiveClickable() || snap.isImageClass()) {
+            if (PrecisionRules.shouldSkipUiContrastCheck(snap, all, packageName)) return
             if (PrecisionRules.shouldSkipTopBarIconContrast(snap, all, viewport)) return
             val result = WcagContrast.measureUiContrast(bitmap, snap.bounds) ?: return
             if (!WcagContrast.isReliableMeasurement(result)) return
-            if (result.confidence < 0.72f) return
+            val minConfidence = WcagContrast.minConfidenceForMeasurement(
+                result = result,
+                boundsWidthPx = snap.bounds.width(),
+                boundsHeightPx = snap.bounds.height(),
+                density = density,
+                isSmallIcon = snap.isImageClass(),
+                baseMin = 0.72f,
+            )
+            if (result.confidence < minConfidence) return
             if (result.ratio < WcagContrast.MIN_NON_TEXT_CONTRAST) {
                 violations += v(
                     ViolationType.LOW_NON_TEXT_CONTRAST, snap, packageName, screenTitle,
@@ -532,7 +573,11 @@ class NodeAccessibilityAnalyzer(
         violations: MutableList<AccessibilityViolation>,
         screenWidth: Int,
     ) {
-        val clickables = snapshots.filter { it.isInteractiveClickable() }
+        val isMaterialCalendar = PrecisionRules.isMaterialCalendarContext(screenTitle, snapshots)
+        val clickables = snapshots
+            .filter { it.isInteractiveClickable() }
+            .filterNot { PrecisionRules.isObscuredByModalOverlay(it, snapshots) }
+            .filterNot { snap -> isMaterialCalendar && PrecisionRules.isMaterialCalendarDayCell(snap, screenTitle, snapshots) }
 
         snapshots.mapNotNull { snap -> snap.accessibleName()?.lowercase()?.let { it to snap } }
             .groupBy({ it.first }, { it.second })
@@ -599,7 +644,7 @@ class NodeAccessibilityAnalyzer(
      * @param violations Lista mutabile a cui appendere le violazioni rilevate.
      */
     private fun checkWebViews(snapshots: List<NodeSnapshot>, packageName: String, screenTitle: String, violations: MutableList<AccessibilityViolation>) {
-        snapshots.filter { it.isWebView() && it.childCount == 0 && it.bounds.width() > 100 }.forEach { snap ->
+        snapshots.filter { PrecisionRules.shouldReportWebViewBarrier(it, snapshots) }.forEach { snap ->
             violations += v(ViolationType.WEBVIEW_BARRIER, snap, packageName, screenTitle,
                 "WebView senza contenuto accessibile esposto (${snap.bounds.width()}×${snap.bounds.height()} px).", 0.9f)
         }
@@ -670,6 +715,10 @@ class NodeAccessibilityAnalyzer(
      */
     private fun isListItemTemplate(viewId: String, nodes: List<NodeSnapshot>, packageName: String): Boolean {
         if (nodes.size < 2) return false
+        // Material DatePicker: le celle giorno condividono `material_calendar_day` by design.
+        if (viewId.substringAfterLast('/').equals("material_calendar_day", ignoreCase = true) && nodes.size >= 12) {
+            return true
+        }
         if (PrecisionRules.isKnownListTemplateId(viewId, packageName)) return true
         val sameClass = nodes.map { it.className }.distinct().size == 1
         if (!sameClass) return false

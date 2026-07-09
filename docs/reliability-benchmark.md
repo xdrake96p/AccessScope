@@ -31,7 +31,8 @@ Ground truth annotato dal codice sorgente Nexi per validare precision/recall di 
 | N16 | `vop_info` in `carousel_distinte_item_swipable.xml` | Etichette + Touch | VIOLATION | `@null` + icona piccola |
 | N17 | `topbar_icon_left` / `topbar_icon_right` `@null` | Etichette | VIOLATION | Se CD runtime assente; dedupe global |
 | N18 | Schermata PIN (`pin_pad_view.xml`) | Copertura | SCAN | Sezione «Inserisci PIN» in panorama |
-| N19 | `fragment_homepage_titolare.xml` — `last_30` / `import_positive` su sfondo brand | Contrasto | OK | Testo decorativo widget entrate/uscite |
+| N19 | `fragment_homepage_titolare.xml` — `last_30` (14sp) su `green_button_background` | Contrasto | VIOLATION | Testo normale su sfondo verde chiaro ~3.94:1 composito |
+| N19b | `import_positive` / `amount_uscite_effects` (testo grande ≥18sp) su stesso sfondo | Contrasto | OK | Soglia testo grande 3:1 |
 | N20 | `green_dot` + `importantForAccessibility=no` — `dot_filter` | Etichette | LIMITAZIONE | Fuori albero a11y: non rilevabile via TalkBack tree |
 
 ## Flusso benchmark (manuale)
@@ -112,7 +113,8 @@ Baseline report: **154839** (24 problemi, score 83, precisione totale ~76%, prec
 | N02 `txt_data_*` / `causale` contrasto | TP |
 | N16 `vop_info` | TP |
 | N17 topbar | TP se CD assente, OK se CD runtime |
-| N19 home chart decorativo | OK (non segnalare) |
+| N19 `last_30` contrasto (14sp) | TP |
+| N19b `import_positive` grande su sfondo brand | OK (non segnalare) |
 | Problemi totali | **14–18** |
 | Precisione utile | **≥75%** |
 | Precisione totale | **≥80%** |

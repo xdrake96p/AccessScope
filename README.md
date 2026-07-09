@@ -14,3 +14,14 @@ Etichette, contrasto multi-campione, testo, touch, form, struttura, TalkBack sim
 ## Setup
 
 Apri in Android Studio e sincronizza Gradle. Permessi: accessibilità + overlay.
+
+## Precisione certificata (confronto col codice)
+
+Per verificare quante violazioni del report sono **mappabili e presenti nel codice sorgente**:
+
+```bash
+python3 tools/certify_precision.py --md "/path/AccessScope_Reliability_*.md" --code "/path/to/target/app/src"
+```
+
+Note:
+- Le righe con `viewId = —` sono **non verificabili** e vengono escluse dalla precisione.

@@ -84,10 +84,15 @@ class ScanSettingsStore(context: Context) {
         get() = prefs.getInt(KEY_OVERLAY_Y, -1)
         set(value) = prefs.edit().putInt(KEY_OVERLAY_Y, value).apply()
 
+    var reliabilityReportEnabled: Boolean
+        get() = prefs.getBoolean(KEY_RELIABILITY_REPORT, false)
+        set(value) = prefs.edit().putBoolean(KEY_RELIABILITY_REPORT, value).apply()
+
     companion object {
         private const val PREFS_NAME = "accessscope_settings"
         private const val KEY_AUTO_LAUNCH = "auto_launch_enabled"
         private const val KEY_LIVE_DEBUG = "live_debug_panel_enabled"
+        private const val KEY_RELIABILITY_REPORT = "reliability_report_enabled"
         private const val KEY_ENABLED_AREAS = "enabled_areas"
         private const val KEY_OVERLAY_X = "overlay_position_x"
         private const val KEY_OVERLAY_Y = "overlay_position_y"

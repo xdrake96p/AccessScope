@@ -134,7 +134,12 @@ fun SettingsScreen(
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
             ) {
                 Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("Debug live", fontWeight = FontWeight.SemiBold)
+                    Text("Debug interno", fontWeight = FontWeight.SemiBold)
+                    Text(
+                        "Strumenti per sviluppo e benchmark anti-allucinazione. I report non sono pensati per l'utente finale.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = contentSecondary(),
+                    )
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
@@ -151,6 +156,25 @@ fun SettingsScreen(
                         Switch(
                             checked = uiState.liveDebugPanelEnabled,
                             onCheckedChange = { viewModel.toggleLiveDebugPanel() },
+                        )
+                    }
+                    HorizontalDivider()
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Column(Modifier.weight(1f)) {
+                            Text("Report affidabilità (Markdown)")
+                            Text(
+                                "A fine scansione salva in Download un file AccessScope_Reliability_*.md con violazioni, confidenza, pattern sospetti e confronto benchmark Nexi.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = contentSecondary(),
+                            )
+                        }
+                        Switch(
+                            checked = uiState.reliabilityReportEnabled,
+                            onCheckedChange = { viewModel.toggleReliabilityReport() },
                         )
                     }
                 }

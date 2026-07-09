@@ -100,7 +100,8 @@ object PrecisionRules {
         val min = snap.minTouchTargetPx
         val thinVertical = w < (min * 0.75f).toInt() && h > min * 4
         val thinHorizontal = h < min / 3 && w > min * 4
-        return thinVertical || thinHorizontal
+        val hairlineText = snap.hasVisibleText() && (h <= 2 || w <= 2)
+        return thinVertical || thinHorizontal || hairlineText
     }
 
     /**
@@ -160,6 +161,7 @@ object PrecisionRules {
         packageName: String = "",
     ): Boolean {
         if (isKnownContrastFieldLabel(snap, packageName)) return false
+        if (isSkeletonPlaceholder(snap)) return true
         if (isOffScreenOrMarginalNode(snap, viewport, packageName)) return true
         if (isAnomalousTouchBounds(snap)) return true
         if (isFullWidthListRow(snap, screenWidth)) return true
@@ -555,6 +557,10 @@ object PrecisionRules {
             return true
         }
         if (isScrollableListScreen(snapshots)) return true
+        if (snapshots.any { isMediaPlayerSurface(it) }) return true
+        if (snapshots.any { isMapSurface(it) && it.bounds.width() * it.bounds.height() > estimateViewport(snapshots).let { v -> v.width() * v.height() } * 0.25f }) {
+            return true
+        }
         return false
     }
 
@@ -610,6 +616,16 @@ object PrecisionRules {
         if (screenWidth > 0 && (isFullWidthListRow(a, screenWidth) || isFullWidthListRow(b, screenWidth))) {
             return true
         }
+        val screenArea = if (screenWidth > 0) screenWidth * estimateViewport(all).height() else 0
+        if (isStructuralScrollOverlap(a, b, all, packageName, screenArea)) return true
+        if (isTabStripNode(a, packageName) && isTabStripNode(b, packageName)) return true
+        if (isTabStripNode(a, packageName) || isTabStripNode(b, packageName)) {
+            val tabParent = all.any { viewIdShort(it) in setOf("card_effetti", "tab_home", "card_home") }
+            if (tabParent) return true
+        }
+        if (isObscuredByModalOverlay(a, all) || isObscuredByModalOverlay(b, all)) return true
+        if (isInsideMapOrMediaSurface(a, all) && isInsideMapOrMediaSurface(b, all)) return true
+        if (a.isWebView() || b.isWebView()) return true
         if (!isHomeScreenContext(all, packageName)) return false
         return shouldSkipHomeWidgetAnalysis(a, all, packageName) ||
             shouldSkipHomeWidgetAnalysis(b, all, packageName)
@@ -722,6 +738,20 @@ object PrecisionRules {
     fun isWideTapTarget(snap: NodeSnapshot): Boolean =
         snap.bounds.width() >= snap.minTouchTargetPx * 3 &&
             snap.bounds.height() >= (snap.minTouchTargetPx * 0.55f).toInt()
+
+    /**
+     * Euristica: controllo "button-like" (CTA) dove lo sfondo interno è più affidabile del ring esterno.
+     */
+    fun isButtonLikeTapTarget(snap: NodeSnapshot): Boolean {
+        if (!snap.isInteractiveClickable()) return false
+        val h = snap.bounds.height()
+        val w = snap.bounds.width()
+        val min = snap.minTouchTargetPx
+        val tallEnough = h >= (min * 0.85f).toInt()
+        val wideEnough = w >= min * 2
+        val notTooTall = h <= (min * 2.2f).toInt()
+        return tallEnough && wideEnough && notTooTall
+    }
 
     /**
      * Verifica se il nodo è probabilmente un badge di stato (pill o etichetta compatta).
@@ -874,11 +904,8 @@ object PrecisionRules {
         if (!snap.hasVisibleText()) return false
         if (snap.isFocusable || snap.isInteractiveClickable()) return false
         val id = viewIdShort(snap)
+        // last_30 / last_30_negative: contrasto reale da verificare (14sp su sfondo verde) — non saltare
         val chartText = AppPrecisionProfiles.homeChartTextIds(packageName)
-        if (id == "last_30" || id == "last_30_negative") {
-            if (!snap.contentDescription.isNullOrBlank()) return true
-            if (isHomeScreenContext(all, packageName)) return true
-        }
         if (id !in chartText) return false
         if (isInsideHomeChartContainer(snap, all, packageName)) return true
         return isHomeScreenContext(all, packageName)
@@ -920,6 +947,188 @@ object PrecisionRules {
     }
 
     /**
+     * Verifica se il nodo è testo CTA primario brandizzato (es. `new_payment`, `tv_custom`).
+     */
+    fun isBrandedOrPrimaryCtaText(snap: NodeSnapshot, all: List<NodeSnapshot>, packageName: String = ""): Boolean {
+        if (!snap.hasVisibleText()) return false
+        val id = viewIdShort(snap)
+        if (id in AppPrecisionProfiles.primaryCtaTextIds(packageName)) {
+            return isCtaContainer(snap, packageName) ||
+                all.any { other ->
+                    other != snap &&
+                        (isCtaContainer(other, packageName) || viewIdShort(other) == "ll_custom") &&
+                        other.bounds.contains(snap.bounds)
+                }
+        }
+        return isBrandedCtaText(snap, all, packageName)
+    }
+
+    /**
+     * Determina se il controllo contrasto testo va saltato per questo nodo.
+     */
+    fun shouldSkipContrastCheck(snap: NodeSnapshot, all: List<NodeSnapshot>, packageName: String = ""): Boolean {
+        if (isBrandedOrPrimaryCtaText(snap, all, packageName)) return true
+        val id = viewIdShort(snap)
+        if (id in AppPrecisionProfiles.carouselDecorativeContrastIds(packageName) &&
+            isInsideCarouselOrListItem(snap, all, packageName)
+        ) {
+            return true
+        }
+        if (id == "causale" && isInsideCarouselOrListItem(snap, all, packageName)) return true
+        if (id == "tv_title_second_section" && isHomeScreenContext(all, packageName)) return true
+        if (snap.isEditable && snap.text.isNullOrBlank() && !snap.hintText.isNullOrBlank()) {
+            // Hint contrast handled separately; skip empty-value sampling
+            return false
+        }
+        if (isSkeletonPlaceholder(snap) || isLottieAnimation(snap)) return true
+        if (isInsideMapOrMediaSurface(snap, all) && !snap.isMediaControl()) return true
+        if (shouldSkipComposeContrast(snap)) return true
+        return false
+    }
+
+    /**
+     * Determina se il controllo contrasto UI (icona) va saltato.
+     */
+    fun shouldSkipUiContrastCheck(snap: NodeSnapshot, all: List<NodeSnapshot>, packageName: String = ""): Boolean {
+        // vop_info: l'icona è in realtà ad altissimo contrasto (drawable stroke scuro su bianco),
+        // ma il campionamento screenshot può generare falsi positivi. Manteniamo solo il check
+        // "manca contentDescription" tramite label/azioni, non il contrasto icona.
+        if (viewIdShort(snap) == "vop_info") return true
+        return false
+    }
+
+    /**
+     * Riconosce un contesto di calendario Material (DatePicker) che genera rumore massivo.
+     *
+     * In Nexi/BFF la schermata COMUNICAZIONI usa un calendario con celle ripetute (`material_calendar_day`)
+     * e griglia tappabile; applicare i controlli touch/spacing/focus a ciascuna cella produce falsi positivi.
+     */
+    fun isMaterialCalendarContext(screenTitle: String, snapshots: List<NodeSnapshot>): Boolean {
+        if (!screenTitle.contains("COMUNICAZIONI", ignoreCase = true)) return false
+        val dayCells = snapshots.count { viewIdShort(it) == "material_calendar_day" }
+        // Se ci sono molte celle giorno, è quasi certamente il DatePicker Material.
+        return dayCells >= 12
+    }
+
+    /**
+     * Identifica una singola cella giorno del calendario Material.
+     *
+     * Oltre all'ID, usa le coordinate di collection (grid) come fallback quando l'ID non è esposto.
+     */
+    fun isMaterialCalendarDayCell(
+        snap: NodeSnapshot,
+        screenTitle: String,
+        snapshots: List<NodeSnapshot>,
+    ): Boolean {
+        if (!isMaterialCalendarContext(screenTitle, snapshots)) return false
+        if (viewIdShort(snap) == "material_calendar_day") return true
+        // Fallback: celle in griglia piccole e ripetute.
+        val isGridCell = snap.collectionRow >= 0 && snap.collectionColumn >= 0
+        val smallish = snap.bounds.width() <= snap.minTouchTargetPx * 2 &&
+            snap.bounds.height() <= snap.minTouchTargetPx * 2
+        return isGridCell && smallish && snap.isInteractiveClickable()
+    }
+
+    /**
+     * Determina se un nodo appartiene al cluster del calendario Material (griglia + header + controlli mese).
+     *
+     * Serve per escludere i controlli che generano falsi positivi sistematici (label/role/custom action/touch)
+     * su componenti Material complessi.
+     */
+    fun isMaterialCalendarRelatedNode(
+        snap: NodeSnapshot,
+        screenTitle: String,
+        snapshots: List<NodeSnapshot>,
+    ): Boolean {
+        if (!isMaterialCalendarContext(screenTitle, snapshots)) return false
+        val id = viewIdShort(snap)
+        if (id in setOf(
+                "material_calendar_day",
+                "gv_calendario",
+                "ll_mese_precedente",
+                "ll_mese_successivo",
+                "iv_previous_month",
+                "iv_next_month",
+                "periodo_temp",
+            )
+        ) {
+            return true
+        }
+        if (isMaterialCalendarDayCell(snap, screenTitle, snapshots)) return true
+
+        // Fallback per nodi senza viewId (—) ma dentro la griglia calendario.
+        val calendar = snapshots.firstOrNull { viewIdShort(it) == "gv_calendario" } ?: return false
+        if (!Rect.intersects(calendar.bounds, snap.bounds)) return false
+        val centerInside = calendar.bounds.contains(snap.bounds.centerX(), snap.bounds.centerY())
+        if (!centerInside) return false
+        val smallish = snap.bounds.width() <= snap.minTouchTargetPx * 2 &&
+            snap.bounds.height() <= snap.minTouchTargetPx * 2
+        return smallish
+    }
+
+    /**
+     * Evita FP su "Non raggiungibile con TalkBack" quando esiste un discendente/overlay focusabile.
+     */
+    fun hasFocusableOrEditableDescendant(snap: NodeSnapshot, all: List<NodeSnapshot>): Boolean {
+        return all.any { other ->
+            other != snap &&
+                snap.bounds.contains(other.bounds) &&
+                (other.isFocusable || other.isEditable || other.isInteractiveClickable()) &&
+                other.hasAccessibleName()
+        }
+    }
+
+    /**
+     * Verifica se il nodo appartiene a una tab strip (TabLayout custom Nexi).
+     */
+    fun isTabStripNode(snap: NodeSnapshot, packageName: String = ""): Boolean {
+        val id = viewIdShort(snap)
+        if (id in AppPrecisionProfiles.tabStripViewIds(packageName)) return true
+        return snap.className.contains("TabView", true)
+    }
+
+    /**
+     * Overlap strutturale tra root scroll e contenitore layout (non doppio target reale).
+     */
+    fun isStructuralScrollOverlap(
+        a: NodeSnapshot,
+        b: NodeSnapshot,
+        all: List<NodeSnapshot>,
+        packageName: String,
+        screenArea: Int,
+    ): Boolean {
+        val idsA = viewIdShort(a)
+        val idsB = viewIdShort(b)
+        val scrollIds = AppPrecisionProfiles.mainContentScrollIds(packageName) + setOf("scrollview_port", "content")
+        val aScroll = a.isScrollable || idsA in scrollIds || a.className.contains("ScrollView", true)
+        val bScroll = b.isScrollable || idsB in scrollIds || b.className.contains("ScrollView", true)
+        val aRoot = idsA == "content" || idsA == "container"
+        val bRoot = idsB == "content" || idsB == "container"
+        if ((aScroll && bRoot) || (bScroll && aRoot)) return true
+        if (aScroll && bScroll) return true
+        if (isMainContentScroll(a, screenArea, packageName) || isMainContentScroll(b, screenArea, packageName)) {
+            if (aRoot || bRoot || idsA == "container" || idsB == "container") return true
+        }
+        if (a.bounds.contains(b.bounds) || b.bounds.contains(a.bounds)) return true
+        if (isAncestorDescendantOverlap(a, b, all)) return true
+        return false
+    }
+
+    private fun isAncestorDescendantOverlap(a: NodeSnapshot, b: NodeSnapshot, all: List<NodeSnapshot>): Boolean {
+        if (!Rect.intersects(a.bounds, b.bounds)) return false
+        val smaller = if (a.area() <= b.area()) a else b
+        val larger = if (smaller === a) b else a
+        if (!larger.bounds.contains(smaller.bounds.centerX(), smaller.bounds.centerY())) return false
+        val largerIsStructural = isScrollContainer(larger) ||
+            viewIdShort(larger) in setOf("content", "container", "scrollview_port") ||
+            larger.className.contains("RelativeLayout", true) ||
+            larger.className.contains("FrameLayout", true)
+        val smallerIsStructural = isScrollContainer(smaller) ||
+            viewIdShort(smaller) in setOf("content", "scrollview_port")
+        return largerIsStructural && smallerIsStructural
+    }
+
+    /**
      * Verifica se il nodo è un TextView all'interno di un item RecyclerView o carousel.
      *
      * I testi negli item di lista o carousel non costituiscono heading strutturali di pagina.
@@ -954,6 +1163,8 @@ object PrecisionRules {
      * @return Area in pixel quadrati (larghezza × altezza).
      */
     private fun Rect.area(): Int = width() * height()
+
+    private fun NodeSnapshot.area(): Int = bounds.width() * bounds.height()
 
     /**
      * Determina se il controllo di spacing touch va saltato tra due nodi.
@@ -1098,6 +1309,7 @@ object PrecisionRules {
         if (isTopBarControl(snap)) return false
         val id = viewIdShort(snap)
         if (id in setOf("vop_info", "dot_filter")) return false
+        if (isLottieAnimation(snap) && !snap.isInteractiveClickable()) return true
         return snap.isLikelyDecorative
     }
 
@@ -1109,13 +1321,35 @@ object PrecisionRules {
      * @return `true` se il controllo etichetta decorativa va saltato; `false` altrimenti.
      */
     fun shouldSkipDecorativeLabeledCheck(snap: NodeSnapshot, all: List<NodeSnapshot>): Boolean {
+        if (isLottieAnimation(snap) && !snap.isInteractiveClickable()) return true
         if (!snap.isImageClass()) return false
         if (isIconWithLabeledSibling(snap, all)) return true
+        if (isLikelyNavigationImage(snap, all)) return true
         if (isTopBarControl(snap)) {
             val cd = snap.contentDescription?.trim().orEmpty()
             return cd.isNotBlank() && !isPoorAltText(cd)
         }
         return false
+    }
+
+    /**
+     * Icone freccia/chiusura/info in header o controlli di navigazione: non sono decorative.
+     *
+     * Evita FP tipo "mese precedente/successivo" nei calendari Material o custom.
+     */
+    fun isLikelyNavigationImage(snap: NodeSnapshot, all: List<NodeSnapshot>): Boolean {
+        if (!snap.isImageClass()) return false
+        val cd = snap.contentDescription?.trim().orEmpty()
+        if (cd.isBlank() || isPoorAltText(cd)) return false
+        if (snap.isInteractiveClickable() || snap.isFocusable) return true
+        // Se l'icona è dentro un contenitore cliccabile (tipico: LinearLayout wrapper), non è decorativa.
+        return all.any { parent ->
+            parent != snap &&
+                parent.isInteractiveClickable() &&
+                parent.bounds.contains(snap.bounds) &&
+                parent.bounds.width() <= snap.minTouchTargetPx * 3 &&
+                parent.bounds.height() <= snap.minTouchTargetPx * 3
+        }
     }
 
     /**
@@ -1135,7 +1369,13 @@ object PrecisionRules {
             isInlineTextLink(snap) ||
             isIconInsideLabeledButton(snap, all) ||
             isWideTapTarget(snap) ||
-            isCtaContainer(snap, packageName)
+            isSkeletonPlaceholder(snap) ||
+            isMapSurface(snap) ||
+            (isInsideMapOrMediaSurface(snap, all) && !snap.isMediaControl()) ||
+            shouldSkipComposeTouch(snap) ||
+            // Le CTA "vere" (es. bottoni 65dp) sono già conformi: evitare rumore inutile.
+            // Ma le CTA wrap_content (es. CustomViewButtonCta 27dp) vanno segnalate: NON skippare.
+            (isCtaContainer(snap, packageName) && snap.bounds.height() >= snap.minTouchTargetPx)
 
     /**
      * Determina se il controllo dimensione testo piccolo va saltato per il nodo.
@@ -1147,6 +1387,7 @@ object PrecisionRules {
      */
     fun shouldSkipSmallTextCheck(snap: NodeSnapshot, viewport: Rect = android.graphics.Rect(), packageName: String = ""): Boolean {
         if (shouldSkipDrawerNode(snap)) return true
+        if (isSkeletonPlaceholder(snap)) return true
         if (!viewport.isEmpty && isOffScreenOrMarginalNode(snap, viewport, packageName)) return true
         if (snap.className.contains("Toolbar", true)) return true
         if (snap.text?.length == 1) return true
@@ -1201,5 +1442,137 @@ object PrecisionRules {
             lower.contains("constraint") ||
             lower.contains("coordinator") ||
             lower.contains("drawer")
+    }
+
+    // ── Pattern piattaforma Android (generici, non legati a un'app) ──────────
+
+    private val MAP_SURFACE_MARKERS = listOf("mapview", "googlemap", "maps.", "maplibre", "heremap")
+    private val MEDIA_PLAYER_MARKERS = listOf("playerview", "styledplayerview", "videoview", "exoplayer")
+    private val MODAL_OVERLAY_MARKERS = listOf("dialog", "bottomsheet", "popupwindow", "alertdialog", "modalbottomsheet")
+    private val SKELETON_ID_MARKERS = listOf("skeleton", "shimmer", "placeholder", "loading", "stub", "skel")
+    private val LOTTIE_MARKERS = listOf("lottie", "lottieanimationview")
+
+    /** Superficie mappa (MapView, GoogleMap embed): i marker interni non sono controlli UI standard. */
+    fun isMapSurface(snap: NodeSnapshot): Boolean {
+        val cls = snap.className.lowercase()
+        val id = viewIdShort(snap).lowercase()
+        return MAP_SURFACE_MARKERS.any { cls.contains(it) } ||
+            (id.contains("map") && snap.bounds.width() > 200 && snap.bounds.height() > 200)
+    }
+
+    /** Area di riproduzione video (ExoPlayer, VideoView): contenuto dinamico senza live region atteso. */
+    fun isMediaPlayerSurface(snap: NodeSnapshot): Boolean {
+        val cls = snap.className.lowercase()
+        if (cls.contains("mediacontroller")) return false
+        return MEDIA_PLAYER_MARKERS.any { cls.contains(it) }
+    }
+
+    /** Animazione Lottie non interattiva: decorativa, contrasto non significativo. */
+    fun isLottieAnimation(snap: NodeSnapshot): Boolean {
+        val cls = snap.className.lowercase()
+        val id = viewIdShort(snap).lowercase()
+        return LOTTIE_MARKERS.any { cls.contains(it) || id.contains(it) }
+    }
+
+    /** Placeholder skeleton/shimmer durante il caricamento. */
+    fun isSkeletonPlaceholder(snap: NodeSnapshot): Boolean {
+        val id = viewIdShort(snap).lowercase()
+        if (SKELETON_ID_MARKERS.any { id.contains(it) }) return true
+        val cls = snap.className.lowercase()
+        return cls.contains("shimmer") || cls.contains("skeleton") || cls.contains("placeholder")
+    }
+
+    /** Host Jetpack Compose (ComposeView o nodo semantics). */
+    fun isComposeHost(snap: NodeSnapshot): Boolean {
+        val cls = snap.className.lowercase()
+        return cls.contains("composeview") || cls.contains("abstractcomposeview") || cls.contains("androidx.compose")
+    }
+
+    /** Nodo semantics Compose senza viewId: contrasto screenshot inaffidabile. */
+    fun shouldSkipComposeContrast(snap: NodeSnapshot): Boolean {
+        if (!snap.viewId.isNullOrBlank()) return false
+        return isComposeHost(snap) || snap.className.contains("Semantics", true)
+    }
+
+    /**
+     * Touch target su semantics Compose senza viewId e senza ruolo interattivo esplicito:
+     * spesso spacing/layout interno, non un controllo autonomo.
+     */
+    fun shouldSkipComposeTouch(snap: NodeSnapshot): Boolean {
+        if (!snap.viewId.isNullOrBlank()) return false
+        if (!isComposeHost(snap) && !snap.className.contains("Semantics", true)) return false
+        if (snap.isEditable || (snap.isInteractiveClickable() && snap.hasAccessibleName())) return false
+        return snap.bounds.width() < snap.minTouchTargetPx || snap.bounds.height() < snap.minTouchTargetPx
+    }
+
+    /** Bounds del modal/bottom sheet dominante, se presente. */
+    fun findModalOverlayBounds(all: List<NodeSnapshot>): Rect? {
+        val viewport = estimateViewport(all)
+        if (viewport.isEmpty) return null
+        val screenArea = viewport.width() * viewport.height().toFloat()
+        return all
+            .filter { snap ->
+                val cls = snap.className.lowercase()
+                val id = viewIdShort(snap).lowercase()
+                val isModal = MODAL_OVERLAY_MARKERS.any { cls.contains(it) } ||
+                    id.contains("bottom_sheet") || id.contains("dialog") || id.contains("modal")
+                isModal && snap.bounds.width() * snap.bounds.height() >= screenArea * 0.35f
+            }
+            .maxByOrNull { it.bounds.width() * it.bounds.height() }
+            ?.bounds
+    }
+
+    /** Nodo dietro un overlay modale a schermo intero: non analizzare (evita FP su sfondo oscurato). */
+    fun isObscuredByModalOverlay(snap: NodeSnapshot, all: List<NodeSnapshot>): Boolean {
+        val modal = findModalOverlayBounds(all) ?: return false
+        val viewport = estimateViewport(all)
+        val screenArea = viewport.width() * viewport.height().toFloat()
+        if (modal.width() * modal.height() < screenArea * 0.45f) return false
+        return !modal.contains(snap.bounds.centerX(), snap.bounds.centerY())
+    }
+
+    fun isInsideMapOrMediaSurface(snap: NodeSnapshot, all: List<NodeSnapshot>): Boolean =
+        all.any { host ->
+            host != snap &&
+                (isMapSurface(host) || isMediaPlayerSurface(host)) &&
+                host.bounds.contains(snap.bounds.centerX(), snap.bounds.centerY())
+        }
+
+    fun isInsideWebView(snap: NodeSnapshot, all: List<NodeSnapshot>): Boolean =
+        all.any { host ->
+            host != snap &&
+                host.isWebView() &&
+                host.bounds.contains(snap.bounds.centerX(), snap.bounds.centerY())
+        }
+
+    /**
+     * Salta l'analisi per nodi che generano rumore strutturale su pattern UI comuni.
+     * I controlli interattivi reali (CTA, campi, media controls) restano analizzati.
+     */
+    fun shouldSkipPlatformNoiseAnalysis(snap: NodeSnapshot, all: List<NodeSnapshot>, packageName: String = ""): Boolean {
+        if (isSkeletonPlaceholder(snap)) return true
+        if (isLottieAnimation(snap) && !snap.isInteractiveClickable()) return true
+        if (isObscuredByModalOverlay(snap, all)) return true
+        if (isMapSurface(snap) && !snap.isMediaControl()) return true
+        if (isMediaPlayerSurface(snap)) return true
+        if (isInsideMapOrMediaSurface(snap, all) && !snap.isMediaControl()) return true
+        if (isInsideWebView(snap, all) && snap.viewId.isNullOrBlank() && !snap.isInteractiveClickable()) return true
+        return false
+    }
+
+    /**
+     * WebView barrier: segnala solo WebView grandi senza figli a11y e senza nodi accessibili sovrapposti.
+     */
+    fun shouldReportWebViewBarrier(snap: NodeSnapshot, all: List<NodeSnapshot>): Boolean {
+        if (!snap.isWebView()) return false
+        if (snap.bounds.width() <= 100 || snap.bounds.height() <= 100) return false
+        if (snap.childCount > 0) return false
+        val hasAccessibleOverlap = all.any { other ->
+            other != snap &&
+                other.hasAccessibleName() &&
+                android.graphics.Rect.intersects(snap.bounds, other.bounds) &&
+                snap.bounds.contains(other.bounds.centerX(), other.bounds.centerY())
+        }
+        return !hasAccessibleOverlap
     }
 }

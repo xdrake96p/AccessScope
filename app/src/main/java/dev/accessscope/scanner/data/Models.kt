@@ -470,6 +470,7 @@ data class InstalledAppInfo(
  * @property visitedScreenTitles Titoli delle schermate visitate, in ordine di scoperta.
  * @property checkSummaries Riepiloghi dei controlli superati per ambito.
  * @property lastPdfPath Percorso dell'ultimo report PDF generato, se presente.
+ * @property lastReliabilityMdPath Percorso dell'ultimo report Markdown di affidabilità (debug).
  * @property errorMessage Ultimo messaggio di errore della sessione, se presente.
  * @property liveSnapshot Istantanea dell'ultima analisi in tempo reale per il pannello debug.
  */
@@ -484,6 +485,7 @@ data class ScanSessionState(
     val visitedScreenTitles: List<String> = emptyList(),
     val checkSummaries: List<CheckAreaSummary> = emptyList(),
     val lastPdfPath: String? = null,
+    val lastReliabilityMdPath: String? = null,
     val errorMessage: String? = null,
     val liveSnapshot: LiveScanSnapshot? = null,
 ) {

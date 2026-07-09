@@ -9,6 +9,7 @@ package dev.accessscope.scanner
 import android.app.Application
 import dev.accessscope.scanner.data.ScanSessionRepository
 import dev.accessscope.scanner.export.PdfReportExporter
+import dev.accessscope.scanner.export.ScanReliabilityReportExporter
 import dev.accessscope.scanner.service.ScanOverlayService
 import dev.accessscope.scanner.util.DebugTrace
 import dev.accessscope.scanner.util.FavoriteAppsStore
@@ -16,6 +17,7 @@ import dev.accessscope.scanner.util.ScanHistoryStore
 import dev.accessscope.scanner.util.ScanSettingsStore
 import dev.accessscope.scanner.util.ThemePreferencesStore
 import dev.accessscope.scanner.report.ReportHelper
+import dev.accessscope.scanner.report.SessionComparisonHelper
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -47,6 +49,7 @@ class AccessScopeApp : Application() {
     val scanHistoryStore: ScanHistoryStore by lazy { ScanHistoryStore(this) }
 
     private val pdfExporter by lazy { PdfReportExporter(this) }
+    private val reliabilityExporter by lazy { ScanReliabilityReportExporter(this) }
     private var lastArchivedSessionId: String? = null
     private val applicationScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
 
@@ -120,7 +123,17 @@ class AccessScopeApp : Application() {
 
         applicationScope.launch {
             val current = scanRepository.state.value
-            val result = withContext(Dispatchers.IO) {
+            val comparison = current.selectedPackages.firstOrNull()?.let { pkg ->
+                SessionComparisonHelper.compareLatestWithPrevious(
+                    scanHistoryStore.getLatest(pkg),
+                    scanHistoryStore.getPrevious(pkg),
+                )
+            }
+            val appVersion = runCatching {
+                packageManager.getPackageInfo(packageName, 0).versionName
+            }.getOrNull().orEmpty()
+
+            val pdfResult = withContext(Dispatchers.IO) {
                 pdfExporter.export(
                     targetPackages = current.selectedPackages,
                     violations = current.violations,
@@ -132,7 +145,7 @@ class AccessScopeApp : Application() {
                     checkSummaries = current.checkSummaries,
                 )
             }
-            result.fold(
+            pdfResult.fold(
                 onSuccess = { path ->
                     scanRepository.setPdfPath(path)
                     lastArchivedSessionId?.let { scanHistoryStore.updateSessionPdfPath(it, path) }
@@ -145,6 +158,34 @@ class AccessScopeApp : Application() {
                     ))
                 },
             )
+
+            if (scanSettingsStore.reliabilityReportEnabled) {
+                val mdResult = withContext(Dispatchers.IO) {
+                    reliabilityExporter.export(
+                        targetPackages = current.selectedPackages,
+                        violations = current.violations,
+                        screenReaderFindings = current.screenReaderFindings,
+                        uniqueScreens = current.uniqueScreens,
+                        scanAnalyses = current.scanAnalyses,
+                        scanScopeLabel = current.scanScope.label(),
+                        scannedScreens = current.visitedScreenTitles,
+                        checkSummaries = current.checkSummaries,
+                        sessionComparison = comparison,
+                        appVersion = appVersion,
+                    )
+                }
+                mdResult.fold(
+                    onSuccess = { mdPath ->
+                        scanRepository.setReliabilityMdPath(mdPath)
+                        DebugTrace.log("H-STOP2", "stopScanSession", "reliability_md_ok", mapOf("path" to mdPath))
+                    },
+                    onFailure = { error ->
+                        DebugTrace.log("H-STOP2", "stopScanSession", "reliability_md_fail", mapOf(
+                            "error" to (error.message ?: "unknown"),
+                        ))
+                    },
+                )
+            }
         }
     }
 }

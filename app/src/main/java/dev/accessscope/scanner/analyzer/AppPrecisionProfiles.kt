@@ -105,7 +105,7 @@ object AppPrecisionProfiles {
     )
 
     private val NEXI_HOME_CHART_TEXT = setOf(
-        "last_30", "last_30_negative", "import_positive", "import_negative",
+        "import_positive", "import_negative",
         "currency_incom", "currency_outcom", "currency_symbol",
     )
 
@@ -163,4 +163,45 @@ object AppPrecisionProfiles {
      */
     fun mainContentScrollIds(packageName: String): Set<String> =
         setOf("scrollview_port", "scroll", "card_home") + if (isNexi(packageName)) emptySet() else setOf("content")
+
+    /**
+     * ID di testo decorativo in carousel/lista dove il contrasto screenshot è inaffidabile.
+     */
+    fun carouselDecorativeContrastIds(packageName: String): Set<String> =
+        if (isNexi(packageName)) NEXI_CAROUSEL_DECORATIVE_CONTRAST_IDS else GENERIC_CAROUSEL_DECORATIVE_CONTRAST_IDS
+
+    /**
+     * ID di testo che in layout Nexi usano sempre dimensione grande (≥18sp).
+     */
+    fun largeTextViewIds(packageName: String): Set<String> =
+        if (isNexi(packageName)) NEXI_LARGE_TEXT_VIEW_IDS else emptySet()
+
+    /**
+     * ID di nodi tab strip (TabLayout custom) da escludere dagli overlap touch.
+     */
+    fun tabStripViewIds(packageName: String): Set<String> =
+        if (isNexi(packageName)) NEXI_TAB_STRIP_IDS else GENERIC_TAB_STRIP_IDS
+
+    /**
+     * ID CTA primarie con testo brand su sfondo colorato (contrasto affidabile via risorse).
+     */
+    fun primaryCtaTextIds(packageName: String): Set<String> =
+        if (isNexi(packageName)) NEXI_PRIMARY_CTA_TEXT_IDS else emptySet()
+
+    private val GENERIC_CAROUSEL_DECORATIVE_CONTRAST_IDS = setOf("currency", "currency_paym", "currency_incom", "currency_symbol")
+
+    private val NEXI_CAROUSEL_DECORATIVE_CONTRAST_IDS = GENERIC_CAROUSEL_DECORATIVE_CONTRAST_IDS + setOf(
+        "currency_outcom",
+    )
+
+    private val NEXI_LARGE_TEXT_VIEW_IDS = setOf(
+        "import_positive", "import_negative", "amount_uscite_effects", "amount_effetti",
+        "currency_incom", "currency_outcom", "currency_paym", "new_payment",
+    )
+
+    private val GENERIC_TAB_STRIP_IDS = setOf("tv_tab")
+
+    private val NEXI_TAB_STRIP_IDS = GENERIC_TAB_STRIP_IDS + setOf("tab_home", "card_effetti")
+
+    private val NEXI_PRIMARY_CTA_TEXT_IDS = setOf("new_payment", "tv_custom")
 }

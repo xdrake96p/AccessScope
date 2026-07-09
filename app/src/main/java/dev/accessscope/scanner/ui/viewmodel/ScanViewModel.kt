@@ -55,6 +55,7 @@ import kotlinx.coroutines.withContext
  * @param statusMessage Messaggio temporaneo da mostrare all'utente (es. errori, conferme); null se assente.
  * @param themeMode Preferenza tema interfaccia (chiaro, scuro o sistema).
  * @param liveDebugPanelEnabled Se true, mostra il pannello debug live durante la scansione.
+ * @param reliabilityReportEnabled Se true, genera report Markdown di affidabilità a fine scansione.
  * @param latestArchivedSession Ultima sessione archiviata per l'app principale selezionata.
  * @param sessionComparison Confronto numerico ultima vs penultima sessione archiviata.
  * @param historyPackageName Package usato per cronologia e confronto.
@@ -74,6 +75,7 @@ data class HomeUiState(
     val statusMessage: String? = null,
     val themeMode: AppThemeMode = AppThemeMode.SYSTEM,
     val liveDebugPanelEnabled: Boolean = false,
+    val reliabilityReportEnabled: Boolean = false,
     val latestArchivedSession: ArchivedScanSession? = null,
     val sessionComparison: SessionComparison? = null,
     val historyPackageName: String? = null,
@@ -169,8 +171,12 @@ class ScanViewModel(application: Application) : AndroidViewModel(application) {
                 val wasScanning = _uiState.value.scanState.isScanning
                 _uiState.update { state ->
                     val status = when {
+                        scanState.lastPdfPath != null && scanState.lastReliabilityMdPath != null && !scanState.isScanning ->
+                            "Report PDF: ${scanState.lastPdfPath}\nAffidabilità MD: ${scanState.lastReliabilityMdPath}"
                         scanState.lastPdfPath != null && !scanState.isScanning ->
                             "Report salvato in: ${scanState.lastPdfPath}"
+                        scanState.lastReliabilityMdPath != null && !scanState.isScanning ->
+                            "Report affidabilità: ${scanState.lastReliabilityMdPath}"
                         scanState.errorMessage != null -> scanState.errorMessage
                         else -> state.statusMessage
                     }
@@ -189,9 +195,17 @@ class ScanViewModel(application: Application) : AndroidViewModel(application) {
                 scanScope = scanSettingsStore.getScanScope(),
                 themeMode = themePreferencesStore.getThemeMode(),
                 liveDebugPanelEnabled = scanSettingsStore.liveDebugPanelEnabled,
+                reliabilityReportEnabled = scanSettingsStore.reliabilityReportEnabled,
             )
         }
         loadApps()
+    }
+
+    /** Inverte l'export del report Markdown di affidabilità (debug interno). */
+    fun toggleReliabilityReport() {
+        val enabled = !_uiState.value.reliabilityReportEnabled
+        scanSettingsStore.reliabilityReportEnabled = enabled
+        _uiState.update { it.copy(reliabilityReportEnabled = enabled) }
     }
 
     /** Inverte lo stato dell'opzione "apri app automaticamente" e lo persiste nelle impostazioni. */

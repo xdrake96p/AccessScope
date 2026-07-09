@@ -49,6 +49,7 @@ import android.view.accessibility.AccessibilityNodeInfo
  * @property unlabeledActionCount Numero di azioni personalizzate senza etichetta.
  * @property minTextHeightPx Soglia minima altezza testo in pixel (12sp convertito).
  * @property minTouchTargetPx Soglia minima target di tocco in pixel (48dp convertito).
+ * @property textSizeSp Dimensione testo stimata in sp (da altezza bounds), se applicabile.
  * @property sectionTitle Titolo della sezione heading corrente durante l'attraversamento.
  */
 data class NodeSnapshot(
@@ -87,6 +88,7 @@ data class NodeSnapshot(
     val unlabeledActionCount: Int,
     val minTextHeightPx: Int,
     val minTouchTargetPx: Int,
+    val textSizeSp: Float? = null,
     val sectionTitle: String? = null,
 ) {
     /**
@@ -290,6 +292,15 @@ fun AccessibilityNodeInfo.toSnapshot(
     val smallThreshold = minTouchTargetPx / 2
     val classStr = className?.toString().orEmpty()
     val isImage = classStr.contains("Image", true) || classStr.contains("Icon", true)
+    val density = minTouchTargetPx / 48f
+    val textSizeSp = if (classStr.contains("TextView", true) && bounds.height() > 0) {
+        // Approssimazione: l'altezza bounds è più vicina alla line-height (~1.2× textSize).
+        // Usiamo density come proxy di scaledDensity (fontScale=1) per evitare falsi "large text"
+        // su testi normali (es. 14sp che spesso misura ~18dp di altezza).
+        bounds.height() / (density * 1.2f)
+    } else {
+        null
+    }
 
     return NodeSnapshot(
         className = className?.toString() ?: "unknown",
@@ -337,6 +348,7 @@ fun AccessibilityNodeInfo.toSnapshot(
         unlabeledActionCount = unlabeledActions,
         minTextHeightPx = minTextHeightPx,
         minTouchTargetPx = minTouchTargetPx,
+        textSizeSp = textSizeSp,
         sectionTitle = sectionTitle,
     )
 }

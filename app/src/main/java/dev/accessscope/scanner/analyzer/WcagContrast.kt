@@ -83,12 +83,37 @@ object WcagContrast {
         val bgSamples = sampleBackgroundRing(bitmap, bounds)
         if (bgSamples.isEmpty()) return null
 
-        val fg = percentileColorByLuminance(fgSamples, percentile = 0.25)
-        val bg = percentileColorByLuminance(bgSamples, percentile = 0.75)
+        val fg = resolveEffectiveForeground(percentileColorByLuminance(fgSamples, percentile = 0.25))
+        val bg = resolveEffectiveBackground(percentileColorByLuminance(bgSamples, percentile = 0.75))
         val ratio = contrastRatio(fg, bg)
 
         val separation = abs(relativeLuminance(fg) - relativeLuminance(bg))
         val confidence = (0.55f + separation.coerceIn(0.0, 0.45).toFloat() +
+            (fgSamples.size / 16f).coerceAtMost(0.2f)).coerceAtMost(0.98f)
+
+        return ContrastResult(ratio, fg, bg, confidence, fgSamples.size + bgSamples.size)
+    }
+
+    /**
+     * Variante per testo su superfici "button-like": campiona lo sfondo dentro i bounds.
+     *
+     * Serve a evitare falsi positivi quando l'anello esterno cade su card/parent con colore diverso
+     * rispetto al background reale del bottone/CTA.
+     */
+    fun measureTextContrastWithInnerBackground(bitmap: Bitmap, bounds: Rect, isLargeText: Boolean): ContrastResult? {
+        val fgSamples = sampleGrid(bitmap, bounds, grid = 4, insetPercent = 0.18f)
+        if (fgSamples.isEmpty()) return null
+
+        // Per lo sfondo del bottone campioniamo internamente ai bordi (ma dentro la shape).
+        val bgSamples = sampleGrid(bitmap, bounds, grid = 4, insetPercent = 0.28f)
+        if (bgSamples.isEmpty()) return null
+
+        val fg = resolveEffectiveForeground(percentileColorByLuminance(fgSamples, percentile = 0.25))
+        val bg = resolveEffectiveBackground(percentileColorByLuminance(bgSamples, percentile = 0.75))
+        val ratio = contrastRatio(fg, bg)
+
+        val separation = abs(relativeLuminance(fg) - relativeLuminance(bg))
+        val confidence = (0.60f + separation.coerceIn(0.0, 0.35).toFloat() +
             (fgSamples.size / 16f).coerceAtMost(0.2f)).coerceAtMost(0.98f)
 
         return ContrastResult(ratio, fg, bg, confidence, fgSamples.size + bgSamples.size)
@@ -105,8 +130,8 @@ object WcagContrast {
         val fgSamples = sampleGrid(bitmap, bounds, grid = 3, insetPercent = 0.2f)
         val bgSamples = sampleBackgroundRing(bitmap, bounds)
         if (fgSamples.isEmpty() || bgSamples.isEmpty()) return null
-        val fg = percentileColorByLuminance(fgSamples, percentile = 0.25)
-        val bg = percentileColorByLuminance(bgSamples, percentile = 0.75)
+        val fg = resolveEffectiveForeground(percentileColorByLuminance(fgSamples, percentile = 0.25))
+        val bg = resolveEffectiveBackground(percentileColorByLuminance(bgSamples, percentile = 0.75))
         val separation = abs(relativeLuminance(fg) - relativeLuminance(bg))
         val confidence = (0.60f + separation.coerceIn(0.0, 0.35).toFloat()).coerceAtMost(0.90f)
         return ContrastResult(
@@ -243,5 +268,76 @@ object WcagContrast {
      */
     fun isLargeText(boundsHeightPx: Int, density: Float): Boolean {
         return boundsHeightPx >= (18 * density).toInt()
+    }
+
+    /**
+     * Classifica testo grande usando dimensione stimata, bounds e ID noti (es. importi 35sp).
+     *
+     * @param snap Snapshot del nodo testuale.
+     * @param density Densità dello schermo.
+     * @param largeTextViewIds ID view che in Nexi/banking usano sempre testo grande.
+     */
+    fun isLargeText(
+        snap: NodeSnapshot,
+        density: Float,
+        largeTextViewIds: Set<String> = emptySet(),
+    ): Boolean {
+        val id = snap.viewId?.substringAfterLast('/')?.lowercase().orEmpty()
+        if (id in largeTextViewIds) return true
+        // Se abbiamo una stima in sp, preferiscila ai bounds: i bounds includono spesso line-height/padding
+        // e promuovono testo normale (es. 14sp) a "large" generando falsi negativi/positivi sulle soglie.
+        snap.textSizeSp?.let { return it >= 18f }
+        return isLargeText(snap.bounds.height(), density)
+    }
+
+    /**
+     * Composita un colore semi-trasparente su sfondo bianco (tipico card banking).
+     */
+    fun compositeOverWhite(color: Int, base: Int = Color.WHITE): Int {
+        val alpha = Color.alpha(color) / 255.0
+        if (alpha >= 0.99) return color
+        val r = (Color.red(color) * alpha + Color.red(base) * (1 - alpha)).toInt().coerceIn(0, 255)
+        val g = (Color.green(color) * alpha + Color.green(base) * (1 - alpha)).toInt().coerceIn(0, 255)
+        val b = (Color.blue(color) * alpha + Color.blue(base) * (1 - alpha)).toInt().coerceIn(0, 255)
+        return Color.rgb(r, g, b)
+    }
+
+    /** Converte un colore ARGB in esadecimale #RRGGBB per report debug. */
+    fun colorToHex(color: Int): String =
+        String.format("#%02X%02X%02X", Color.red(color), Color.green(color), Color.blue(color))
+
+    /**
+     * Soglia di confidenza minima dinamica in base a affidabilità della misura.
+     */
+    fun minConfidenceForMeasurement(
+        result: ContrastResult,
+        boundsWidthPx: Int,
+        boundsHeightPx: Int,
+        density: Float,
+        isSmallIcon: Boolean,
+        baseMin: Float,
+    ): Float {
+        var min = baseMin
+        if (result.ratio < 2.5) {
+            val separation = abs(relativeLuminance(result.foreground) - relativeLuminance(result.background))
+            if (separation < 0.12) min = maxOf(min, 0.82f)
+        }
+        val minDimPx = (24 * density).toInt()
+        if (isSmallIcon && boundsWidthPx < minDimPx && boundsHeightPx < minDimPx) {
+            min = maxOf(min, 0.78f)
+        }
+        return min
+    }
+
+    private fun resolveEffectiveBackground(sampled: Int): Int {
+        if (Color.alpha(sampled) >= 250) return sampled
+        return compositeOverWhite(sampled)
+    }
+
+    private fun resolveEffectiveForeground(sampled: Int): Int {
+        if (Color.alpha(sampled) >= 250) return sampled
+        // Per il foreground (testo) semi-trasparente, compositiamo su bianco: è il caso più comune
+        // nelle UI; questa scelta riduce FP su testi disabilitati (alpha) su superfici chiare.
+        return compositeOverWhite(sampled, base = Color.WHITE)
     }
 }
