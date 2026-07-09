@@ -27,6 +27,8 @@ import dev.accessscope.scanner.data.ScanSessionRepository
 import dev.accessscope.scanner.util.AppFileLogger
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Executors
+import java.util.concurrent.ScheduledExecutorService
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 
 /**
@@ -52,7 +54,9 @@ class AccessScopeAccessibilityService : AccessibilityService() {
 
     private val dynamicTracker = DynamicContentTracker()
     private var executor = Executors.newSingleThreadExecutor()
+    private val retryExecutor: ScheduledExecutorService = Executors.newSingleThreadScheduledExecutor()
     private val lastScanByWindow = ConcurrentHashMap<String, Long>()
+    private val retryScheduledKeys = ConcurrentHashMap.newKeySet<String>()
     private val screenshotInFlight = AtomicBoolean(false)
     private val debounceMs = 800L
     private val windowStateDebounceMs = 300L
@@ -144,44 +148,103 @@ class AccessScopeAccessibilityService : AccessibilityService() {
 
         executor.execute {
             try {
-                val roots = obtainRootsForScan(packageName, eventSourceSnapshot)
-                if (roots.isEmpty()) {
-                    // #region agent log
-                    AppFileLogger.log("H4", "scheduleScan", "no_root", mapOf(
-                        "targetPkg" to packageName,
-                        "activePkg" to rootInActiveWindow?.packageName?.toString(),
-                    ))
-                    // #endregion
-                    return@execute
-                }
-                // #region agent log
-                AppFileLogger.log("H2", "scheduleScan", "roots_obtained", mapOf(
-                    "targetPkg" to packageName,
-                    "rootCount" to roots.size,
-                ))
-                // #endregion
-                if (needsScreenshot) {
-                    captureScreenshot { bitmap ->
-                        try {
-                            roots.forEach { root ->
-                                scanRoot(root, packageName, event, bitmap, analyzer)
-                            }
-                        } finally {
-                            bitmap?.recycle()
-                            roots.forEach { it.recycle() }
-                        }
-                    }
-                } else {
-                    try {
-                        roots.forEach { root ->
-                            scanRoot(root, packageName, event, null, analyzer)
-                        }
-                    } finally {
-                        roots.forEach { it.recycle() }
-                    }
-                }
+                runScanAttempt(
+                    packageName = packageName,
+                    event = event,
+                    eventSourceSnapshot = eventSourceSnapshot,
+                    silentDynamic = silentDynamic,
+                    scanScope = scanScope,
+                    analyzer = analyzer,
+                    needsScreenshot = needsScreenshot,
+                    isRetry = false,
+                )
             } finally {
                 eventSourceSnapshot?.recycle()
+            }
+        }
+    }
+
+    private fun runScanAttempt(
+        packageName: String,
+        event: AccessibilityEvent,
+        eventSourceSnapshot: AccessibilityNodeInfo?,
+        silentDynamic: Boolean,
+        scanScope: dev.accessscope.scanner.data.ScanScope,
+        analyzer: NodeAccessibilityAnalyzer,
+        needsScreenshot: Boolean,
+        isRetry: Boolean,
+    ) {
+        val windowKey = "${packageName}_${event.windowId}_${event.className}"
+        val activeRoot = rootInActiveWindow
+        val (roots, diagnostics) = obtainRootsForScan(
+            targetPackage = packageName,
+            eventSource = eventSourceSnapshot,
+            activeRoot = activeRoot,
+        )
+        if (roots.isEmpty()) {
+            AppFileLogger.log(
+                "H4",
+                "scheduleScan",
+                if (isRetry) "no_root_retry" else "no_root",
+                mapOf(
+                    "targetPkg" to packageName,
+                    "activePkg" to diagnostics.activePackage,
+                    "focusedPkg" to diagnostics.focusedPackage,
+                    "windowCount" to diagnostics.windowCount,
+                    "candidates" to diagnostics.candidateCount,
+                    "isRetry" to isRetry,
+                ),
+            )
+            if (!isRetry &&
+                event.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED &&
+                retryScheduledKeys.add(windowKey)
+            ) {
+                retryExecutor.schedule({
+                    retryScheduledKeys.remove(windowKey)
+                    runScanAttempt(
+                        packageName = packageName,
+                        event = event,
+                        eventSourceSnapshot = null,
+                        silentDynamic = silentDynamic,
+                        scanScope = scanScope,
+                        analyzer = analyzer,
+                        needsScreenshot = needsScreenshot,
+                        isRetry = true,
+                    )
+                }, 120, TimeUnit.MILLISECONDS)
+            }
+            return
+        }
+        AppFileLogger.log(
+            "H2",
+            "scheduleScan",
+            if (isRetry) "roots_obtained_retry" else "roots_obtained",
+            mapOf(
+                "targetPkg" to packageName,
+                "rootCount" to roots.size,
+                "sources" to diagnostics.selectedSources.joinToString(),
+                "activePkg" to diagnostics.activePackage,
+                "isRetry" to isRetry,
+            ),
+        )
+        if (needsScreenshot) {
+            captureScreenshot { bitmap ->
+                try {
+                    roots.forEach { root ->
+                        scanRoot(root, packageName, event, bitmap, analyzer)
+                    }
+                } finally {
+                    bitmap?.recycle()
+                    roots.forEach { it.recycle() }
+                }
+            }
+        } else {
+            try {
+                roots.forEach { root ->
+                    scanRoot(root, packageName, event, null, analyzer)
+                }
+            } finally {
+                roots.forEach { it.recycle() }
             }
         }
     }
@@ -211,39 +274,18 @@ class AccessScopeAccessibilityService : AccessibilityService() {
     private fun obtainRootsForScan(
         targetPackage: String,
         eventSource: AccessibilityNodeInfo?,
-    ): List<AccessibilityNodeInfo> {
-        val roots = mutableListOf<AccessibilityNodeInfo>()
-
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-            windows?.forEach { window ->
-                if (window.type == AccessibilityWindowInfo.TYPE_ACCESSIBILITY_OVERLAY) return@forEach
-                val windowRoot = window.root ?: return@forEach
-                try {
-                    if (windowRoot.packageName?.toString() == targetPackage) {
-                        roots.add(AccessibilityNodeInfo.obtain(windowRoot))
-                    }
-                } finally {
-                    windowRoot.recycle()
-                }
-            }
-        }
-
-        if (roots.isEmpty()) {
-            eventSource?.let { source ->
-                roots.add(AccessibilityNodeInfo.obtain(source))
-            }
-            rootInActiveWindow?.let { active ->
-                try {
-                    if (active.packageName?.toString() == targetPackage) {
-                        roots.add(AccessibilityNodeInfo.obtain(active))
-                    }
-                } finally {
-                    active.recycle()
-                }
-            }
-        }
-
-        return prioritizeRoots(selectRootsToScan(roots))
+        activeRoot: AccessibilityNodeInfo?,
+    ): Pair<List<AccessibilityNodeInfo>, RootAcquisitionDiagnostics> {
+        val windows = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) windows else null
+        val (acquired, diagnostics) = RootAcquisitionHelper.acquireRoots(
+            targetPackage = targetPackage,
+            windows = windows,
+            eventSource = eventSource,
+            activeRoot = activeRoot,
+        )
+        val filtered = prioritizeRoots(selectRootsToScan(acquired))
+        acquired.filter { root -> filtered.none { it === root } }.forEach { it.recycle() }
+        return filtered to diagnostics
     }
 
     /**
@@ -429,6 +471,8 @@ class AccessScopeAccessibilityService : AccessibilityService() {
     override fun onDestroy() {
         dynamicTracker.reset()
         lastScanByWindow.clear()
+        retryScheduledKeys.clear()
+        retryExecutor.shutdownNow()
         instance = null
         super.onDestroy()
     }

@@ -53,6 +53,7 @@ fun AppListRow(
     onToggleFavoritePackage: (String) -> Unit,
     modifier: Modifier = Modifier,
     secondaryTextColor: Color = MaterialTheme.colorScheme.onSurfaceVariant,
+    interactionEnabled: Boolean = true,
 ) {
     val context = LocalContext.current
     val packageManager = remember(context) { context.packageManager }
@@ -69,14 +70,16 @@ fun AppListRow(
             .clickable(
                 interactionSource = interactionSource,
                 indication = null,
-                onClick = { onTogglePackage(app.packageName) },
+                enabled = interactionEnabled,
+                onClick = { if (interactionEnabled) onTogglePackage(app.packageName) },
             )
             .padding(horizontal = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         IconButton(
-            onClick = { onToggleFavoritePackage(app.packageName) },
+            onClick = { if (interactionEnabled) onToggleFavoritePackage(app.packageName) },
             modifier = Modifier.size(40.dp),
+            enabled = interactionEnabled,
         ) {
             Icon(
                 imageVector = if (app.isFavorite) Icons.Filled.Star else Icons.Outlined.StarOutline,
@@ -102,7 +105,8 @@ fun AppListRow(
         }
         Switch(
             checked = selected,
-            onCheckedChange = { onTogglePackage(app.packageName) },
+            onCheckedChange = { if (interactionEnabled) onTogglePackage(app.packageName) },
+            enabled = interactionEnabled,
         )
     }
 }

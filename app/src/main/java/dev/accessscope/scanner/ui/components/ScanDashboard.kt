@@ -172,7 +172,7 @@ fun ScanDashboard(
 
         if (isScanning && !hasLiveData) {
             Text(
-                "In attesa dell'app selezionata. Apri l'app e naviga tra le schermate.",
+                "AccessScope è in ascolto. Apri l'app selezionata e naviga tra le schermate.",
                 style = MaterialTheme.typography.bodyMedium,
                 color = contentSecondary(),
             )

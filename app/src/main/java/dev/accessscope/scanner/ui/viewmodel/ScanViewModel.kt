@@ -7,6 +7,7 @@
 package dev.accessscope.scanner.ui.viewmodel
 
 import android.app.Application
+import android.app.Activity
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import dev.accessscope.scanner.AccessScopeApp
@@ -381,6 +382,7 @@ class ScanViewModel(application: Application) : AndroidViewModel(application) {
      * @param packageName Identificativo del pacchetto Android dell'app.
      */
     fun toggleFavorite(packageName: String) {
+        if (_uiState.value.scanState.isScanning) return
         val stateBefore = _uiState.value
         val wasFavorite = packageName in stateBefore.favoritePackages
         val favorites = favoriteAppsStore.toggle(packageName)
@@ -427,6 +429,7 @@ class ScanViewModel(application: Application) : AndroidViewModel(application) {
      * @param packageName Identificativo del pacchetto Android dell'app.
      */
     fun toggleApp(packageName: String) {
+        if (_uiState.value.scanState.isScanning) return
         val stateBefore = _uiState.value
         if (packageName in stateBefore.selectedPackages &&
             AppSelectionPolicy.isFavoriteProtectedFromDeselect(packageName, stateBefore.favoritePackages)
@@ -559,15 +562,17 @@ class ScanViewModel(application: Application) : AndroidViewModel(application) {
         // #endregion
         ScanOverlayService.start(context)
 
-        var message = "Scansione avviata. Apri le app selezionate e interagisci."
+        var message = "Scansione attiva. AccessScope è in ascolto — apri l'app selezionata."
         if (state.autoLaunchEnabled) {
             val launched = AppLaunchHelper.launchFirstAvailable(context, monitored)
             message = if (launched != null) {
                 val label = state.apps.find { it.packageName == launched }?.label ?: launched
                 "Scansione avviata. Aperta: $label"
             } else {
-                "Scansione avviata. Nessuna app apribile automaticamente — aprila manualmente."
+                "Scansione attiva. Nessuna app apribile automaticamente — aprila manualmente."
             }
+        } else {
+            (context as? Activity)?.moveTaskToBack(true)
         }
         _uiState.update { it.copy(statusMessage = message) }
     }

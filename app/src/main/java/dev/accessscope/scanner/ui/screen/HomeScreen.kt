@@ -226,6 +226,7 @@ fun HomeScreen(
                                     onQueryChange = { query = it },
                                     appListState = appListState,
                                     viewModel = viewModel,
+                                    isScanning = scanUi.scanState.isScanning,
                                 )
                             }
                         }
@@ -307,6 +308,7 @@ fun HomeScreen(
                             onQueryChange = { query = it },
                             appListState = appListState,
                             viewModel = viewModel,
+                            isScanning = scanUi.scanState.isScanning,
                             modifier = Modifier.padding(horizontal = 16.dp),
                         )
                     }
@@ -355,6 +357,7 @@ fun HomeScreen(
                         onTogglePackage = toggleApp,
                         onToggleFavoritePackage = toggleFavorite,
                         secondaryTextColor = secondaryTextColor,
+                        interactionEnabled = !scanUi.scanState.isScanning,
                         modifier = Modifier
                             .padding(horizontal = if (isWide) horizontalPad else 16.dp),
                     )
@@ -370,6 +373,7 @@ private fun AppSelectionPanel(
     onQueryChange: (String) -> Unit,
     appListState: AppListUiState,
     viewModel: ScanViewModel,
+    isScanning: Boolean,
     modifier: Modifier = Modifier,
 ) {
     AccessScopeCard(modifier = modifier.fillMaxWidth()) {
@@ -397,15 +401,16 @@ private fun AppSelectionPanel(
             Switch(
                 checked = appListState.includeSystemApps,
                 onCheckedChange = { viewModel.toggleIncludeSystemApps() },
+                enabled = !isScanning,
             )
         }
         Row {
-            TextButton(onClick = viewModel::selectAllVisible) {
+            TextButton(onClick = viewModel::selectAllVisible, enabled = !isScanning) {
                 Icon(Icons.Outlined.SelectAll, contentDescription = null, modifier = Modifier.size(18.dp))
                 Spacer(Modifier.width(4.dp))
                 Text("Prima visibile")
             }
-            TextButton(onClick = viewModel::clearSelection) {
+            TextButton(onClick = viewModel::clearSelection, enabled = !isScanning) {
                 Text("Nessuna")
             }
         }
