@@ -110,9 +110,22 @@ Broadcast locale a fine scansione: `dev.accessscope.scanner.SCAN_COMPLETE`
 
 ## Release GitHub (maintainer)
 
-Tag `v*` attiva `.github/workflows/release.yml` che pubblica:
+Flusso Git (vedi `.cursor/rules/git-release-workflow.mdc`):
+
+1. Completare sviluppo su `develop`
+2. `git checkout main && git merge develop && git push origin main`
+3. Tag su **main**: `git tag -a v1.3.0 -m "..." && git push origin v1.3.0`
+4. Tornare su `develop` per il ciclo successivo
+
+Il tag `v*` su `main` attiva `.github/workflows/release.yml` che pubblica:
+
 - `access-scope-{version}.apk`
-- `release-manifest.json` con SHA256
+- `release-manifest.json` (versionCode, sha256)
+- `access-scope-cli.jar`
+- `android-studio-plugin-1.0.0.zip`
+- `access-scope-1.0.0.vsix`
+
+Artefatti plugin sono anche in `access-scope-plugin/releases/1.0.0/` nel repo.
 
 ## Troubleshooting
 

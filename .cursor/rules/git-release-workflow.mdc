@@ -1,0 +1,64 @@
+---
+description: Flusso Git develop → main → tag per release AccessScope
+alwaysApply: true
+---
+
+# Git workflow e release
+
+## Branch
+
+| Branch | Ruolo |
+|--------|--------|
+| `develop` | Sviluppo quotidiano — **tutti i nuovi lavori partono da qui** |
+| `main` | Stabile, allineata alle release pubblicate |
+
+## Regola fondamentale
+
+**Non taggare mai direttamente su `develop`.**
+
+Ogni release segue sempre questa sequenza:
+
+1. Completare e testare il lavoro su `develop`
+2. **Merge `develop` → `main`**
+3. **Taggare la versione su `main`** (es. `v1.3.0`)
+4. Push di `main` e del tag — la GitHub Release parte dal tag su `main`
+5. **Ripartire da `develop`** per il ciclo successivo
+
+## Comandi tipici
+
+```bash
+# 1. Assicurarsi che develop sia pronta
+git checkout develop
+git pull origin develop
+
+# 2. Merge in main
+git checkout main
+git pull origin main
+git merge develop
+git push origin main
+
+# 3. Tag su main
+git tag -a v1.3.0 -m "AccessScope 1.3.0"
+git push origin v1.3.0
+
+# 4. Tornare a develop per il prossimo sviluppo
+git checkout develop
+```
+
+## Versioning
+
+- Aggiornare `versionCode` e `versionName` in `app/build.gradle.kts` **su `develop`** prima del merge
+- Il tag deve corrispondere a `versionName` con prefisso `v` (es. versione `1.3.0` → tag `v1.3.0`)
+
+## Cosa non fare
+
+- Non pushare tag su `develop`
+- Non fare release da branch feature
+- Non sviluppare direttamente su `main` (salvo hotfix urgenti concordati)
+
+## Hotfix su main (eccezione)
+
+Se serve un fix urgente in produzione:
+
+1. Branch da `main` → fix → merge in `main` → tag patch (es. `v1.3.1`)
+2. **Re-merge o cherry-pick su `develop`** per non perdere il fix nel flusso di sviluppo

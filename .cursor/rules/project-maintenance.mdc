@@ -1,0 +1,48 @@
+---
+description: A fine task aggiornare PROJECT.md e KDoc dei file toccati
+alwaysApply: true
+---
+
+# Manutenzione documentazione AccessScope
+
+A **fine di ogni task** (feature, fix, refactor, benchmark), prima di considerare il lavoro concluso:
+
+## 1. Aggiornare `docs/PROJECT.md`
+
+- Aggiungere o aggiornare la sezione pertinente (cronologia, architettura, benchmark, changelog commit).
+- Includere: cosa è cambiato, perché, metriche rilevanti (es. precisione Nexi), versione se applicabile.
+- Aggiornare la data in «Ultimo aggiornamento» in cima al file.
+- Non creare altri file `.md` se non richiesti esplicitamente: `docs/PROJECT.md` è il living doc unico.
+
+## 2. Aggiornare KDoc (JavaDoc Kotlin) su file modificati o creati
+
+Per **ogni** file `.kt` toccato nel task:
+
+- Blocco KDoc a livello **file** (scopo del modulo).
+- KDoc su **classi**, **enum**, **object**, **data class** pubbliche.
+- KDoc su **funzioni** e **composable** con `@param` e `@return` dove applicabile.
+- Descrizioni in **italiano**, precise e tecniche (riferimenti WCAG, flussi, side effect).
+- Non modificare la logica solo per documentare; documentare il comportamento reale.
+
+### Esempio minimo
+
+```kotlin
+/**
+ * Cache LRU per icone app — evita decode bitmap ripetuti durante lo scroll.
+ */
+object AppIconCache {
+    /**
+     * Restituisce l'icona in cache o la carica dal [PackageManager].
+     * @param packageManager Gestore package Android.
+     * @param packageName Package dell'app.
+     * @return [ImageBitmap] o `null` se il package non esiste.
+     */
+    fun getOrLoad(packageManager: PackageManager, packageName: String): ImageBitmap?
+}
+```
+
+## Checklist fine task
+
+- [ ] `docs/PROJECT.md` riflette le modifiche del task
+- [ ] Tutti i file `.kt` nuovi o modificati hanno KDoc aggiornata
+- [ ] Build `./gradlew assembleDebug` OK se sono stati toccati sorgenti

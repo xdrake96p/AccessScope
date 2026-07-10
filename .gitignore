@@ -14,5 +14,7 @@ build/
 *.aab
 output/
 *.hprof
-.cursor/
+.cursor/*
+!.cursor/rules/
+!.cursor/rules/**
 reports/

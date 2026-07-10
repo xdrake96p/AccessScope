@@ -5,7 +5,8 @@
 **Repository:** [github.com/xdrake96p/AccessScope](https://github.com/xdrake96p/AccessScope)  
 **Package:** `dev.accessscope.scanner`  
 **Branch principale sviluppo:** `develop`  
-**Ultimo aggiornamento:** 6 luglio 2026 (v1.3.0 dedupe + cronologia)
+**Branch release stabile:** `main`  
+**Ultimo aggiornamento:** 10 luglio 2026 (v1.3.0 plugin IDE + bridge API)
 
 ---
 
@@ -15,6 +16,16 @@ A **fine di ogni task**, obbligatorio (regola Cursor: `.cursor/rules/project-mai
 
 1. **Aggiornare questo file** (`docs/PROJECT.md`) — cronologia, architettura, benchmark, changelog.
 2. **Aggiornare la KDoc** (JavaDoc Kotlin) su tutti i file `.kt` modificati o creati: blocco file, tipi pubblici, funzioni con `@param` / `@return`, descrizioni in italiano.
+
+### Git e release
+
+Flusso obbligatorio (regola Cursor: `.cursor/rules/git-release-workflow.mdc`):
+
+1. Sviluppo su `develop`
+2. Merge `develop` → `main`
+3. Tag `v*` su `main` (es. `v1.3.0` per `versionName` 1.3.0)
+4. Push `main` + tag → GitHub Release
+5. Nuovo sviluppo sempre da `develop`
 
 ---
 
@@ -79,6 +90,14 @@ Utente → HomeScreen (selezione app) → Avvia scan
 ---
 
 ## Cronologia sviluppo
+
+### v1.3.0 — Plugin IDE + bridge API (10 luglio 2026)
+
+- `ScanResultProvider`: ContentProvider `dev.accessscope.scanner.results` per integrazione plugin
+- Broadcast `SCAN_COMPLETE` + logcat `AccessScopeBridge`
+- `access-scope-plugin`: CLI condiviso, estensione VS Code, plugin Android Studio
+- GitHub Release workflow: APK + `release-manifest.json` + artefatti plugin
+- Regola Git: `develop` → merge in `main` → tag su `main`
 
 ### v1.3.0 — Dedupe rigorosa + cronologia sessioni (6 luglio 2026)
 
