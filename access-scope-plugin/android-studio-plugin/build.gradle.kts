@@ -4,7 +4,7 @@ plugins {
 }
 
 group = "dev.accessscope"
-version = "1.0.0"
+version = "1.0.1"
 
 repositories {
     mavenCentral()
@@ -19,7 +19,7 @@ kotlin {
 }
 
 intellij {
-    version.set("2023.3.8")
+    version.set("2024.2.3")
     type.set("IC")
     pluginName.set("AccessScope")
 }
@@ -33,7 +33,7 @@ tasks {
     }
     patchPluginXml {
         sinceBuild.set("233")
-        untilBuild.set("243.*")
+        untilBuild.set("999.*")
     }
     buildPlugin {
         archiveFileName.set("AccessScope-${project.version}.zip")
