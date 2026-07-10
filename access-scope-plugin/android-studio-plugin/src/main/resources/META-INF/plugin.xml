@@ -7,7 +7,8 @@
 
       <b>Come usare</b>
       <ul>
-        <li><b>View → Tool Windows → AccessScope</b> per il pannello principale</li>
+        <li><b>Toolbar</b> — icona AccessScope in alto a destra</li>
+        <li><b>Tools → AccessScope</b> per il pannello principale</li>
         <li><b>Run → Open AccessScope on Device</b> per installare e aprire l'app sul device</li>
       </ul>
     ]]></description>
@@ -28,6 +29,7 @@
             text="AccessScope"
             description="Open AccessScope tool window"
             icon="/icons/access_scope.svg">
+            <add-to-group group-id="MainToolBar" anchor="last"/>
             <add-to-group group-id="ToolsMenu" anchor="last"/>
         </action>
         <action
