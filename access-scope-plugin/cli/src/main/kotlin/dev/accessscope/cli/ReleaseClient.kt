@@ -98,7 +98,13 @@ class ReleaseClient(
         }
         connection.connect()
         if (connection.responseCode !in 200..299) {
-            error("HTTP ${connection.responseCode} for $url")
+            error(
+                when (connection.responseCode) {
+                    404 -> "GitHub release not found. Check network or set GITHUB_TOKEN for private repo access."
+                    403 -> "GitHub API rate limit or access denied. Retry later or set GITHUB_TOKEN."
+                    else -> "HTTP ${connection.responseCode} downloading $url"
+                },
+            )
         }
         return connection
     }

@@ -148,9 +148,29 @@ class ResultFetcher(private val deviceSerial: String) {
 
 object SetupCheck {
     fun run(deviceSerial: String): String {
-        val fetcher = ResultFetcher(deviceSerial)
-        val status = fetcher.fetchStatus()
         val gson = Gson()
+        DeviceGuard.requireReadyDevice(deviceSerial)
+        val status = runCatching { ResultFetcher(deviceSerial).fetchStatus() }
+            .getOrElse { failure ->
+                val installed = ApkInstaller(deviceSerial).isInstalled()
+                val checks = JsonObject().apply {
+                    addProperty("accessibilityEnabled", false)
+                    addProperty("overlayEnabled", false)
+                    addProperty("appInstalled", installed)
+                    addProperty("ready", false)
+                    addProperty(
+                        "hint",
+                        if (!installed) {
+                            "Run Install / Update to install AccessScope on the device."
+                        } else {
+                            "AccessScope is installed but not responding. Reinstall or open the app once on the device."
+                        },
+                    )
+                    addProperty("error", failure.message ?: "Unable to read AccessScope status")
+                }
+                return gson.toJson(checks)
+            }
+
         val checks = JsonObject().apply {
             addProperty("accessibilityEnabled", status.get("accessibilityEnabled")?.asBoolean == true)
             addProperty("overlayEnabled", status.get("overlayEnabled")?.asBoolean == true)
@@ -162,7 +182,7 @@ object SetupCheck {
             checks.get("appInstalled").asBoolean
         checks.addProperty("ready", ready)
         if (!checks.get("appInstalled").asBoolean) {
-            checks.addProperty("hint", "Run 'install' to install AccessScope on the device.")
+            checks.addProperty("hint", "Run Install / Update to install AccessScope on the device.")
         } else if (!checks.get("accessibilityEnabled").asBoolean) {
             checks.addProperty("hint", "Enable AccessScope in Settings > Accessibility.")
         } else if (!checks.get("overlayEnabled").asBoolean) {

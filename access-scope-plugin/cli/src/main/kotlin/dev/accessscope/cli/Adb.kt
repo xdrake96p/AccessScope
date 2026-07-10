@@ -8,14 +8,15 @@ class Adb(private val deviceSerial: String? = null) {
     private val adbExecutable = resolveAdbPath()
 
     fun run(vararg args: String, timeoutSeconds: Long = 120): AdbResult {
-        val command = buildList {
-            add(adbExecutable)
-            if (!deviceSerial.isNullOrBlank()) {
-                add("-s")
-                add(deviceSerial)
-            }
-            addAll(args)
+        val result = runResult(*args, timeoutSeconds = timeoutSeconds)
+        if (result.exitCode != 0) {
+            error("adb failed (${result.exitCode}): ${formatAdbCommand(args)}\n${result.output}")
         }
+        return result
+    }
+
+    fun runResult(vararg args: String, timeoutSeconds: Long = 120): AdbResult {
+        val command = buildCommand(args)
         val process = ProcessBuilder(command)
             .redirectErrorStream(true)
             .start()
@@ -25,14 +26,23 @@ class Adb(private val deviceSerial: String? = null) {
             error("adb command timed out: ${command.joinToString(" ")}")
         }
         val output = process.inputStream.bufferedReader().readText()
-        if (process.exitValue() != 0) {
-            error("adb failed (${process.exitValue()}): ${command.joinToString(" ")}\n$output")
-        }
         return AdbResult(output.trim(), process.exitValue())
     }
 
     fun runOrNull(vararg args: String): String? =
         runCatching { run(*args).output }.getOrNull()
+
+    private fun buildCommand(args: Array<out String>): List<String> = buildList {
+        add(adbExecutable)
+        if (!deviceSerial.isNullOrBlank()) {
+            add("-s")
+            add(deviceSerial)
+        }
+        addAll(args)
+    }
+
+    private fun formatAdbCommand(args: Array<out String>): String =
+        buildCommand(args).joinToString(" ")
 }
 
 data class AdbResult(val output: String, val exitCode: Int)

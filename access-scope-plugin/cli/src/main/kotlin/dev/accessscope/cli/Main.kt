@@ -49,7 +49,12 @@ private fun handleLaunch(args: List<String>) {
     val options = parseOptions(args)
     val device = requireDevice(options)
     if (!options.flags.contains("skip-install")) {
-        ApkInstaller(device).installLatest()
+        runCatching { ApkInstaller(device).installLatest() }
+            .onFailure { installError ->
+                if (!ApkInstaller(device).isInstalled()) {
+                    throw installError
+                }
+            }
     }
     AppLauncher.launch(device)
     println("""{"launched":true,"package":"${AppConstants.PACKAGE_NAME}"}""")

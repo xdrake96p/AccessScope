@@ -44,7 +44,7 @@ class CliExecutor {
             error("CLI timed out")
         }
         if (process.exitValue() != 0) {
-            error(output.ifBlank { "CLI failed with exit code ${process.exitValue()}" })
+            error(formatCliError(output.ifBlank { "CLI failed with exit code ${process.exitValue()}" }))
         }
         return output
     }
@@ -167,6 +167,29 @@ class CliExecutor {
         }
         log.info("Extracted CLI jar to ${cachedJar.absolutePath}")
         return cachedJar.absolutePath
+    }
+
+    private fun formatCliError(raw: String): String {
+        val withoutPrefix = raw.removePrefix("ERROR:").trim()
+        val adbFailure = Regex("""adb failed \(\d+\):[^\n]*\n?(.*)""", RegexOption.DOT_MATCHES_ALL)
+            .find(withoutPrefix)
+            ?.groupValues
+            ?.getOrNull(1)
+            ?.trim()
+        if (!adbFailure.isNullOrBlank()) {
+            when {
+                adbFailure.contains("INSTALL_FAILED_UPDATE_INCOMPATIBLE", ignoreCase = true) ||
+                    adbFailure.contains("signatures do not match", ignoreCase = true) ->
+                    return "A different AccessScope build is on the device (debug vs release). " +
+                        "Retry Install / Update — it will uninstall and reinstall automatically."
+                adbFailure.contains("INSTALL_FAILED_INSUFFICIENT_STORAGE", ignoreCase = true) ->
+                    return "Not enough free storage on the device."
+                adbFailure.contains("INSTALL_FAILED_USER_RESTRICTED", ignoreCase = true) ->
+                    return "Install blocked on device. Check USB debugging and install-over-USB settings."
+            }
+            return adbFailure.lineSequence().last { it.isNotBlank() }
+        }
+        return withoutPrefix.removePrefix("ERROR:").trim()
     }
 }
 

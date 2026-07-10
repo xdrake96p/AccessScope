@@ -110,9 +110,11 @@ private class AccessScopePanel(private val project: Project) : JPanel(BorderLayo
     }
 
     private fun showError(error: Exception) {
+        val message = error.message?.removePrefix("ERROR:")?.trim().orEmpty()
+            .ifBlank { "Unknown error" }
         SwingUtilities.invokeLater {
-            appendOutput("ERROR: ${error.message}")
-            Messages.showErrorDialog(project, error.message ?: "Unknown error", "AccessScope")
+            appendOutput("ERROR: $message")
+            Messages.showErrorDialog(project, message, "AccessScope")
         }
     }
 }
