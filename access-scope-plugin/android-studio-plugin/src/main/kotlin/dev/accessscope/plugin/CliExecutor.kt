@@ -81,6 +81,10 @@ class CliExecutor {
                 extra["PATH"] = "${platformTools.absolutePath}${File.pathSeparator}$path"
             }
         }
+        PluginManagerCore.getPlugin(PluginId.getId("dev.accessscope.plugin"))
+            ?.version
+            ?.takeIf { it.isNotBlank() }
+            ?.let { extra["ACCESS_SCOPE_PLUGIN_VERSION"] = it }
         return extra
     }
 

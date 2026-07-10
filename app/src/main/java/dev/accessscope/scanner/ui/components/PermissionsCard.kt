@@ -101,7 +101,8 @@ fun PermissionsCard(
             icon = Icons.Outlined.Accessibility,
             actionLabel = "Apri impostazioni AccessScope",
             onAction = {
-                context.startActivity(
+                PermissionHelper.safeStartSettingsIntent(
+                    context,
                     PermissionHelper.accessibilityServiceIntent(
                         context,
                         AccessScopeAccessibilityService::class.java,
@@ -117,7 +118,14 @@ fun PermissionsCard(
             granted = overlayGranted,
             icon = Icons.Outlined.Layers,
             actionLabel = "Apri impostazioni overlay",
-            onAction = { context.startActivity(PermissionHelper.overlaySettingsIntent(context)) },
+            onAction = {
+                PermissionHelper.safeStartSettingsIntent(
+                    context,
+                    PermissionHelper.overlaySettingsIntent(context),
+                    fallback = PermissionHelper.appDetailsIntent(context),
+                    fallbackToast = "Aperta schermata dettaglio app",
+                )
+            },
         )
 
         OutlinedButton(

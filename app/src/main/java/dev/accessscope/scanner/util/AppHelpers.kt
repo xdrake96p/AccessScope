@@ -6,6 +6,7 @@
  */
 package dev.accessscope.scanner.util
 
+import android.content.ActivityNotFoundException
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
@@ -15,6 +16,7 @@ import android.net.Uri
 import android.os.Build
 import android.provider.Settings
 import android.text.TextUtils
+import android.widget.Toast
 import dev.accessscope.scanner.data.InstalledAppInfo
 import dev.accessscope.scanner.service.AccessScopeAccessibilityService
 
@@ -139,11 +141,16 @@ object PermissionHelper {
      */
     fun canDrawOverlays(context: Context): Boolean = Settings.canDrawOverlays(context)
 
+  private const val ACTION_ACCESSIBILITY_DETAILS_SETTINGS =
+        "android.settings.ACCESSIBILITY_DETAILS_SETTINGS"
+
     /**
      * Crea un intent per aprire le impostazioni del servizio di accessibilità.
      *
-     * Su Android 13+ apre direttamente il dettaglio del servizio;
-     * su versioni precedenti apre la lista generale dei servizi.
+     * Su Android 14+ (API 34) apre il dettaglio del servizio (richiede
+     * [android.permission.OPEN_ACCESSIBILITY_DETAILS_SETTINGS] nel manifest).
+     * Su Android 13 (API 33) usa lo stesso intent senza quel permesso.
+     * Su versioni precedenti apre la lista generale dei servizi.
      *
      * @param context Contesto Android.
      * @param serviceClass Classe del servizio di accessibilità.
@@ -151,7 +158,7 @@ object PermissionHelper {
      */
     fun accessibilityServiceIntent(context: Context, serviceClass: Class<*>): Intent {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            return Intent("android.settings.ACCESSIBILITY_DETAILS_SETTINGS").apply {
+            return Intent(ACTION_ACCESSIBILITY_DETAILS_SETTINGS).apply {
                 putExtra(
                     Intent.EXTRA_COMPONENT_NAME,
                     ComponentName(context, serviceClass).flattenToString(),
@@ -159,8 +166,60 @@ object PermissionHelper {
                 flags = Intent.FLAG_ACTIVITY_NEW_TASK
             }
         }
-        return Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS).apply {
+        return generalAccessibilitySettingsIntent()
+    }
+
+    /**
+     * Intent verso la lista generale dei servizi di accessibilità.
+     */
+    fun generalAccessibilitySettingsIntent(): Intent =
+        Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS).apply {
             flags = Intent.FLAG_ACTIVITY_NEW_TASK
+        }
+
+    /**
+     * Avvia un intent impostazioni con fallback sicuro per evitare crash su OEM custom.
+     *
+     * @param context Contesto Android.
+     * @param primary Intent principale da tentare per primo.
+     * @param fallback Intent alternativo se il primario fallisce.
+     * @param fallbackToast Messaggio breve mostrato all'utente in caso di fallback.
+     * @return `true` se almeno uno degli intent è stato avviato con successo.
+     */
+    fun safeStartSettingsIntent(
+        context: Context,
+        primary: Intent,
+        fallback: Intent = generalAccessibilitySettingsIntent(),
+        fallbackToast: String? = "Aperta lista accessibilità generale",
+    ): Boolean {
+        return try {
+            context.startActivity(primary)
+            true
+        } catch (_: ActivityNotFoundException) {
+            startFallback(context, fallback, fallbackToast)
+        } catch (_: SecurityException) {
+            startFallback(context, fallback, fallbackToast)
+        }
+    }
+
+    private fun startFallback(
+        context: Context,
+        fallback: Intent,
+        fallbackToast: String?,
+    ): Boolean {
+        return try {
+            context.startActivity(fallback)
+            if (!fallbackToast.isNullOrBlank()) {
+                Toast.makeText(context, fallbackToast, Toast.LENGTH_SHORT).show()
+            }
+            true
+        } catch (_: Exception) {
+            Toast.makeText(
+                context,
+                "Impossibile aprire le impostazioni",
+                Toast.LENGTH_LONG,
+            ).show()
+            false
         }
     }
 

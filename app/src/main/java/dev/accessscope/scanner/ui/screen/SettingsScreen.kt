@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Feedback
 import androidx.compose.material.icons.outlined.Terminal
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -62,6 +63,7 @@ fun SettingsScreen(
     viewModel: ScanViewModel,
     onBack: () -> Unit,
     onOpenLogChecker: () -> Unit = {},
+    onOpenFeedback: () -> Unit = {},
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val scope = uiState.scanScope
@@ -140,6 +142,23 @@ fun SettingsScreen(
                         checked = uiState.reliabilityReportEnabled,
                         onCheckedChange = { viewModel.toggleReliabilityReport() },
                     )
+                }
+            }
+
+            AccessScopeCard(modifier = Modifier.fillMaxWidth()) {
+                Text("Suggerimenti e segnalazioni", fontWeight = FontWeight.SemiBold)
+                Text(
+                    "Segnala bug, scansioni imprecise o idee di miglioramento. Si apre GitHub Issues " +
+                        "con i campi precompilati.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = contentSecondary(),
+                )
+                OutlinedButton(
+                    onClick = onOpenFeedback,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Icon(Icons.Outlined.Feedback, contentDescription = null)
+                    Text("Invia feedback su GitHub", modifier = Modifier.padding(start = 8.dp))
                 }
             }
 

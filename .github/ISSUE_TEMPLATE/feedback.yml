@@ -1,0 +1,38 @@
+name: Feedback AccessScope
+description: Segnalazione o suggerimento dall'app AccessScope
+title: "[Feedback] "
+labels:
+  - feedback
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Grazie per il feedback! Puoi completare i campi sotto o inviare dal form nell'app AccessScope.
+  - type: dropdown
+    id: feedback_type
+    attributes:
+      label: Tipo segnalazione
+      options:
+        - Scansione imprecisa
+        - Bug
+        - Miglioramento
+        - Altro
+    validations:
+      required: true
+  - type: textarea
+    id: description
+    attributes:
+      label: Descrizione
+      description: Descrivi il problema o il suggerimento
+    validations:
+      required: true
+  - type: textarea
+    id: scan_context
+    attributes:
+      label: Contesto scansione (opzionale)
+      description: Package, sessionId, punteggio, violazioni esempio
+  - type: textarea
+    id: device_info
+    attributes:
+      label: Info dispositivo (opzionale)
+      description: Modello, API Android, versione AccessScope

@@ -6,7 +6,7 @@
 **Package:** `dev.accessscope.scanner`  
 **Branch principale sviluppo:** `develop`  
 **Branch release stabile:** `main`  
-**Ultimo aggiornamento:** 10 luglio 2026 (v1.3.0 app · v1.0.8 plugin IDE)
+**Ultimo aggiornamento:** 10 luglio 2026 (v1.3.1 app · v1.0.8 plugin IDE)
 
 **Manuale utente e tecnico:** [`docs/MANUALE_UTENTE.md`](MANUALE_UTENTE.md) — installazione, uso plugin AS/VS Code, troubleshooting.
 
@@ -92,6 +92,15 @@ Utente → HomeScreen (selezione app) → Avvia scan
 ---
 
 ## Cronologia sviluppo
+
+### v1.3.1 — Fix API 34, firma release, CI unificata, feedback (10 luglio 2026)
+
+- **Fix crash API 34:** permesso `OPEN_ACCESSIBILITY_DETAILS_SETTINGS` + `safeStartSettingsIntent` con fallback
+- **Firma release:** `signingConfigs.release` da `keystore.properties`; CI decodifica secrets GitHub
+- **CI unificata:** `release.yml` builda app + CLI + plugin AS/VSIX in pipeline; `minPluginVersion` dinamico nel manifest
+- **PluginVersionChecker:** CLI blocca install/setup se plugin IDE troppo vecchio (`ACCESS_SCOPE_PLUGIN_VERSION`)
+- **Feedback:** schermata Impostazioni → GitHub Issues precompilato (template `feedback.yml`)
+- Test Robolectric: `PermissionHelperTest` (intent accessibilità API 32/33/34)
 
 ### v1.3.0 — Plugin IDE + bridge API (10 luglio 2026)
 
@@ -308,6 +317,21 @@ cd AccessScope
 ./gradlew assembleDebug
 adb install -r app/build/outputs/apk/debug/app-debug.apk
 ```
+
+### Build release firmato (locale)
+
+1. Genera keystore: `keytool -genkey -v -keystore app/release.keystore -alias access-scope -keyalg RSA -keysize 2048 -validity 10000`
+2. Copia `keystore.properties.example` → `keystore.properties` e compila i valori
+3. `./gradlew assembleRelease`
+
+### Secrets GitHub (CI release)
+
+| Secret | Uso |
+|--------|-----|
+| `RELEASE_KEYSTORE_BASE64` | Keystore codificato base64 |
+| `RELEASE_KEYSTORE_PASSWORD` | Password keystore |
+| `RELEASE_KEY_ALIAS` | Alias chiave |
+| `RELEASE_KEY_PASSWORD` | Password chiave |
 
 Report PDF: `/storage/emulated/0/Download/AccessScope_*.pdf`
 

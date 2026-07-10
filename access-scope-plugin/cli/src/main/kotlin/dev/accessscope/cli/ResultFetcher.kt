@@ -150,6 +150,20 @@ object SetupCheck {
     fun run(deviceSerial: String): String {
         val gson = Gson()
         DeviceGuard.requireReadyDevice(deviceSerial)
+        runCatching {
+            val manifest = ReleaseClient().fetchLatestManifest()
+            PluginVersionChecker.requireCompatible(manifest)
+        }.onFailure { failure ->
+            val checks = JsonObject().apply {
+                addProperty("accessibilityEnabled", false)
+                addProperty("overlayEnabled", false)
+                addProperty("appInstalled", false)
+                addProperty("ready", false)
+                addProperty("hint", failure.message ?: "Plugin IDE non compatibile con l'ultima release app.")
+                addProperty("error", failure.message)
+            }
+            return gson.toJson(checks)
+        }
         val status = runCatching { ResultFetcher(deviceSerial).fetchStatus() }
             .getOrElse { failure ->
                 val installed = ApkInstaller(deviceSerial).isInstalled()

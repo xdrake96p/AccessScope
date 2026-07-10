@@ -30,6 +30,7 @@ class ApkInstaller(
     fun installLatest(force: Boolean = false): InstallResult {
         DeviceGuard.requireReadyDevice(deviceSerial)
         val manifest = releaseClient.fetchLatestManifest()
+        PluginVersionChecker.requireCompatible(manifest)
         val installed = getInstalledVersionCode()
         if (!force && installed != null && installed >= manifest.versionCode) {
             return InstallResult(

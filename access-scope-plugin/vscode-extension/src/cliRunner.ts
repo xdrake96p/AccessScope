@@ -52,6 +52,11 @@ export class CliRunner {
         env.PATH = `${platformTools}${path.delimiter}${env.PATH ?? ''}`;
       }
     }
+    const extension = vscode.extensions.getExtension('accessscope.accessscope');
+    const version = extension?.packageJSON?.version;
+    if (version) {
+      env.ACCESS_SCOPE_PLUGIN_VERSION = version;
+    }
     return env;
   }
 

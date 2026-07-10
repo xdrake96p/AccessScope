@@ -4,6 +4,8 @@ plugins {
     id("org.jetbrains.kotlin.plugin.compose")
 }
 
+import java.util.Properties
+
 android {
     namespace = "dev.accessscope.scanner"
     compileSdk = 35
@@ -12,18 +14,34 @@ android {
         applicationId = "dev.accessscope.scanner"
         minSdk = 26
         targetSdk = 35
-        versionCode = 4
-        versionName = "1.3.0"
+        versionCode = 5
+        versionName = "1.3.1"
 
         vectorDrawables {
             useSupportLibrary = true
         }
     }
 
+    signingConfigs {
+        create("release") {
+            val props = Properties()
+            val keystorePropertiesFile = rootProject.file("keystore.properties")
+            if (keystorePropertiesFile.exists()) {
+                keystorePropertiesFile.inputStream().use { props.load(it) }
+                storeFile = rootProject.file(props.getProperty("storeFile"))
+                storePassword = props.getProperty("storePassword")
+                keyAlias = props.getProperty("keyAlias")
+                keyPassword = props.getProperty("keyPassword")
+            }
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = true
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig = signingConfigs.findByName("release")?.takeIf {
+                it.storeFile?.exists() == true
+            } ?: signingConfigs.getByName("debug")
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"

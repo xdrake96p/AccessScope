@@ -1,6 +1,6 @@
 # AccessScope — Manuale utente e tecnico
 
-**Versione documento:** 1.0.8 (plugin IDE) · app AccessScope 1.3.0  
+**Versione documento:** 1.0.8 (plugin IDE) · app AccessScope 1.3.1  
 **Repository:** [github.com/xdrake96p/AccessScope](https://github.com/xdrake96p/AccessScope)  
 **Ultimo aggiornamento:** 10 luglio 2026
 
@@ -98,6 +98,10 @@ Non serve essere esperti di accessibilità per **avviare** una scansione; il rep
 | **Overlay** | Impostazioni → App → AccessScope → “Mostra sopra altre app” |
 
 Senza questi due permessi la scansione non parte. Il plugin può verificarli con **Setup Check**.
+
+### Suggerimenti e segnalazioni
+
+Da **Impostazioni → Suggerimenti e segnalazioni** puoi aprire GitHub Issues con titolo e descrizione precompilati. Opzionalmente allega contesto dell'ultima scansione (package, punteggio, violazioni esempio) e info dispositivo. Serve un account GitHub per inviare la issue dal browser.
 
 ---
 
@@ -254,6 +258,7 @@ In VS Code puoi forzare un package in Settings → `accessScope.targetPackage`.
 ### App AccessScope (sul telefono)
 
 - Pulsante **Install / Update** nel plugin: scarica l'ultima release da GitHub se più nuova.
+- Dalla **v1.3.1** le release ufficiali sono firmate con keystore release (non più debug). Il plugin verifica anche che la versione del plugin IDE sia compatibile (`minPluginVersion` nel manifest).
 
 ### Plugin IDE (Android Studio / VS Code)
 
@@ -282,6 +287,7 @@ Se passi da build debug a release (o viceversa), il plugin **disinstalla e reins
 | Setup Check: accessibilità OFF | Permesso non dato | Impostazioni → Accessibilità → AccessScope ON |
 | Setup Check: overlay OFF | Permesso non dato | Impostazioni → App → AccessScope → overlay |
 | Plugin update: rate limit GitHub | Troppe richieste API | Riprova dopo qualche minuto o imposta `GITHUB_TOKEN` |
+| `Aggiorna il plugin IDE alla versione X` | Plugin IDE obsoleto | Aggiorna plugin AS/VS Code alla versione indicata |
 | VS Code: nessuna icona | Estensione non ricaricata | Reinstalla VSIX e **Reload Window** |
 
 ### Log utili

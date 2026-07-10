@@ -34,8 +34,48 @@ jobs:
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
 
+      - name: Decode release keystore
+        env:
+          RELEASE_KEYSTORE_BASE64: ${{ secrets.RELEASE_KEYSTORE_BASE64 }}
+          RELEASE_KEYSTORE_PASSWORD: ${{ secrets.RELEASE_KEYSTORE_PASSWORD }}
+          RELEASE_KEY_ALIAS: ${{ secrets.RELEASE_KEY_ALIAS }}
+          RELEASE_KEY_PASSWORD: ${{ secrets.RELEASE_KEY_PASSWORD }}
+        run: |
+          if [ -z "$RELEASE_KEYSTORE_BASE64" ]; then
+            echo "ERROR: RELEASE_KEYSTORE_BASE64 secret is not configured."
+            exit 1
+          fi
+          echo "$RELEASE_KEYSTORE_BASE64" | base64 -d > app/release.keystore
+          cat > keystore.properties <<EOF
+          storeFile=app/release.keystore
+          storePassword=${RELEASE_KEYSTORE_PASSWORD}
+          keyAlias=${RELEASE_KEY_ALIAS}
+          keyPassword=${RELEASE_KEY_PASSWORD}
+          EOF
+
       - name: Build release APK
         run: ./gradlew assembleRelease
+
+      - name: Build plugin artifacts
+        run: |
+          cd access-scope-plugin
+          ./gradlew :cli:fatJar :android-studio-plugin:buildPlugin
+          PLUGIN_VERSION=$(grep '^version' android-studio-plugin/build.gradle.kts | head -1 | sed 's/.*= "\(.*\)".*/\1/')
+          echo "PLUGIN_VERSION=$PLUGIN_VERSION" >> "$GITHUB_ENV"
+          cp cli/build/libs/cli-*-all.jar vscode-extension/bin/AccessScope-cli.jar
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Package VS Code extension
+        run: |
+          cd access-scope-plugin/vscode-extension
+          npm ci
+          npm run package
+          VSIX_NAME="AccessScope-${PLUGIN_VERSION}.vsix"
+          mv *.vsix "../$VSIX_NAME"
 
       - name: Read version from APK metadata
         id: version
@@ -61,11 +101,11 @@ jobs:
             "versionName": "${{ steps.version.outputs.name }}",
             "apkFileName": "$APK_NAME",
             "sha256": "$SHA256",
-            "minPluginVersion": "1.0.0"
+            "minPluginVersion": "${PLUGIN_VERSION}"
           }
           EOF
-          cp access-scope-plugin/releases/1.0.8/AccessScope-1.0.8.zip .
-          cp access-scope-plugin/releases/1.0.8/AccessScope-1.0.8.vsix .
+          cp "access-scope-plugin/android-studio-plugin/build/distributions/AccessScope-${PLUGIN_VERSION}.zip" .
+          cp "access-scope-plugin/AccessScope-${PLUGIN_VERSION}.vsix" .
           echo "TAG_NAME=$TAG_NAME" >> "$GITHUB_ENV"
 
       - name: Create GitHub Release
@@ -76,6 +116,6 @@ jobs:
           files: |
             access-scope-${{ steps.version.outputs.name }}.apk
             release-manifest.json
-            AccessScope-1.0.8.zip
-            AccessScope-1.0.8.vsix
+            AccessScope-${{ env.PLUGIN_VERSION }}.zip
+            AccessScope-${{ env.PLUGIN_VERSION }}.vsix
           generate_release_notes: true

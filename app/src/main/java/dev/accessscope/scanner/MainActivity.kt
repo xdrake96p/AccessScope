@@ -25,6 +25,7 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
+import dev.accessscope.scanner.ui.screen.FeedbackScreen
 import dev.accessscope.scanner.ui.screen.HomeScreen
 import dev.accessscope.scanner.ui.screen.LogCheckerScreen
 import dev.accessscope.scanner.ui.screen.ReportScreen
@@ -113,6 +114,19 @@ private fun AccessScopeNavHost(viewModel: ScanViewModel) {
                 viewModel = viewModel,
                 onBack = { navController.popBackStack() },
                 onOpenLogChecker = { navController.navigate("log_checker") },
+                onOpenFeedback = { navController.navigate("feedback") },
+            )
+        }
+        composable(
+            route = "feedback",
+            enterTransition = { enter },
+            exitTransition = { exit },
+            popEnterTransition = { popEnter },
+            popExitTransition = { popExit },
+        ) {
+            FeedbackScreen(
+                viewModel = viewModel,
+                onBack = { navController.popBackStack() },
             )
         }
         composable(
