@@ -20,6 +20,7 @@
             anchor="right"
             factoryClass="dev.accessscope.plugin.AccessScopeToolWindowFactory"
             icon="/icons/access_scope.svg"/>
+        <applicationService serviceImplementation="dev.accessscope.plugin.PluginUpdateChecker"/>
     </extensions>
 
     <actions>
