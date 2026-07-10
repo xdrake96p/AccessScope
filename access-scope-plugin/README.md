@@ -30,7 +30,7 @@ cd access-scope-plugin
 
 Output:
 - CLI: `cli/build/libs/cli-1.0.0-all.jar`
-- Plugin AS: `android-studio-plugin/build/distributions/AccessScope-1.0.0.zip`
+- Plugin AS: `android-studio-plugin/build/distributions/AccessScope-1.0.1.zip`
 
 ### VS Code extension
 
@@ -122,10 +122,10 @@ Il tag `v*` su `main` attiva `.github/workflows/release.yml` che pubblica:
 - `access-scope-{version}.apk`
 - `release-manifest.json` (versionCode, sha256)
 - `AccessScope-cli.jar`
-- `AccessScope-1.0.0.zip`
-- `AccessScope-1.0.0.vsix`
+- `AccessScope-1.0.1.zip`
+- `AccessScope-1.0.1.vsix`
 
-Artefatti plugin sono anche in `access-scope-plugin/releases/1.0.0/` nel repo.
+Artefatti plugin in `access-scope-plugin/releases/1.0.1/`.
 
 ## Troubleshooting
 

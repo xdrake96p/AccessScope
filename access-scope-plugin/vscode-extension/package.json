@@ -2,7 +2,7 @@
   "name": "accessscope",
   "displayName": "AccessScope",
   "description": "Install, launch and fetch accessibility scan results from AccessScope on Android devices.",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "publisher": "accessscope",
   "engines": {
     "vscode": "^1.85.0"
