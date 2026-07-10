@@ -11,6 +11,11 @@
         tools:ignore="QueryAllPackagesPermission" />
     <uses-permission android:name="android.permission.OPEN_ACCESSIBILITY_DETAILS_SETTINGS" />
 
+    <permission
+        android:name="dev.accessscope.scanner.permission.READ_SCAN_RESULTS"
+        android:protectionLevel="signature" />
+    <uses-permission android:name="dev.accessscope.scanner.permission.READ_SCAN_RESULTS" />
+
     <queries>
         <intent>
             <action android:name="android.intent.action.MAIN" />

@@ -17,6 +17,9 @@ import org.json.JSONObject
 /**
  * Provider esportato per lettura machine-readable di sessioni e stato scansione.
  *
+ * Accesso consentito solo ad AccessScope, `adb shell` e app con firma condivisa.
+ * Le altre app ricevono [SecurityException].
+ *
  * URI supportati:
  * - `content://dev.accessscope.scanner.results/status`
  * - `content://dev.accessscope.scanner.results/latest?package={pkg}`
@@ -34,6 +37,7 @@ class ScanResultProvider : ContentProvider() {
         sortOrder: String?,
     ): Cursor? {
         val context = context ?: return null
+        BridgeAccessPolicy.enforceBridgeAccess(context)
         val app = context.applicationContext as? AccessScopeApp ?: return null
         val segments = uri.pathSegments
 
@@ -42,15 +46,21 @@ class ScanResultProvider : ContentProvider() {
             segments.firstOrNull() == "latest" -> {
                 val packageName = uri.getQueryParameter("package")
                     ?: return jsonCursor(errorJson("missing_package", "Query parameter 'package' is required"))
+                if (!BridgeIds.isValidPackageName(packageName)) {
+                    return jsonCursor(errorJson("invalid_package", "Invalid package name"))
+                }
                 app.scanHistoryStore.getLatest(packageName)?.let { session ->
-                    app.scanHistoryStore.sessionToJson(session)
+                    BridgeSessionJson.sessionToJson(session)
                 } ?: errorJson("not_found", "No session found for package $packageName")
             }
             segments.firstOrNull() == "session" && segments.size >= 2 -> {
                 val sessionId = segments[1]
+                if (!BridgeIds.isValidSessionId(sessionId)) {
+                    return jsonCursor(errorJson("invalid_session", "Invalid session id"))
+                }
                 app.scanHistoryStore.getSession(sessionId)?.let { session ->
-                    app.scanHistoryStore.sessionToJson(session)
-                } ?: errorJson("not_found", "Session $sessionId not found")
+                    BridgeSessionJson.sessionToJson(session)
+                } ?: errorJson("not_found", "Session not found")
             }
             else -> errorJson("invalid_uri", "Unsupported URI: $uri")
         }

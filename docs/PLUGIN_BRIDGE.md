@@ -6,7 +6,14 @@
 
 - Authority: `dev.accessscope.scanner.results`
 - Endpoint status, latest per package, session per ID
-- JSON compatibile con `ArchivedScanSession`
+- JSON compatibile con `ArchivedScanSession` (campi ridotti per il bridge)
+
+### Sicurezza (v1.3.1+)
+
+- **Accesso ristretto:** solo AccessScope, `adb shell` (uid shell) e app con **firma condivisa** possono interrogare il provider. Altre app sul device ricevono `SecurityException`.
+- **Permesso signature** `dev.accessscope.scanner.permission.READ_SCAN_RESULTS` dichiarato per eventuali companion app firmate allo stesso modo.
+- **Validazione input:** `sessionId` deve essere UUID; `package` deve essere un package Android valido (no path traversal).
+- **JSON bridge ridotto:** esclusi `elementLabel`, `announcedText`, `evidenceImagePath` e codici colore esadecimali dalle risposte del provider (restano disponibili nell'app e nei PDF interni).
 
 ### Broadcast
 
@@ -16,7 +23,7 @@
 
 ### Serializzazione violazioni
 
-Ogni violazione include ora il campo `severity` per report IDE.
+Ogni violazione include il campo `severity` per report IDE.
 
 ## Build app con bridge
 

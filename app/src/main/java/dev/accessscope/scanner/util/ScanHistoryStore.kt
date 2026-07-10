@@ -4,6 +4,7 @@
 package dev.accessscope.scanner.util
 
 import android.content.Context
+import dev.accessscope.scanner.bridge.BridgeIds
 import dev.accessscope.scanner.data.AccessibilityViolation
 import dev.accessscope.scanner.data.ArchivedScanSession
 import dev.accessscope.scanner.data.EvidenceKind
@@ -99,7 +100,10 @@ class ScanHistoryStore(context: Context) {
      * @param sessionId Identificatore univoco della sessione.
      */
     fun getSession(sessionId: String): ArchivedScanSession? {
+        if (!BridgeIds.isValidSessionId(sessionId)) return null
         val file = sessionFile(sessionId)
+        val sessionsRoot = sessionsDir.canonicalFile
+        if (file.canonicalFile.parentFile != sessionsRoot) return null
         if (!file.exists()) return null
         return runCatching { parseSession(JSONObject(file.readText())) }.getOrNull()
     }
