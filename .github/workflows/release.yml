@@ -64,9 +64,9 @@ jobs:
             "minPluginVersion": "1.0.0"
           }
           EOF
-          cp access-scope-plugin/releases/1.0.0/access-scope-cli.jar .
-          cp access-scope-plugin/releases/1.0.0/android-studio-plugin-1.0.0.zip .
-          cp access-scope-plugin/releases/1.0.0/access-scope-1.0.0.vsix .
+          cp access-scope-plugin/releases/1.0.0/AccessScope-cli.jar .
+          cp access-scope-plugin/releases/1.0.0/AccessScope-1.0.0.zip .
+          cp access-scope-plugin/releases/1.0.0/AccessScope-1.0.0.vsix .
           echo "TAG_NAME=$TAG_NAME" >> "$GITHUB_ENV"
 
       - name: Create GitHub Release
@@ -77,7 +77,7 @@ jobs:
           files: |
             access-scope-${{ steps.version.outputs.name }}.apk
             release-manifest.json
-            access-scope-cli.jar
-            android-studio-plugin-1.0.0.zip
-            access-scope-1.0.0.vsix
+            AccessScope-cli.jar
+            AccessScope-1.0.0.zip
+            AccessScope-1.0.0.vsix
           generate_release_notes: true

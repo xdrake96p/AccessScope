@@ -30,7 +30,7 @@ cd access-scope-plugin
 
 Output:
 - CLI: `cli/build/libs/cli-1.0.0-all.jar`
-- Plugin AS: `android-studio-plugin/build/distributions/android-studio-plugin-1.0.0.zip`
+- Plugin AS: `android-studio-plugin/build/distributions/AccessScope-1.0.0.zip`
 
 ### VS Code extension
 
@@ -104,7 +104,7 @@ Broadcast locale a fine scansione: `dev.accessscope.scanner.SCAN_COMPLETE`
 
 ## Android Studio
 
-1. Installa plugin da `android-studio-plugin/build/distributions/*.zip`
+1. Installa plugin da `android-studio-plugin/build/distributions/AccessScope-*.zip`
 2. Apri **View > Tool Windows > AccessScope**
 3. Il package target viene rilevato da `app/build.gradle` (`applicationId` + `applicationIdSuffix`)
 
@@ -121,9 +121,9 @@ Il tag `v*` su `main` attiva `.github/workflows/release.yml` che pubblica:
 
 - `access-scope-{version}.apk`
 - `release-manifest.json` (versionCode, sha256)
-- `access-scope-cli.jar`
-- `android-studio-plugin-1.0.0.zip`
-- `access-scope-1.0.0.vsix`
+- `AccessScope-cli.jar`
+- `AccessScope-1.0.0.zip`
+- `AccessScope-1.0.0.vsix`
 
 Artefatti plugin sono anche in `access-scope-plugin/releases/1.0.0/` nel repo.
 

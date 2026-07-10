@@ -39,9 +39,13 @@ export class CliRunner {
     if (configured && fs.existsSync(configured)) {
       return configured;
     }
-    const bundled = path.join(__dirname, '..', 'bin', 'access-scope-cli.jar');
+    const bundled = path.join(__dirname, '..', 'bin', 'AccessScope-cli.jar');
     if (fs.existsSync(bundled)) {
       return bundled;
+    }
+    const legacyBundled = path.join(__dirname, '..', 'bin', 'access-scope-cli.jar');
+    if (fs.existsSync(legacyBundled)) {
+      return legacyBundled;
     }
     const devJar = path.join(
       __dirname,

@@ -70,11 +70,13 @@ class CliExecutor {
     }
 
     private fun resolveJarPath(): String {
-        val pluginLib = File(PathResolver.pluginLibDir(), "access-scope-cli.jar")
+        val pluginLib = File(PathResolver.pluginLibDir(), "AccessScope-cli.jar")
         if (pluginLib.exists()) return pluginLib.absolutePath
+        val legacyLib = File(PathResolver.pluginLibDir(), "access-scope-cli.jar")
+        if (legacyLib.exists()) return legacyLib.absolutePath
         val devJar = File(PathResolver.repoRoot(), "cli/build/libs/cli-1.0.0-all.jar")
         if (devJar.exists()) return devJar.absolutePath
-        error("access-scope-cli.jar not found")
+        error("AccessScope-cli.jar not found")
     }
 }
 

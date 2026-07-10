@@ -21,17 +21,21 @@ kotlin {
 intellij {
     version.set("2023.3.8")
     type.set("IC")
+    pluginName.set("AccessScope")
 }
 
 tasks {
     prepareSandbox {
         from("${rootProject.projectDir}/cli/build/libs/cli-1.0.0-all.jar") {
-            into("access-scope-plugin/lib")
-            rename { "access-scope-cli.jar" }
+            into("AccessScope/lib")
+            rename { "AccessScope-cli.jar" }
         }
     }
     patchPluginXml {
         sinceBuild.set("233")
         untilBuild.set("243.*")
+    }
+    buildPlugin {
+        archiveFileName.set("AccessScope-${project.version}.zip")
     }
 }

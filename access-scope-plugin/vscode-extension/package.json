@@ -1,5 +1,5 @@
 {
-  "name": "access-scope",
+  "name": "accessscope",
   "displayName": "AccessScope",
   "description": "Install, launch and fetch accessibility scan results from AccessScope on Android devices.",
   "version": "1.0.0",
@@ -48,7 +48,7 @@
         "accessScope.cliPath": {
           "type": "string",
           "default": "",
-          "description": "Path to access-scope-cli JAR. Empty uses bundled JAR."
+          "description": "Path to AccessScope CLI JAR. Empty uses bundled JAR."
         },
         "accessScope.defaultDevice": {
           "type": "string",
