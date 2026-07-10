@@ -1,0 +1,43 @@
+---
+description: Release plugin Android Studio — versione, whats-new e build locale/pubblicazione
+globs:
+  - access-scope-plugin/android-studio-plugin/**
+  - access-scope-plugin/releases/**
+alwaysApply: false
+---
+
+# Release plugin Android Studio (AccessScope)
+
+## Ad ogni nuova versione del plugin
+
+1. **Bump versione** in `access-scope-plugin/android-studio-plugin/build.gradle.kts` (`version = "x.y.z"`).
+
+2. **Obbligatorio: file What's New**
+   - Creare `access-scope-plugin/android-studio-plugin/whats-new/<versione>.html`
+   - Usare `whats-new/TEMPLATE.html` come base
+   - Elencare in italiano le novità visibili all'utente (pulsanti, fix, compatibilità)
+   - Il build Gradle legge questo file e lo inietta in `changeNotes` del plugin (scheda **What's New** in Settings → Plugins)
+
+3. **Descrizione plugin** (`META-INF/plugin.xml`): aggiornare solo se cambiano funzionalità o flusso d'uso documentato.
+
+4. **Compatibilità IDE**: mantenere `sinceBuild` il più basso possibile compatibile con le API usate; `untilBuild` su `999.*`.
+
+5. **Build locale** (default finché l'utente non chiede pubblicazione):
+   ```bash
+   cd access-scope-plugin
+   ./gradlew :android-studio-plugin:buildPlugin
+   cp android-studio-plugin/build/distributions/AccessScope-<versione>.zip ~/Downloads/AccessScope-<versione>-local.zip
+   ```
+
+6. **Pubblicazione su GitHub** (solo su richiesta esplicita):
+   - Copiare ZIP in `access-scope-plugin/releases/<versione>/`
+   - README nella cartella release
+   - Commit su `develop`; merge/tag secondo `git-release-workflow.mdc`
+
+## Checklist versione plugin
+
+- [ ] `build.gradle.kts` → `version` aggiornata
+- [ ] `whats-new/<versione>.html` creato e compilato
+- [ ] Build `./gradlew :android-studio-plugin:buildPlugin` OK
+- [ ] ZIP locale consegnato o path indicato all'utente
+- [ ] Pubblicazione GitHub solo se richiesta

@@ -40,19 +40,19 @@ private class AccessScopePanel(private val project: Project) : JPanel(BorderLayo
     private val targetPackageField = JLabel()
 
     init {
-        val top = JPanel(FlowLayout(FlowLayout.LEFT))
+        val top = JPanel(BorderLayout())
+        val actionsRow = JPanel(FlowLayout(FlowLayout.LEFT, 6, 4))
+        val utilityRow = JPanel(FlowLayout(FlowLayout.LEFT, 6, 4))
         val refreshButton = JButton("Refresh Devices")
         val installButton = JButton("Install / Update")
         val launchButton = JButton("Launch")
         val fetchButton = JButton("Fetch Results")
         val setupButton = JButton("Setup Check")
-        val clearLogButton = JButton(AllIcons.Actions.GC).apply {
+        val clearLogButton = JButton("Clear log", AllIcons.Actions.GC).apply {
             toolTipText = "Cancella log"
-            isFocusable = false
         }
-        val updatePluginButton = JButton(AllIcons.Actions.Download).apply {
-            toolTipText = "Verifica aggiornamenti plugin"
-            isFocusable = false
+        val updatePluginButton = JButton("Plugin update", AllIcons.Actions.Download).apply {
+            toolTipText = "Verifica e installa aggiornamenti plugin"
         }
 
         targetPackageField.text = "Target package: ${GradlePackageDetector.detectTargetPackage(project) ?: "n/a"}"
@@ -70,14 +70,18 @@ private class AccessScopePanel(private val project: Project) : JPanel(BorderLayo
         clearLogButton.addActionListener { clearOutput() }
         updatePluginButton.addActionListener { checkPluginUpdate() }
 
-        top.add(refreshButton)
-        top.add(deviceCombo)
-        top.add(installButton)
-        top.add(launchButton)
-        top.add(fetchButton)
-        top.add(setupButton)
-        top.add(clearLogButton)
-        top.add(updatePluginButton)
+        actionsRow.add(refreshButton)
+        actionsRow.add(deviceCombo)
+        actionsRow.add(installButton)
+        actionsRow.add(launchButton)
+        actionsRow.add(fetchButton)
+        actionsRow.add(setupButton)
+
+        utilityRow.add(clearLogButton)
+        utilityRow.add(updatePluginButton)
+
+        top.add(actionsRow, BorderLayout.NORTH)
+        top.add(utilityRow, BorderLayout.SOUTH)
 
         add(top, BorderLayout.NORTH)
         add(JBScrollPane(outputArea), BorderLayout.CENTER)

@@ -1,16 +1,56 @@
 <idea-plugin>
     <id>dev.accessscope.plugin</id>
     <name>AccessScope</name>
-    <vendor>AccessScope</vendor>
+    <vendor email="support@accessscope.dev" url="https://github.com/xdrake96p/AccessScope">AccessScope</vendor>
     <description><![CDATA[
-      Install, launch and fetch accessibility scan results from AccessScope on connected Android devices.
+      <p><b>AccessScope</b> integra nel flusso di sviluppo Android Studio l'app
+      <a href="https://github.com/xdrake96p/AccessScope">AccessScope</a>:
+      uno scanner di accessibilità che analizza le app direttamente su device o emulatore
+      e produce report sulle violazioni WCAG (contrasto, label, touch target, heading e altro).</p>
 
-      <b>Come usare</b>
+      <p>Il plugin non sostituisce l'app sul device: funge da <b>bridge IDE ↔ device</b>
+      per installazione, avvio e recupero risultati, riducendo i passaggi manuali con <code>adb</code>.</p>
+
+      <p><b>Cosa fa</b></p>
       <ul>
-        <li><b>Toolbar</b> — icona AccessScope in alto a destra</li>
-        <li><b>Tools → AccessScope</b> per il pannello principale</li>
-        <li><b>Run → Open AccessScope on Device</b> per installare e aprire l'app sul device</li>
+        <li>Elenca device ed emulatori Android collegati</li>
+        <li>Installa o aggiorna l'APK AccessScope dall'ultima release GitHub</li>
+        <li>Apre AccessScope sul device selezionato</li>
+        <li>Recupera l'ultima sessione di scansione in JSON (con <code>applicationId</code> rilevato dal progetto Gradle)</li>
+        <li>Verifica prerequisiti: app installata, servizio accessibilità, permesso overlay</li>
+        <li>Gestisce reinstallazione automatica in caso di firma APK incompatibile (debug vs release)</li>
       </ul>
+
+      <p><b>Flusso consigliato</b></p>
+      <ol>
+        <li><b>Refresh Devices</b> — seleziona il device</li>
+        <li><b>Install / Update</b> — allinea l'app AccessScope sul device</li>
+        <li><b>Launch</b> — apri l'app e avvia la scansione manualmente sul device</li>
+        <li><b>Fetch Results</b> — importa il report JSON nel pannello</li>
+        <li><b>Setup Check</b> — controlla accessibilità e overlay se qualcosa non funziona</li>
+      </ol>
+
+      <p><b>Dove trovare il pannello</b></p>
+      <ul>
+        <li>Icona AccessScope nella <b>toolbar</b></li>
+        <li><b>Tools → AccessScope</b></li>
+        <li><b>Run → Open AccessScope on Device</b> (install + launch rapido)</li>
+      </ul>
+
+      <p><b>Aggiornare il plugin</b></p>
+      <ul>
+        <li>Nel pannello AccessScope: <b>Plugin update</b> (verifica GitHub, download e installazione automatica, poi riavvio IDE)</li>
+        <li>In alternativa: <b>Settings → Plugins → Install Plugin from Disk…</b> con l'ultimo ZIP release</li>
+      </ul>
+
+      <p><b>Requisiti</b></p>
+      <ul>
+        <li>Android SDK <code>platform-tools</code> (<code>adb</code>) — di solito già presente con Android Studio</li>
+        <li>USB debugging abilitato sul device (o emulatore avviato)</li>
+        <li>Prima scansione: abilitare AccessScope in <b>Impostazioni → Accessibilità</b> e concedere il <b>permesso overlay</b></li>
+      </ul>
+
+      <p><b>Compatibilità</b>: Android Studio 2022.2 e versioni successive.</p>
     ]]></description>
     <depends>com.intellij.modules.platform</depends>
 

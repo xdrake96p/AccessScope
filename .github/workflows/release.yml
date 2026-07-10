@@ -64,8 +64,7 @@ jobs:
             "minPluginVersion": "1.0.0"
           }
           EOF
-          cp access-scope-plugin/releases/1.0.7/AccessScope-1.0.7.zip .
-          cp access-scope-plugin/releases/1.0.1/AccessScope-1.0.1.vsix .
+          cp access-scope-plugin/releases/1.0.8/AccessScope-1.0.8.zip .
           echo "TAG_NAME=$TAG_NAME" >> "$GITHUB_ENV"
 
       - name: Create GitHub Release
@@ -76,6 +75,5 @@ jobs:
           files: |
             access-scope-${{ steps.version.outputs.name }}.apk
             release-manifest.json
-            AccessScope-1.0.7.zip
-            AccessScope-1.0.1.vsix
+            AccessScope-1.0.8.zip
           generate_release_notes: true

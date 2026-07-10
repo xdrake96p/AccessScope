@@ -4,7 +4,7 @@ plugins {
 }
 
 group = "dev.accessscope"
-version = "1.0.7"
+version = "1.0.8"
 
 repositories {
     mavenCentral()
@@ -39,8 +39,17 @@ tasks {
         }
     }
     patchPluginXml {
-        sinceBuild.set("233")
+        sinceBuild.set("222")
         untilBuild.set("999.*")
+        val whatsNewFile = file("whats-new/${project.version}.html")
+        if (whatsNewFile.exists()) {
+            changeNotes.set(whatsNewFile.readText().trim())
+        } else {
+            throw GradleException(
+                "Missing whats-new/${project.version}.html — create it before building the plugin. " +
+                    "See whats-new/TEMPLATE.html and .cursor/rules/plugin-release-workflow.mdc",
+            )
+        }
     }
     buildPlugin {
         archiveFileName.set("AccessScope-${project.version}.zip")
