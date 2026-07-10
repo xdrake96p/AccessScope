@@ -1,5 +1,5 @@
 ---
-description: Release plugin Android Studio e estensione VS Code — versione allineata, whats-new e build
+description: Release plugin Android Studio e VS Code — versione allineata, whats-new e build
 globs:
   - access-scope-plugin/android-studio-plugin/**
   - access-scope-plugin/vscode-extension/**
@@ -9,40 +9,60 @@ alwaysApply: false
 
 # Release plugin IDE AccessScope (Android Studio + VS Code/Cursor)
 
-## Versioni allineate
+## Parità obbligatoria
 
-**Android Studio plugin** e **VS Code extension** devono avere la **stessa versione** (es. `1.0.8`).
+Prima di ogni release, leggere `.cursor/rules/plugin-parity.mdc`.  
+**Android Studio** e **VS Code/Cursor** devono avere la **stessa versione** e le **stesse funzionalità**.
 
 ## Ad ogni nuova versione
 
-### Android Studio
+### 1. CLI condiviso (se toccato)
 
-1. Bump `access-scope-plugin/android-studio-plugin/build.gradle.kts` → `version`
+```bash
+cd access-scope-plugin
+./gradlew :cli:fatJar
+cp cli/build/libs/cli-1.0.0-all.jar vscode-extension/bin/AccessScope-cli.jar
+```
+
+### 2. Android Studio
+
+1. Bump `android-studio-plugin/build.gradle.kts` → `version`
 2. Creare `android-studio-plugin/whats-new/<versione>.html` (obbligatorio per il build)
 3. `./gradlew :android-studio-plugin:buildPlugin`
-4. ZIP in `releases/<versione>/AccessScope-<versione>.zip` (solo su richiesta pubblicazione Git)
+4. Output: `android-studio-plugin/build/distributions/AccessScope-<versione>.zip`
 
-### VS Code / Cursor
+### 3. VS Code / Cursor
 
-1. Bump `vscode-extension/package.json` → `version` (stessa del plugin AS)
-2. Aggiornare `vscode-extension/CHANGELOG.md`
-3. Copiare CLI aggiornato:
-   ```bash
-   ./gradlew :cli:fatJar
-   cp cli/build/libs/cli-1.0.0-all.jar vscode-extension/bin/AccessScope-cli.jar
-   ```
+1. Bump `vscode-extension/package.json` → `version` (**identica** al plugin AS)
+2. Aggiornare `vscode-extension/CHANGELOG.md` (stesse novità del whats-new HTML)
+3. Assicurarsi che `vscode-extension/bin/AccessScope-cli.jar` sia aggiornato (passo 1)
 4. Build VSIX:
    ```bash
    cd vscode-extension && npm install && npm run package
-   cp accessscope-<versione>.vsix ~/Downloads/AccessScope-<versione>-local.vsix
    ```
-5. Su GitHub (su richiesta): copiare VSIX in `releases/<versione>/AccessScope-<versione>.vsix`
+5. Output: `vscode-extension/accessscope-<versione>.vsix` → rinominare `AccessScope-<versione>.vsix` per release
 
-## Checklist
+### 4. Pubblicazione Git (su richiesta esplicita)
 
-- [ ] Stessa versione su AS plugin e VS Code extension
-- [ ] `whats-new/<versione>.html` (Android Studio)
-- [ ] `CHANGELOG.md` aggiornato (VS Code)
-- [ ] CLI fat JAR copiato in `vscode-extension/bin/`
-- [ ] Build locale consegnata all'utente
-- [ ] Pubblicazione Git solo se richiesta esplicitamente
+```
+releases/<versione>/
+├── AccessScope-<versione>.zip
+├── AccessScope-<versione>.vsix
+└── README.md
+```
+
+Aggiornare `.github/workflows/release.yml` se cambia la versione referenziata.
+
+### 5. Manuale utente
+
+Se cambiano installazione, pulsanti, flusso o troubleshooting → aggiornare `docs/MANUALE_UTENTE.md`.
+
+## Checklist release
+
+- [ ] Parità funzionale verificata (vedi `plugin-parity.mdc`)
+- [ ] Stessa versione AS + VS Code
+- [ ] `whats-new/<versione>.html` + `CHANGELOG.md`
+- [ ] CLI JAR aggiornato in `vscode-extension/bin/`
+- [ ] Build ZIP e VSIX OK
+- [ ] `releases/<versione>/` completa (su richiesta)
+- [ ] `docs/MANUALE_UTENTE.md` aggiornato se necessario

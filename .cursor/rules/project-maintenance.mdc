@@ -44,5 +44,7 @@ object AppIconCache {
 ## Checklist fine task
 
 - [ ] `docs/PROJECT.md` riflette le modifiche del task
+- [ ] Se toccati plugin IDE: parità AS + VS Code verificata (`.cursor/rules/plugin-parity.mdc`)
+- [ ] Se cambiano flusso/installazione utente: aggiornare `docs/MANUALE_UTENTE.md`
 - [ ] Tutti i file `.kt` nuovi o modificati hanno KDoc aggiornata
-- [ ] Build `./gradlew assembleDebug` OK se sono stati toccati sorgenti
+- [ ] Build `./gradlew assembleDebug` OK se sono stati toccati sorgenti app

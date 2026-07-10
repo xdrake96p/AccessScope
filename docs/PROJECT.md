@@ -6,7 +6,9 @@
 **Package:** `dev.accessscope.scanner`  
 **Branch principale sviluppo:** `develop`  
 **Branch release stabile:** `main`  
-**Ultimo aggiornamento:** 10 luglio 2026 (v1.3.0 plugin IDE + bridge API)
+**Ultimo aggiornamento:** 10 luglio 2026 (v1.3.0 app · v1.0.8 plugin IDE)
+
+**Manuale utente e tecnico:** [`docs/MANUALE_UTENTE.md`](MANUALE_UTENTE.md) — installazione, uso plugin AS/VS Code, troubleshooting.
 
 ---
 

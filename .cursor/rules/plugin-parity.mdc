@@ -1,0 +1,73 @@
+---
+description: Parità obbligatoria tra plugin Android Studio e VS Code/Cursor
+globs:
+  - access-scope-plugin/**
+alwaysApply: true
+---
+
+# Parità plugin IDE AccessScope
+
+I plugin **Android Studio** e **VS Code/Cursor** sono due interfacce sullo **stesso prodotto**. Ogni modifica funzionale va implementata su **entrambi**, salvo limiti intrinseci della piattaforma (documentati nel commit).
+
+## Regola fondamentale
+
+> **Nessuna feature, fix o comando utente solo su un IDE.**  
+> Se cambi uno, cambi l'altro nella stessa versione.
+
+## Core condiviso
+
+Tutta la logica device/APK/risultati vive in `access-scope-plugin/cli/` (`access-scope-cli`):
+
+- `devices list`, `install`, `launch`, `fetch-results`, `setup-check`
+- Risoluzione `adb`, reinstall firma APK, download release GitHub
+
+**Non duplicare** questa logica nelle UI IDE: entrambi i plugin invocano lo stesso JAR.
+
+## Matrice parità funzionale (v1.0.8)
+
+| Funzione | Android Studio | VS Code / Cursor |
+|----------|----------------|------------------|
+| Elenco device | Refresh Devices | Refresh / Select Device |
+| Install / Update APK | Install / Update | Install / Update |
+| Apri app su device | Launch | Launch |
+| Recupera JSON scan | Fetch Results | Fetch Results |
+| Verifica prerequisiti | Setup Check | Check Setup |
+| Pulisci log | Clear log | Clear log |
+| Aggiorna plugin | Plugin update | Plugin update |
+| Target package Gradle | auto in pannello | auto + setting |
+| Pannello dedicato | Tool Window | Activity Bar sidebar |
+
+Nuove funzioni: aggiungere riga a questa matrice e implementare su **entrambi** prima di chiudere il task.
+
+## Versioning allineato
+
+- Stesso numero di versione: `android-studio-plugin/build.gradle.kts` = `vscode-extension/package.json`
+- Stesso CLI bundled: dopo `:cli:fatJar`, copiare JAR in `vscode-extension/bin/AccessScope-cli.jar`
+- Release Git: `releases/<versione>/` contiene **ZIP + VSIX**
+
+## Documentazione per versione
+
+| IDE | File novità obbligatorio |
+|-----|--------------------------|
+| Android Studio | `android-studio-plugin/whats-new/<versione>.html` |
+| VS Code | `vscode-extension/CHANGELOG.md` (sezione stessa versione) |
+
+Il contenuto delle novità deve essere **equivalente** (stessi bullet, linguaggio adattato alla piattaforma).
+
+## Eccezioni ammesse (da dichiarare esplicitamente)
+
+- Menu nativi IDE (es. `Tools → AccessScope` solo su AS; Activity Bar solo su VS Code)
+- Webview risultati HTML (VS Code) vs output testuale JSON (AS) — stesso dato, presentazione diversa
+- Riavvio IDE per update plugin (comportamento identico, meccanismo nativo)
+
+## Checklist obbligatoria prima di considerare il task completato
+
+- [ ] Modifica in `cli/` se riguarda device, install, adb, risultati
+- [ ] UI/UX aggiornata su **Android Studio** (`AccessScopeToolWindowFactory`, azioni menu)
+- [ ] UI/UX aggiornata su **VS Code** (`extension.ts`, `sidebarPanel.ts`, `package.json` commands)
+- [ ] Versione identica su entrambi i plugin
+- [ ] `whats-new/<versione>.html` + `CHANGELOG.md` aggiornati
+- [ ] `docs/MANUALE_UTENTE.md` aggiornato se cambiano installazione, flusso utente o troubleshooting
+- [ ] Build OK: `./gradlew :android-studio-plugin:buildPlugin` e `cd vscode-extension && npm run package`
+
+Vedi anche: `.cursor/rules/plugin-release-workflow.mdc`
