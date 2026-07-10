@@ -1,0 +1,27 @@
+<idea-plugin>
+    <id>dev.accessscope.plugin</id>
+    <name>AccessScope</name>
+    <vendor>AccessScope</vendor>
+    <description><![CDATA[
+      Install, launch and fetch accessibility scan results from AccessScope on connected Android devices.
+    ]]></description>
+    <depends>com.intellij.modules.platform</depends>
+
+    <extensions defaultExtensionNs="com.intellij">
+        <toolWindow
+            id="AccessScope"
+            anchor="right"
+            factoryClass="dev.accessscope.plugin.AccessScopeToolWindowFactory"
+            icon="AllIcons.General.InspectionsOK"/>
+    </extensions>
+
+    <actions>
+        <action
+            id="AccessScope.InstallLaunch"
+            class="dev.accessscope.plugin.InstallLaunchAction"
+            text="Open AccessScope on Device"
+            description="Install or update AccessScope and launch it on the selected device">
+            <add-to-group group-id="RunMenu" anchor="last"/>
+        </action>
+    </actions>
+</idea-plugin>

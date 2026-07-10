@@ -67,5 +67,10 @@
                 android:name="android.support.FILE_PROVIDER_PATHS"
                 android:resource="@xml/file_paths" />
         </provider>
+
+        <provider
+            android:name=".bridge.ScanResultProvider"
+            android:authorities="dev.accessscope.scanner.results"
+            android:exported="true" />
     </application>
 </manifest>

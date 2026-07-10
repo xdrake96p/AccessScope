@@ -188,6 +188,9 @@ class ScanHistoryStore(context: Context) {
         sessionFile(session.id).writeText(serializeSession(session).toString())
     }
 
+    /** Serializza una sessione archiviata in JSON per export/provider IDE. */
+    fun sessionToJson(session: ArchivedScanSession): JSONObject = serializeSession(session)
+
     private fun serializeSession(session: ArchivedScanSession): JSONObject = JSONObject().apply {
         put("id", session.id)
         put("completedAtMs", session.completedAtMs)
@@ -232,6 +235,7 @@ class ScanHistoryStore(context: Context) {
 
     private fun serializeViolation(v: AccessibilityViolation): JSONObject = JSONObject().apply {
         put("type", v.type.name)
+        put("severity", v.type.severity.name)
         put("viewClassName", v.viewClassName)
         put("screenTitle", v.screenTitle)
         put("packageName", v.packageName)

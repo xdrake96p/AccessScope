@@ -7,6 +7,12 @@
 package dev.accessscope.scanner
 
 import android.app.Application
+import android.content.Intent
+import android.util.Log
+import dev.accessscope.scanner.bridge.ACTION_SCAN_COMPLETE
+import dev.accessscope.scanner.bridge.BRIDGE_LOG_TAG
+import dev.accessscope.scanner.bridge.EXTRA_PACKAGE_NAME
+import dev.accessscope.scanner.bridge.EXTRA_SESSION_ID
 import dev.accessscope.scanner.data.ScanSessionRepository
 import dev.accessscope.scanner.export.PdfReportExporter
 import dev.accessscope.scanner.export.ScanReliabilityReportExporter
@@ -132,6 +138,7 @@ class AccessScopeApp : Application() {
             )
             lastArchivedSessionId = archived.id
             scanHistoryStore.archive(archived)
+            notifyScanComplete(archived.id, archived.targetPackages.firstOrNull())
         }
 
         scanRepository.stopScan()
@@ -204,5 +211,17 @@ class AccessScopeApp : Application() {
                 scanEvidenceStore.cleanupExcept(scanHistoryStore.allSessionIds())
             }
         }
+    }
+
+    private fun notifyScanComplete(sessionId: String, packageName: String?) {
+        sendBroadcast(Intent(ACTION_SCAN_COMPLETE).apply {
+            putExtra(EXTRA_SESSION_ID, sessionId)
+            putExtra(EXTRA_PACKAGE_NAME, packageName)
+            setPackage(this@AccessScopeApp.packageName)
+        })
+        Log.i(
+            BRIDGE_LOG_TAG,
+            "scan_complete sessionId=$sessionId package=${packageName.orEmpty()}",
+        )
     }
 }

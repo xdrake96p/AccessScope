@@ -1,0 +1,86 @@
+{
+  "name": "access-scope",
+  "displayName": "AccessScope",
+  "description": "Install, launch and fetch accessibility scan results from AccessScope on Android devices.",
+  "version": "1.0.0",
+  "publisher": "accessscope",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Testing",
+    "Other"
+  ],
+  "activationEvents": [
+    "onCommand:accessScope.selectDevice",
+    "onCommand:accessScope.installAndLaunch",
+    "onCommand:accessScope.fetchResults",
+    "onCommand:accessScope.checkSetup"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "accessScope.selectDevice",
+        "title": "AccessScope: Select Device"
+      },
+      {
+        "command": "accessScope.installAndLaunch",
+        "title": "AccessScope: Install and Launch"
+      },
+      {
+        "command": "accessScope.fetchResults",
+        "title": "AccessScope: Fetch Results"
+      },
+      {
+        "command": "accessScope.checkSetup",
+        "title": "AccessScope: Check Setup"
+      }
+    ],
+    "configuration": {
+      "title": "AccessScope",
+      "properties": {
+        "accessScope.githubRepo": {
+          "type": "string",
+          "default": "xdrake96p/AccessScope",
+          "description": "GitHub repository used to download AccessScope releases."
+        },
+        "accessScope.cliPath": {
+          "type": "string",
+          "default": "",
+          "description": "Path to access-scope-cli JAR. Empty uses bundled JAR."
+        },
+        "accessScope.defaultDevice": {
+          "type": "string",
+          "default": "",
+          "description": "Default adb device serial."
+        },
+        "accessScope.autoUpdate": {
+          "type": "boolean",
+          "default": true,
+          "description": "Automatically update AccessScope before launch."
+        },
+        "accessScope.targetPackage": {
+          "type": "string",
+          "default": "",
+          "description": "Target app package for fetch-results (e.g. it.nexi.bff)."
+        },
+        "accessScope.javaPath": {
+          "type": "string",
+          "default": "",
+          "description": "Java executable for running the CLI JAR."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "@types/vscode": "^1.85.0",
+    "typescript": "^5.3.3"
+  }
+}
