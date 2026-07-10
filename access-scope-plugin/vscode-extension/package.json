@@ -1,8 +1,8 @@
 {
   "name": "accessscope",
   "displayName": "AccessScope",
-  "description": "Install, launch and fetch accessibility scan results from AccessScope on Android devices.",
-  "version": "1.0.1",
+  "description": "Bridge VS Code/Cursor ↔ AccessScope: installa l'APK sul device, apre l'app e recupera i report WCAG in JSON.",
+  "version": "1.0.8",
   "publisher": "accessscope",
   "engines": {
     "vscode": "^1.85.0"
@@ -12,31 +12,110 @@
     "Other"
   ],
   "activationEvents": [
-    "onCommand:accessScope.selectDevice",
-    "onCommand:accessScope.installAndLaunch",
-    "onCommand:accessScope.fetchResults",
-    "onCommand:accessScope.checkSetup"
+    "onView:accessScope.sidebar"
   ],
   "main": "./out/extension.js",
   "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "accessScope",
+          "title": "AccessScope",
+          "icon": "media/access-scope.svg"
+        }
+      ]
+    },
+    "views": {
+      "accessScope": [
+        {
+          "type": "webview",
+          "id": "accessScope.sidebar",
+          "name": "AccessScope",
+          "icon": "media/access-scope.svg"
+        }
+      ]
+    },
     "commands": [
       {
+        "command": "accessScope.openPanel",
+        "title": "AccessScope: Open Panel",
+        "icon": {
+          "light": "media/access-scope.svg",
+          "dark": "media/access-scope.svg"
+        }
+      },
+      {
         "command": "accessScope.selectDevice",
-        "title": "AccessScope: Select Device"
+        "title": "AccessScope: Select Device",
+        "icon": "$(device-mobile)"
+      },
+      {
+        "command": "accessScope.install",
+        "title": "AccessScope: Install / Update",
+        "icon": "$(cloud-download)"
+      },
+      {
+        "command": "accessScope.launch",
+        "title": "AccessScope: Launch",
+        "icon": "$(run)"
       },
       {
         "command": "accessScope.installAndLaunch",
-        "title": "AccessScope: Install and Launch"
+        "title": "AccessScope: Install and Launch",
+        "icon": "$(run-all)"
       },
       {
         "command": "accessScope.fetchResults",
-        "title": "AccessScope: Fetch Results"
+        "title": "AccessScope: Fetch Results",
+        "icon": "$(json)"
       },
       {
         "command": "accessScope.checkSetup",
-        "title": "AccessScope: Check Setup"
+        "title": "AccessScope: Check Setup",
+        "icon": "$(checklist)"
+      },
+      {
+        "command": "accessScope.clearOutput",
+        "title": "AccessScope: Clear Output",
+        "icon": "$(clear-all)"
+      },
+      {
+        "command": "accessScope.checkExtensionUpdate",
+        "title": "AccessScope: Check Extension Update",
+        "icon": "$(cloud-download)"
       }
     ],
+    "menus": {
+      "commandPalette": [
+        {
+          "command": "accessScope.openPanel"
+        },
+        {
+          "command": "accessScope.selectDevice"
+        },
+        {
+          "command": "accessScope.install"
+        },
+        {
+          "command": "accessScope.launch"
+        },
+        {
+          "command": "accessScope.installAndLaunch"
+        },
+        {
+          "command": "accessScope.fetchResults"
+        },
+        {
+          "command": "accessScope.checkSetup"
+        },
+        {
+          "command": "accessScope.clearOutput"
+        },
+        {
+          "command": "accessScope.checkExtensionUpdate"
+        }
+      ]
+    },
     "configuration": {
       "title": "AccessScope",
       "properties": {
@@ -63,7 +142,7 @@
         "accessScope.targetPackage": {
           "type": "string",
           "default": "",
-          "description": "Target app package for fetch-results (e.g. it.nexi.bff)."
+          "description": "Target app package for fetch-results. Empty auto-detects from app/build.gradle."
         },
         "accessScope.javaPath": {
           "type": "string",
@@ -76,11 +155,13 @@
   "scripts": {
     "vscode:prepublish": "npm run compile",
     "compile": "tsc -p ./",
-    "watch": "tsc -watch -p ./"
+    "watch": "tsc -watch -p ./",
+    "package": "npm run compile && vsce package --no-dependencies"
   },
   "devDependencies": {
     "@types/node": "^20.11.0",
     "@types/vscode": "^1.85.0",
+    "@vscode/vsce": "^3.2.1",
     "typescript": "^5.3.3"
   }
 }

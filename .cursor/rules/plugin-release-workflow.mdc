@@ -1,43 +1,48 @@
 ---
-description: Release plugin Android Studio — versione, whats-new e build locale/pubblicazione
+description: Release plugin Android Studio e estensione VS Code — versione allineata, whats-new e build
 globs:
   - access-scope-plugin/android-studio-plugin/**
+  - access-scope-plugin/vscode-extension/**
   - access-scope-plugin/releases/**
 alwaysApply: false
 ---
 
-# Release plugin Android Studio (AccessScope)
+# Release plugin IDE AccessScope (Android Studio + VS Code/Cursor)
 
-## Ad ogni nuova versione del plugin
+## Versioni allineate
 
-1. **Bump versione** in `access-scope-plugin/android-studio-plugin/build.gradle.kts` (`version = "x.y.z"`).
+**Android Studio plugin** e **VS Code extension** devono avere la **stessa versione** (es. `1.0.8`).
 
-2. **Obbligatorio: file What's New**
-   - Creare `access-scope-plugin/android-studio-plugin/whats-new/<versione>.html`
-   - Usare `whats-new/TEMPLATE.html` come base
-   - Elencare in italiano le novità visibili all'utente (pulsanti, fix, compatibilità)
-   - Il build Gradle legge questo file e lo inietta in `changeNotes` del plugin (scheda **What's New** in Settings → Plugins)
+## Ad ogni nuova versione
 
-3. **Descrizione plugin** (`META-INF/plugin.xml`): aggiornare solo se cambiano funzionalità o flusso d'uso documentato.
+### Android Studio
 
-4. **Compatibilità IDE**: mantenere `sinceBuild` il più basso possibile compatibile con le API usate; `untilBuild` su `999.*`.
+1. Bump `access-scope-plugin/android-studio-plugin/build.gradle.kts` → `version`
+2. Creare `android-studio-plugin/whats-new/<versione>.html` (obbligatorio per il build)
+3. `./gradlew :android-studio-plugin:buildPlugin`
+4. ZIP in `releases/<versione>/AccessScope-<versione>.zip` (solo su richiesta pubblicazione Git)
 
-5. **Build locale** (default finché l'utente non chiede pubblicazione):
+### VS Code / Cursor
+
+1. Bump `vscode-extension/package.json` → `version` (stessa del plugin AS)
+2. Aggiornare `vscode-extension/CHANGELOG.md`
+3. Copiare CLI aggiornato:
    ```bash
-   cd access-scope-plugin
-   ./gradlew :android-studio-plugin:buildPlugin
-   cp android-studio-plugin/build/distributions/AccessScope-<versione>.zip ~/Downloads/AccessScope-<versione>-local.zip
+   ./gradlew :cli:fatJar
+   cp cli/build/libs/cli-1.0.0-all.jar vscode-extension/bin/AccessScope-cli.jar
    ```
+4. Build VSIX:
+   ```bash
+   cd vscode-extension && npm install && npm run package
+   cp accessscope-<versione>.vsix ~/Downloads/AccessScope-<versione>-local.vsix
+   ```
+5. Su GitHub (su richiesta): copiare VSIX in `releases/<versione>/AccessScope-<versione>.vsix`
 
-6. **Pubblicazione su GitHub** (solo su richiesta esplicita):
-   - Copiare ZIP in `access-scope-plugin/releases/<versione>/`
-   - README nella cartella release
-   - Commit su `develop`; merge/tag secondo `git-release-workflow.mdc`
+## Checklist
 
-## Checklist versione plugin
-
-- [ ] `build.gradle.kts` → `version` aggiornata
-- [ ] `whats-new/<versione>.html` creato e compilato
-- [ ] Build `./gradlew :android-studio-plugin:buildPlugin` OK
-- [ ] ZIP locale consegnato o path indicato all'utente
-- [ ] Pubblicazione GitHub solo se richiesta
+- [ ] Stessa versione su AS plugin e VS Code extension
+- [ ] `whats-new/<versione>.html` (Android Studio)
+- [ ] `CHANGELOG.md` aggiornato (VS Code)
+- [ ] CLI fat JAR copiato in `vscode-extension/bin/`
+- [ ] Build locale consegnata all'utente
+- [ ] Pubblicazione Git solo se richiesta esplicitamente

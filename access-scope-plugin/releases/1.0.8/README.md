@@ -1,25 +1,35 @@
-# Release plugin Android Studio v1.0.8
+# Release AccessScope IDE v1.0.8
 
-## Installazione
+Plugin Android Studio e estensione VS Code/Cursor allineati alla **stessa versione 1.0.8**.
+
+## Android Studio
 
 Scarica e installa **solo** `AccessScope-1.0.8.zip`:
 
 **Settings → Plugins → Install Plugin from Disk…** → riavvia Android Studio.
 
-## Novità principali
+### Novità
 
 - **Clear log** e **Plugin update** su riga dedicata nel pannello
 - **Plugin update**: verifica GitHub, download e installazione automatica
-- Descrizione professionale in Settings → Plugins → Overview
-- Scheda **What's New** con elenco novità per versione
+- Descrizione professionale in Overview + scheda **What's New**
 - Compatibilità **Android Studio 2022.2+** (build 222)
+- Fix `adb`, firma APK incompatibile, messaggi di errore
 
-## Fix inclusi
+## VS Code / Cursor
 
-- Risoluzione percorso `adb` da SDK / `local.properties`
-- Reinstall automatico su firma APK incompatibile
-- Messaggi di errore migliorati (device, storage, USB)
+Scarica e installa `AccessScope-1.0.8.vsix`:
 
-## Aggiornamento da 1.0.7
+**Extensions → ⋯ → Install from VSIX…** → ricarica la finestra.
 
-Nel pannello AccessScope: **Plugin update**, oppure reinstalla da ZIP.
+### Novità
+
+- **Icona AccessScope** nella Activity Bar (barra sinistra) con pannello e pulsanti
+- Stesso flusso del plugin Android Studio: device, install, launch, fetch, setup
+- **Clear log** e **Check Extension Update** nel pannello
+- CLI aggiornato (adb SDK, reinstall firma APK)
+
+## Aggiornamento
+
+- **Android Studio**: pulsante **Plugin update** nel pannello, oppure reinstalla lo ZIP
+- **VS Code**: **Plugin update** nel pannello o **Check Extension Update** da Command Palette
