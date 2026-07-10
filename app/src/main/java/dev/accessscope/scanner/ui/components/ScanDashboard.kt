@@ -36,6 +36,7 @@ import androidx.compose.material.icons.outlined.ViewCarousel
 import androidx.compose.material.icons.outlined.Warning
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
@@ -92,6 +93,7 @@ fun ScanDashboard(
     talkBackFindings: Int,
     isScanning: Boolean,
     onOpenReport: () -> Unit,
+    onOpenDynamicReport: () -> Unit = {},
     modifier: Modifier = Modifier,
     scanAnalyses: Int = 0,
     isPartialScan: Boolean = false,
@@ -227,6 +229,16 @@ fun ScanDashboard(
                     comparison = sessionComparison,
                     modifier = Modifier.fillMaxWidth(),
                 )
+                OutlinedButton(
+                    onClick = onOpenDynamicReport,
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp),
+                    enabled = hasLiveData,
+                ) {
+                    Icon(Icons.Outlined.ViewCarousel, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text("Report dinamico")
+                }
                 Button(
                     onClick = onOpenReport,
                     modifier = Modifier.fillMaxWidth(),
@@ -248,6 +260,16 @@ fun ScanDashboard(
                         style = MaterialTheme.typography.bodySmall,
                         color = contentSecondary(),
                     )
+                }
+            } else if (hasLiveData) {
+                OutlinedButton(
+                    onClick = onOpenDynamicReport,
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp),
+                ) {
+                    Icon(Icons.Outlined.ViewCarousel, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text("Report dinamico")
                 }
             }
         }

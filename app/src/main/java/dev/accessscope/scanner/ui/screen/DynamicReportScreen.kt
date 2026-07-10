@@ -1,0 +1,226 @@
+/**
+ * Report dinamico navigabile per schermata, in stile Google Accessibility Scanner.
+ */
+package dev.accessscope.scanner.ui.screen
+
+import android.graphics.Bitmap
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateMapOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import dev.accessscope.scanner.data.AccessibilityViolation
+import dev.accessscope.scanner.data.ViolationSeverity
+import dev.accessscope.scanner.report.DynamicReportHelper
+import dev.accessscope.scanner.ui.components.AccessScopeTopBar
+import dev.accessscope.scanner.ui.components.ScreenFilmstrip
+import dev.accessscope.scanner.ui.components.ScreenIssueCanvas
+import dev.accessscope.scanner.ui.components.ScreenIssueList
+import dev.accessscope.scanner.ui.theme.contentSecondary
+import dev.accessscope.scanner.ui.theme.severityColor
+import dev.accessscope.scanner.ui.viewmodel.ScanViewModel
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+fun DynamicReportScreen(
+    viewModel: ScanViewModel,
+    onBack: () -> Unit,
+    onOpenViolationDetail: (String) -> Unit,
+    sessionId: String? = null,
+) {
+    val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val scan = uiState.scanState
+    val frames = remember(
+        scan.visitedScreens,
+        scan.violations,
+        scan.screenReaderFindings,
+        scan.checkSummaries,
+        sessionId,
+    ) {
+        DynamicReportHelper.buildFrames(
+            visitedScreens = scan.visitedScreens,
+            violations = scan.violations,
+            talkBackFindings = scan.screenReaderFindings,
+            checkSummaries = scan.checkSummaries,
+            screenEvidenceIdResolver = { fingerprint ->
+                fingerprint.replace(Regex("""[^\w.-]"""), "_").take(120)
+            },
+        )
+    }
+
+    var selectedIndex by rememberSaveable { mutableIntStateOf(0) }
+    var severityFilter by rememberSaveable { mutableStateOf<ViolationSeverity?>(null) }
+    var selectedDedupeKey by rememberSaveable { mutableStateOf<String?>(null) }
+    val thumbnails = remember { mutableStateMapOf<String, Bitmap?>() }
+
+    val safeIndex = selectedIndex.coerceIn(0, (frames.size - 1).coerceAtLeast(0))
+    val currentFrame = frames.getOrNull(safeIndex)
+    val filteredViolations = remember(currentFrame, severityFilter) {
+        currentFrame?.let { DynamicReportHelper.filterFrameViolations(it, severityFilter) }.orEmpty()
+    }
+
+    LaunchedEffect(frames, safeIndex, sessionId) {
+        val frame = frames.getOrNull(safeIndex) ?: return@LaunchedEffect
+        if (thumbnails.containsKey(frame.fingerprint)) return@LaunchedEffect
+        val bitmap = withContext(Dispatchers.IO) {
+            viewModel.loadScreenBitmapForFrame(frame, sessionId)
+        }
+        thumbnails[frame.fingerprint] = bitmap
+    }
+
+    LaunchedEffect(frames.size) {
+        if (selectedIndex >= frames.size) {
+            selectedIndex = (frames.size - 1).coerceAtLeast(0)
+        }
+    }
+
+    Scaffold(
+        topBar = {
+            AccessScopeTopBar(
+                title = "Report dinamico",
+                onBack = onBack,
+            )
+        },
+        modifier = Modifier.navigationBarsPadding(),
+    ) { padding ->
+        if (frames.isEmpty()) {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(padding)
+                    .padding(24.dp),
+            ) {
+                Text(
+                    "Nessuna schermata nel report",
+                    style = MaterialTheme.typography.titleMedium,
+                )
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    if (scan.isScanning) {
+                        "Naviga nell'app analizzata per popolare il report dinamico."
+                    } else {
+                        "Avvia una scansione e visita le schermate dell'app target."
+                    },
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = contentSecondary(),
+                )
+            }
+            return@Scaffold
+        }
+
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(padding)
+                .verticalScroll(rememberScrollState()),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            ScreenFilmstrip(
+                frames = frames,
+                selectedIndex = safeIndex,
+                thumbnails = thumbnails,
+                onSelect = { index ->
+                    selectedIndex = index
+                    selectedDedupeKey = null
+                },
+            )
+
+            SeverityFilterRow(
+                violations = currentFrame?.violations.orEmpty(),
+                selected = severityFilter,
+                onSelect = { severityFilter = it },
+            )
+
+            currentFrame?.let { frame ->
+                val bitmap = thumbnails[frame.fingerprint]
+                ScreenIssueCanvas(
+                    bitmap = bitmap,
+                    violations = filteredViolations,
+                    selectedDedupeKey = selectedDedupeKey,
+                    onViolationClick = { violation ->
+                        selectedDedupeKey = violation.dedupeKey
+                    },
+                    modifier = Modifier.padding(horizontal = 16.dp),
+                )
+
+                ScreenIssueList(
+                    frame = frame,
+                    violations = filteredViolations,
+                    selectedDedupeKey = selectedDedupeKey,
+                    onViolationClick = { violation, _ ->
+                        selectedDedupeKey = violation.dedupeKey
+                    },
+                    onOpenViolationDetail = { violation ->
+                        onOpenViolationDetail(violation.dedupeKey)
+                    },
+                )
+            }
+
+            Spacer(Modifier.height(16.dp))
+        }
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun SeverityFilterRow(
+    violations: List<AccessibilityViolation>,
+    selected: ViolationSeverity?,
+    onSelect: (ViolationSeverity?) -> Unit,
+) {
+    val counts = violations.groupingBy { it.type.severity }.eachCount()
+  if (violations.isEmpty()) return
+
+    FlowRow(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        FilterChip(
+            selected = selected == null,
+            onClick = { onSelect(null) },
+            label = { Text("Tutti (${violations.size})") },
+        )
+        ViolationSeverity.entries.forEach { severity ->
+            val count = counts[severity] ?: 0
+            if (count == 0) return@forEach
+            FilterChip(
+                selected = selected == severity,
+                onClick = { onSelect(if (selected == severity) null else severity) },
+                label = { Text("${severity.label} ($count)") },
+                colors = FilterChipDefaults.filterChipColors(
+                    selectedContainerColor = severityColor(severity).copy(alpha = 0.18f),
+                    selectedLabelColor = severityColor(severity),
+                ),
+            )
+        }
+    }
+}

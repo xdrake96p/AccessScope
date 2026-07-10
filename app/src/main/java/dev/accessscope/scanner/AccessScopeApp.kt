@@ -14,7 +14,7 @@ import dev.accessscope.scanner.bridge.BRIDGE_LOG_TAG
 import dev.accessscope.scanner.bridge.EXTRA_PACKAGE_NAME
 import dev.accessscope.scanner.bridge.EXTRA_SESSION_ID
 import dev.accessscope.scanner.data.ScanSessionRepository
-import dev.accessscope.scanner.export.PdfReportExporter
+import dev.accessscope.scanner.export.pdf.PdfReportExporter
 import dev.accessscope.scanner.export.ScanReliabilityReportExporter
 import dev.accessscope.scanner.service.ScanOverlayService
 import dev.accessscope.scanner.util.AppFileLogger

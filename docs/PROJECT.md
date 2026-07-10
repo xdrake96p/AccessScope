@@ -62,17 +62,18 @@ Utente → HomeScreen (selezione app) → Avvia scan
 
 | Modulo | Ruolo |
 |--------|--------|
-| `AccessScopeAccessibilityService` | Cattura eventi, debounce scan, multi-finestra, overlay |
-| `NodeAccessibilityAnalyzer` | 37 tipi di violazione WCAG, contrasto, touch, label |
-| `PrecisionRules` | Euristiche generiche anti-FP (drawer, home widget, carousel…) |
+| `AccessScopeAccessibilityService` | Lifecycle Android; delega a `service/scan/*` (scheduler, root, screenshot, tree) |
+| `NodeAccessibilityAnalyzer` | Orchestratore analisi; logica in `analyzer/node/*` |
+| `PrecisionRules` | Facade euristiche anti-FP; implementazione in `analyzer/precision/*` |
 | `AppPrecisionProfiles` | Marker opzionali per app note (Nexi) |
-| `ScreenTitleResolver` | Titolo schermata da topbar, heading, viewId |
+| `ScreenTitleResolver` | Facade titolo schermata; logica in `analyzer/title/*` |
 | `CheckCollector` | Registra controlli superati per report |
 | `ViolationDedupeRules` | Chiavi dedupe stabili in scroll (viewId, bounds quantizzati) |
 | `ScanHistoryStore` | Persistenza JSON cronologia sessioni (20 per package) |
 | `SessionComparisonHelper` | Confronto +N/−M risolti tra sessioni |
-| `PdfReportExporter` | PDF con problemi dettagliati + sezione OK |
+| `PdfReportExporter` | Facade export PDF; rendering in `export/pdf/*` |
 | `ScanSessionRepository` | Stato sessione live, dedupe in-memory, fingerprint schermate |
+| `ScanViewModel` | StateFlow UI; controller in `ScanAppListController`, `ScanSessionController`, `ScanHistoryController` |
 
 ---
 
@@ -92,6 +93,23 @@ Utente → HomeScreen (selezione app) → Avvia scan
 ---
 
 ## Cronologia sviluppo
+
+### Refactor strutturale — spezzettamento file grandi (10 luglio 2026)
+
+Refactoring **move-only** dei sorgenti più grandi (>500 righe), senza cambio di comportamento né bump versione. API pubbliche invariate tramite facade/delegation; moduli estratti `internal` dove possibile.
+
+| Area | Package / file | Contenuto estratto |
+|------|----------------|-------------------|
+| Data | `data/` | `ViolationTypes`, `ViolationModels`, `SessionModels`, `AppModels` (eliminato `Models.kt`) |
+| Analyzer | `analyzer/precision/` | `PrecisionRulesApp`, `PrecisionRulesPlatform`, `PrecisionExtensions`; facade `PrecisionRules.kt` |
+| Analyzer | `analyzer/node/` | collector, checker singolo/contrasto/cross-node/strutturale, `ViolationBuilder`; orchestrator `NodeAccessibilityAnalyzer.kt` |
+| Analyzer | `analyzer/title/` | candidati, tree walk, euristiche Nexi, cache; facade `ScreenTitleResolver.kt` |
+| Export | `export/pdf/` | costanti, contesto disegno, renderer copertina/violazioni/sezioni ausiliarie |
+| Service | `service/scan/` | scheduler, root selector, screenshot, tree scanner |
+| ViewModel | `ui/viewmodel/` | `ScanViewModelUiState`, controller app-list/session/history |
+| UI | `ui/screen/report/`, `ui/screen/home/` | composable estratti da `ReportScreen` e `HomeScreen` |
+
+Verifica: `./gradlew :app:testDebugUnitTest :app:assembleDebug` (99 test JVM, inclusi `PlatformPatternsRegressionTest` e `MpsVerificationRegressionTest`).
 
 ### v1.3.1 — Fix API 34, firma release, CI unificata, feedback (10 luglio 2026)
 
@@ -353,6 +371,7 @@ Report PDF: `/storage/emulated/0/Download/AccessScope_*.pdf`
 | `6bb2798` | Iter 8: generiche multi-app + profili |
 | *v1.1.0* | Iter 9–10 motore, check OK, UI fluida, PROJECT.md |
 | *pending* | KDoc completa su tutti i sorgenti + regola Cursor manutenzione doc |
+| *pending* | Refactor strutturale: spezzettamento file grandi per responsabilità (nessun cambio comportamento) |
 
 ---
 

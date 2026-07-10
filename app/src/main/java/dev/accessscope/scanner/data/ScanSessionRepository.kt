@@ -39,6 +39,25 @@ class ScanSessionRepository(context: android.content.Context) {
     private val scannedScreenTitles = LinkedHashMap<String, String>()
     private var activeSessionId: String? = null
 
+    private fun buildVisitedScreens(): List<VisitedScreen> =
+        scannedScreenTitles.entries.mapIndexed { index, (fingerprint, title) ->
+            VisitedScreen(
+                fingerprint = fingerprint,
+                title = title,
+                visitIndex = index,
+            )
+        }
+
+    private fun syncVisitedScreensState() {
+        val screens = buildVisitedScreens()
+        _state.update {
+            it.copy(
+                visitedScreenTitles = screens.map { s -> s.title },
+                visitedScreens = screens,
+            )
+        }
+    }
+
     /** Callback invocata quando l'overlay richiede l'arresto della scansione. */
     var stopCallback: (() -> Unit)? = null
 
@@ -252,18 +271,16 @@ class ScanSessionRepository(context: android.content.Context) {
      */
     fun registerUniqueScreen(fingerprint: String, screenTitle: String) {
         if (fingerprint.isBlank()) return
+        val isNew = !seenFingerprints.contains(fingerprint)
         scannedScreenTitles[fingerprint] = screenTitle
-        if (!seenFingerprints.add(fingerprint)) {
-            _state.update { it.copy(visitedScreenTitles = scannedScreenTitles.values.toList()) }
+        if (!isNew) {
+            syncVisitedScreensState()
             return
         }
+        seenFingerprints.add(fingerprint)
         val screensBefore = _state.value.uniqueScreens
-        _state.update {
-            it.copy(
-                uniqueScreens = it.uniqueScreens + 1,
-                visitedScreenTitles = scannedScreenTitles.values.toList(),
-            )
-        }
+        syncVisitedScreensState()
+        _state.update { it.copy(uniqueScreens = screensBefore + 1) }
         // #region agent log
         DebugTrace.log(
             hypothesisId = "H4",

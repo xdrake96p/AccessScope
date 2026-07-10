@@ -25,6 +25,7 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
+import dev.accessscope.scanner.ui.screen.DynamicReportScreen
 import dev.accessscope.scanner.ui.screen.FeedbackScreen
 import dev.accessscope.scanner.ui.screen.HomeScreen
 import dev.accessscope.scanner.ui.screen.LogCheckerScreen
@@ -97,6 +98,7 @@ private fun AccessScopeNavHost(viewModel: ScanViewModel) {
             HomeScreen(
                 viewModel = viewModel,
                 onOpenReport = { navController.navigate("report") },
+                onOpenDynamicReport = { navController.navigate("dynamic_report") },
                 onOpenSettings = { navController.navigate("settings") },
                 onOpenHistory = { packageName ->
                     navController.navigate("history/$packageName")
@@ -139,6 +141,25 @@ private fun AccessScopeNavHost(viewModel: ScanViewModel) {
             LogCheckerScreen(
                 viewModel = viewModel,
                 onBack = { navController.popBackStack() },
+            )
+        }
+        composable(
+            route = "dynamic_report",
+            enterTransition = { enter },
+            exitTransition = { exit },
+            popEnterTransition = { popEnter },
+            popExitTransition = { popExit },
+        ) {
+            DynamicReportScreen(
+                viewModel = viewModel,
+                onBack = { navController.popBackStack() },
+                onOpenViolationDetail = { dedupeKey ->
+                    val encoded = Base64.encodeToString(
+                        dedupeKey.toByteArray(Charsets.UTF_8),
+                        Base64.URL_SAFE or Base64.NO_WRAP,
+                    )
+                    navController.navigate("violation_detail/$encoded")
+                },
             )
         }
         composable(
