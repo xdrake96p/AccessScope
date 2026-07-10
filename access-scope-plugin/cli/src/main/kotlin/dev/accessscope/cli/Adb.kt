@@ -5,9 +5,11 @@ import java.util.concurrent.TimeUnit
 
 class Adb(private val deviceSerial: String? = null) {
 
+    private val adbExecutable = resolveAdbPath()
+
     fun run(vararg args: String, timeoutSeconds: Long = 120): AdbResult {
         val command = buildList {
-            add("adb")
+            add(adbExecutable)
             if (!deviceSerial.isNullOrBlank()) {
                 add("-s")
                 add(deviceSerial)
@@ -35,31 +37,66 @@ class Adb(private val deviceSerial: String? = null) {
 
 data class AdbResult(val output: String, val exitCode: Int)
 
+fun resolveAdbPath(): String = defaultAdbPath()
+
 fun defaultAdbPath(): String {
+    System.getenv("ACCESS_SCOPE_ADB")?.takeIf { File(it).canExecute() }?.let { return it }
+
+    sdkRootsForAdb().forEach { sdkRoot ->
+        adbInPlatformTools(sdkRoot)?.let { return it }
+    }
+
     val fromPath = runCatching {
-        ProcessBuilder("which", "adb").start().let { p ->
-            p.waitFor()
-            p.inputStream.bufferedReader().readText().trim()
+        val lookup = if (System.getProperty("os.name").contains("Windows", ignoreCase = true)) {
+            arrayOf("where", "adb")
+        } else {
+            arrayOf("which", "adb")
+        }
+        ProcessBuilder(*lookup).start().let { process ->
+            process.waitFor(5, TimeUnit.SECONDS)
+            process.inputStream.bufferedReader().readText().trim().lineSequence().firstOrNull().orEmpty()
         }
     }.getOrNull().orEmpty()
     if (fromPath.isNotBlank() && File(fromPath).canExecute()) return fromPath
 
+    return "adb"
+}
+
+private fun sdkRootsForAdb(): List<String> = buildList {
+    listOf("ACCESS_SCOPE_SDK_ROOT", "ANDROID_SDK_ROOT", "ANDROID_HOME")
+        .forEach { key -> System.getenv(key)?.takeIf { it.isNotBlank() }?.let { add(it) } }
     val home = System.getProperty("user.home")
+    add("$home/Library/Android/sdk")
+    add("$home/Android/Sdk")
+    System.getenv("LOCALAPPDATA")?.takeIf { it.isNotBlank() }?.let { add("$it/Android/Sdk") }
+}.distinct()
+
+private fun adbInPlatformTools(sdkRoot: String): String? {
+    val root = File(sdkRoot)
+    if (!root.isDirectory) return null
     val candidates = listOf(
-        "$home/Library/Android/sdk/platform-tools/adb",
-        "$home/Android/Sdk/platform-tools/adb",
+        File(root, "platform-tools/adb"),
+        File(root, "platform-tools/adb.exe"),
     )
-    return candidates.firstOrNull { File(it).canExecute() } ?: "adb"
+    return candidates.firstOrNull { it.canExecute() }?.absolutePath
 }
 
 fun ensureAdbAvailable() {
-    defaultAdbPath()
+    val adbPath = defaultAdbPath()
+    if (adbPath == "adb" || !File(adbPath).canExecute()) {
+        error(
+            "adb not found. Install Android platform-tools or set ACCESS_SCOPE_SDK_ROOT " +
+                "to your Android SDK path (e.g. ~/Library/Android/sdk).",
+        )
+    }
     runCatching {
-        ProcessBuilder(defaultAdbPath(), "version").start().let { p ->
-            p.waitFor(10, TimeUnit.SECONDS)
-            if (p.exitValue() != 0) error("adb not available")
+        ProcessBuilder(adbPath, "version").start().let { process ->
+            process.waitFor(10, TimeUnit.SECONDS)
+            if (process.exitValue() != 0) error("adb not available")
         }
     }.getOrElse {
-        error("adb not found in PATH or Android SDK. Install Android platform-tools.")
+        error(
+            "adb not found at $adbPath. Install Android platform-tools or set ACCESS_SCOPE_SDK_ROOT.",
+        )
     }
 }

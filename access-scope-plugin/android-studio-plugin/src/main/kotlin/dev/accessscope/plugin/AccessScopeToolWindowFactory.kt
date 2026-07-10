@@ -48,15 +48,15 @@ private class AccessScopePanel(private val project: Project) : JPanel(BorderLayo
         targetPackageField.text = "Target package: ${GradlePackageDetector.detectTargetPackage(project) ?: "n/a"}"
 
         refreshButton.addActionListener { refreshDevices() }
-        installButton.addActionListener { runForSelectedDevice { serial -> cli.install(serial) } }
-        launchButton.addActionListener { runForSelectedDevice { serial -> cli.launch(serial) } }
+        installButton.addActionListener { runForSelectedDevice { serial -> cli.install(project, serial) } }
+        launchButton.addActionListener { runForSelectedDevice { serial -> cli.launch(project, serial) } }
         fetchButton.addActionListener {
             runForSelectedDevice { serial ->
                 val pkg = GradlePackageDetector.detectTargetPackage(project)
-                cli.fetchResults(serial, pkg)
+                cli.fetchResults(project, serial, pkg)
             }
         }
-        setupButton.addActionListener { runForSelectedDevice { serial -> cli.setupCheck(serial) } }
+        setupButton.addActionListener { runForSelectedDevice { serial -> cli.setupCheck(project, serial) } }
 
         top.add(refreshButton)
         top.add(deviceCombo)
@@ -75,7 +75,7 @@ private class AccessScopePanel(private val project: Project) : JPanel(BorderLayo
     private fun refreshDevices() {
         runOnBackground {
             try {
-                val devices = cli.listDevices().filter { it.state == "device" }
+                val devices = cli.listDevices(project).filter { it.state == "device" }
                 val labels = devices.map { "${it.model} (${it.serial})" }
                 SwingUtilities.invokeLater {
                     deviceCombo.model = DefaultComboBoxModel(labels.toTypedArray())
@@ -123,7 +123,7 @@ class InstallLaunchAction : com.intellij.openapi.actionSystem.AnAction() {
         val cli = ApplicationManager.getApplication().getService(CliExecutor::class.java)
         runOnBackground {
             try {
-                val devices = cli.listDevices().filter { it.state == "device" }
+                val devices = cli.listDevices(project).filter { it.state == "device" }
                 if (devices.isEmpty()) {
                     SwingUtilities.invokeLater {
                         Messages.showErrorDialog(project, "No connected Android devices.", "AccessScope")
@@ -131,8 +131,8 @@ class InstallLaunchAction : com.intellij.openapi.actionSystem.AnAction() {
                     return@runOnBackground
                 }
                 val serial = devices.first().serial
-                cli.install(serial)
-                cli.launch(serial)
+                cli.install(project, serial)
+                cli.launch(project, serial)
                 SwingUtilities.invokeLater {
                     Messages.showInfoMessage(project, "AccessScope launched on $serial", "AccessScope")
                 }
