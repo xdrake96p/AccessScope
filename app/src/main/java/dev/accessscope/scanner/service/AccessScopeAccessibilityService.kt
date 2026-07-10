@@ -25,6 +25,10 @@ import dev.accessscope.scanner.analyzer.ScreenFingerprint
 import dev.accessscope.scanner.data.ViolationArea
 import dev.accessscope.scanner.data.ScanSessionRepository
 import dev.accessscope.scanner.util.AppFileLogger
+import dev.accessscope.scanner.util.ScreenshotAnalyzer
+import dev.accessscope.scanner.util.ScreenshotCapture
+import dev.accessscope.scanner.util.SecureScreenDetector
+import dev.accessscope.scanner.util.ViolationBoundsParser
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Executors
 import java.util.concurrent.ScheduledExecutorService
@@ -48,6 +52,9 @@ class AccessScopeAccessibilityService : AccessibilityService() {
 
     private val repository: ScanSessionRepository
         get() = (application as AccessScopeApp).scanRepository
+
+    private val evidenceStore
+        get() = (application as AccessScopeApp).scanEvidenceStore
 
     private val density: Float
         get() = resources.displayMetrics.density
@@ -143,8 +150,7 @@ class AccessScopeAccessibilityService : AccessibilityService() {
         val silentDynamic = dynamicTracker.isSilentDynamicContent(packageName, event.windowId)
         val scanScope = repository.currentScanScope()
         val analyzer = NodeAccessibilityAnalyzer.create(density, silentDynamic, scanScope)
-        val needsScreenshot = scanScope.includes(ViolationArea.COLOR) &&
-            Build.VERSION.SDK_INT >= Build.VERSION_CODES.R
+        val captureScreenshot = Build.VERSION.SDK_INT >= Build.VERSION_CODES.R
 
         executor.execute {
             try {
@@ -155,7 +161,7 @@ class AccessScopeAccessibilityService : AccessibilityService() {
                     silentDynamic = silentDynamic,
                     scanScope = scanScope,
                     analyzer = analyzer,
-                    needsScreenshot = needsScreenshot,
+                    needsScreenshot = captureScreenshot,
                     isRetry = false,
                 )
             } finally {
@@ -228,13 +234,13 @@ class AccessScopeAccessibilityService : AccessibilityService() {
             ),
         )
         if (needsScreenshot) {
-            captureScreenshot { bitmap ->
+            captureScreenshot { capture ->
                 try {
                     roots.forEach { root ->
-                        scanRoot(root, packageName, event, bitmap, analyzer)
+                        scanRoot(root, packageName, event, capture, analyzer)
                     }
                 } finally {
-                    bitmap?.recycle()
+                    capture.bitmap?.recycle()
                     roots.forEach { it.recycle() }
                 }
             }
@@ -367,13 +373,13 @@ class AccessScopeAccessibilityService : AccessibilityService() {
      *
      * @param onResult Callback invocato sul thread principale con il bitmap o `null`.
      */
-    private fun captureScreenshot(onResult: (Bitmap?) -> Unit) {
+    private fun captureScreenshot(onResult: (ScreenshotCapture) -> Unit) {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
-            onResult(null)
+            onResult(ScreenshotCapture(bitmap = null, secureOrUnusable = false))
             return
         }
         if (!screenshotInFlight.compareAndSet(false, true)) {
-            onResult(null)
+            onResult(ScreenshotCapture(bitmap = null, secureOrUnusable = false))
             return
         }
         takeScreenshot(
@@ -382,12 +388,23 @@ class AccessScopeAccessibilityService : AccessibilityService() {
             object : TakeScreenshotCallback {
                 override fun onSuccess(result: ScreenshotResult) {
                     screenshotInFlight.set(false)
-                    onResult(result.hardwareBuffer.toBitmap(result.colorSpace))
+                    val bitmap = result.hardwareBuffer.toBitmap(result.colorSpace)
+                    val unusable = ScreenshotAnalyzer.isBlackOrEmpty(bitmap)
+                    if (unusable) {
+                        bitmap.recycle()
+                        onResult(ScreenshotCapture(bitmap = null, secureOrUnusable = true))
+                    } else {
+                        onResult(ScreenshotCapture(bitmap = bitmap, secureOrUnusable = false))
+                    }
                 }
 
                 override fun onFailure(errorCode: Int) {
                     screenshotInFlight.set(false)
-                    onResult(null)
+                    val secure = errorCode == ERROR_TAKE_SCREENSHOT_SECURE_WINDOW
+                    if (secure) {
+                        AppFileLogger.info("A11yService", "screenshot_secure_window error=$errorCode")
+                    }
+                    onResult(ScreenshotCapture(bitmap = null, secureOrUnusable = secure))
                 }
             },
         )
@@ -427,7 +444,7 @@ class AccessScopeAccessibilityService : AccessibilityService() {
         root: AccessibilityNodeInfo,
         packageName: String,
         event: AccessibilityEvent,
-        screenshot: Bitmap?,
+        capture: ScreenshotCapture?,
         analyzer: NodeAccessibilityAnalyzer,
     ) {
         if (ScreenTitleResolver.isTransientOverlay(root)) {
@@ -438,8 +455,33 @@ class AccessScopeAccessibilityService : AccessibilityService() {
         }
         val screenTitle = ScreenTitleResolver.resolve(root, event)
         val fingerprint = ScreenFingerprint.compute(root, packageName, screenTitle)
-        val result = analyzer.analyzeTree(root, packageName, screenTitle, screenshot, fingerprint)
-        repository.addViolations(result.violations)
+        val secureContext = SecureScreenDetector.isSecureContext(root, screenTitle, packageName) ||
+            (capture?.secureOrUnusable == true)
+        val contrastBitmap = if (secureContext) null else capture?.bitmap
+        val result = analyzer.analyzeTree(root, packageName, screenTitle, contrastBitmap, fingerprint)
+        val sessionId = repository.currentSessionId()
+        val violations = when {
+            sessionId == null -> result.violations
+            secureContext -> {
+                val viewport = SecureScreenDetector.rootViewport(root)
+                evidenceStore.enrichViolationsSecure(
+                    sessionId = sessionId,
+                    screenFingerprint = fingerprint,
+                    violations = result.violations,
+                    viewport = viewport,
+                    nearbyBoundsFor = { v ->
+                        ViolationBoundsParser.rect(v)?.let { focus ->
+                            SecureScreenDetector.collectNearbyBounds(root, focus)
+                        } ?: emptyList()
+                    },
+                )
+            }
+            contrastBitmap != null ->
+                evidenceStore.enrichViolations(sessionId, fingerprint, contrastBitmap, result.violations)
+            else ->
+                evidenceStore.backfillViolations(sessionId, fingerprint, result.violations)
+        }
+        repository.addViolations(violations)
         repository.addCheckSummaries(result.checkSummaries)
         if (repository.currentScanScope().includes(ViolationArea.SCREEN_READER)) {
             repository.addScreenReaderFindings(result.screenReaderFindings)

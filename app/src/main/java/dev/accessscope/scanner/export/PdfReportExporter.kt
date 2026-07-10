@@ -8,6 +8,8 @@ package dev.accessscope.scanner.export
 
 import android.content.ContentValues
 import android.content.Context
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.graphics.Paint
 import android.graphics.RectF
 import android.graphics.Typeface
@@ -20,6 +22,7 @@ import dev.accessscope.scanner.data.CheckAreaSummary
 import dev.accessscope.scanner.data.ScreenReaderFinding
 import dev.accessscope.scanner.data.ViolationArea
 import dev.accessscope.scanner.data.ViolationSeverity
+import dev.accessscope.scanner.data.EvidenceKind
 import dev.accessscope.scanner.data.ViolationType
 import dev.accessscope.scanner.report.ReportHelper
 import java.io.File
@@ -67,9 +70,10 @@ class PdfReportExporter(private val context: Context) {
 
         drawCover(ctx, targetPackages, uniqueScreens, scanAnalyses, scanScopeLabel, filtered, screenReaderFindings.size, passedTotal)
         drawSummary(ctx, filtered, screenReaderFindings, scannedScreens)
+        drawExecutiveSummary(ctx, filtered)
         drawCheckCoverage(ctx, checkSummaries, filtered)
         drawHowToRead(ctx)
-        drawScreenSections(ctx, filtered, screenReaderFindings, checkSummaries)
+        drawSeveritySections(ctx, filtered, screenReaderFindings, checkSummaries)
 
         drawGlossary(ctx)
         ctx.finish()
@@ -123,6 +127,18 @@ class PdfReportExporter(private val context: Context) {
         ).forEach { line ->
             ctx.drawText(line, 48f, y, ctx.bodyPaint, COLOR_TEXT)
             y += 22f
+        }
+
+        y += 8f
+        ctx.drawText("Riepilogo per gravità", 40f, y, ctx.bodyBoldPaint, COLOR_BRAND_DARK)
+        y += 20f
+        ReportHelper.SEVERITY_ORDER.forEach { severity ->
+            val count = filtered.count { it.type.severity == severity }
+            ctx.drawText(
+                "${ReportHelper.severityEmoji(severity)} ${ReportHelper.severityGroupTitle(severity)}: $count",
+                56f, y, ctx.bodyPaint, severityColor(severity),
+            )
+            y += 18f
         }
 
         y += 16f
@@ -215,6 +231,115 @@ class PdfReportExporter(private val context: Context) {
         }
         ctx.y += 12f
     }
+
+  private fun drawExecutiveSummary(ctx: PdfContext, violations: List<AccessibilityViolation>) {
+    if (violations.isEmpty()) return
+    ctx.ensureSpace(90f)
+    ctx.drawText("Executive summary", 40f, ctx.y, ctx.headingPaint, COLOR_BRAND_DARK)
+    ctx.y += 28f
+    violations.groupBy { it.type.displayName }
+        .toList()
+        .sortedByDescending { it.second.size }
+        .take(5)
+        .forEach { (name, list) ->
+          ctx.ensureSpace(20f)
+          ctx.drawText("• $name: ${list.size}", 48f, ctx.y, ctx.bodyPaint, COLOR_TEXT)
+          ctx.y += 18f
+        }
+    val criticalScreens = violations.groupBy { it.screenTitle }
+        .mapValues { (_, items) ->
+          items.count {
+            it.type.severity == ViolationSeverity.CRITICAL ||
+                it.type.severity == ViolationSeverity.SERIOUS
+          }
+        }
+        .filter { it.value > 0 }
+        .toList()
+        .sortedByDescending { it.second }
+        .take(5)
+    if (criticalScreens.isNotEmpty()) {
+      ctx.y += 8f
+      ctx.drawText("Schermate più critiche:", 48f, ctx.y, ctx.bodyBoldPaint, COLOR_TEXT)
+      ctx.y += 18f
+      criticalScreens.forEach { (screen, count) ->
+        ctx.ensureSpace(18f)
+        ctx.drawText("• $screen ($count gravi/critici)", 56f, ctx.y, ctx.bodyPaint, COLOR_MUTED)
+        ctx.y += 16f
+      }
+    }
+    ctx.y += 12f
+  }
+
+  /**
+   * Dettaglio problemi ordinato per gravità (Critico → Lieve), poi per schermata.
+   */
+  private fun drawSeveritySections(
+      ctx: PdfContext,
+      violations: List<AccessibilityViolation>,
+      talkBack: List<ScreenReaderFinding>,
+      checkSummaries: List<CheckAreaSummary>,
+  ) {
+    val talkBackBySection = ReportHelper.groupTalkBackBySection(talkBack)
+    val grouped = ReportHelper.groupViolationsBySeverity(violations)
+    if (grouped.isEmpty() && talkBack.isEmpty()) return
+
+    ctx.ensureSpace(60f)
+    ctx.drawText("Dettaglio problemi per gravità", 40f, ctx.y, ctx.headingPaint, COLOR_BRAND_DARK)
+    ctx.y += 30f
+
+    grouped.forEach { (severity, sections) ->
+      ctx.ensureSpace(48f)
+      ctx.fillRect(40f, ctx.y - 6f, CONTENT_W, 30f, severityColor(severity).and(0x22FFFFFF))
+      ctx.drawText(
+          "${ReportHelper.severityEmoji(severity)} ${ReportHelper.severityGroupTitle(severity)}",
+          48f, ctx.y + 14f, ctx.areaTitlePaint, severityColor(severity),
+      )
+      ctx.y += 36f
+
+      var imagesDrawn = 0
+      sections.forEach { (section, sectionViolations) ->
+        if (sectionViolations.isEmpty()) return@forEach
+        ctx.ensureSpace(28f)
+        ctx.drawText(
+            "${section.screenTitle}${if (section.hasSubsection) " · ${section.sectionTitle}" else ""}",
+            48f, ctx.y, ctx.bodyBoldPaint, COLOR_BRAND,
+        )
+        ctx.y += 20f
+        sectionViolations.take(MAX_PER_TYPE).forEach { v ->
+          if (imagesDrawn < MAX_IMAGES_PER_SEVERITY) {
+            drawViolationCard(ctx, v, drawImage = true)
+            imagesDrawn++
+          } else {
+            drawViolationCard(ctx, v, drawImage = false)
+          }
+        }
+        if (sectionViolations.size > MAX_PER_TYPE) {
+          ctx.drawText(
+              "… altri ${sectionViolations.size - MAX_PER_TYPE} simili",
+              56f, ctx.y, ctx.metaPaint, COLOR_MUTED,
+          )
+          ctx.y += 16f
+        }
+      }
+      ctx.y += 12f
+    }
+
+    if (talkBack.isNotEmpty()) {
+      ctx.ensureSpace(48f)
+      ctx.drawText("Allegato TalkBack", 40f, ctx.y, ctx.headingPaint, COLOR_BRAND_DARK)
+      ctx.y += 26f
+      talkBackBySection.forEach { (section, findings) ->
+        ctx.ensureSpace(24f)
+        ctx.drawText("${section.screenTitle} — ${section.sectionTitle}", 48f, ctx.y, ctx.bodyBoldPaint, COLOR_BRAND)
+        ctx.y += 18f
+        findings.take(20).forEach { f ->
+          ctx.ensureSpace(40f)
+          ctx.drawWrapped("• ${f.issue}", 56f, ctx.y, CONTENT_W - 24f, ctx.bodyPaint, COLOR_TEXT)
+          ctx.y += 8f
+        }
+      }
+    }
+  }
 
     /**
      * Disegna le sezioni dettagliate per ogni schermata: controlli superati, problemi e TalkBack.
@@ -348,10 +473,13 @@ class PdfReportExporter(private val context: Context) {
      * @param ctx Contesto di rendering PDF.
      * @param v Violazione da visualizzare.
      */
-    private fun drawViolationCard(ctx: PdfContext, v: AccessibilityViolation) {
+    private fun drawViolationCard(ctx: PdfContext, v: AccessibilityViolation, drawImage: Boolean = true) {
         val type = v.type
         val lines = ReportHelper.violationDetailLines(v)
-        val cardHeight = 36f + lines.size * 13f
+        var cardHeight = 36f + lines.size * 13f
+        val imagePath = v.evidenceImagePath
+        val hasImage = drawImage && !imagePath.isNullOrBlank() && java.io.File(imagePath).exists()
+        if (hasImage) cardHeight += 188f
         ctx.ensureSpace(cardHeight + 12f)
         val severityColor = severityColor(type.severity)
         ctx.fillRect(48f, ctx.y - 6f, 6f, cardHeight, severityColor)
@@ -366,6 +494,27 @@ class PdfReportExporter(private val context: Context) {
         lines.forEach { line ->
             ctx.drawWrapped(line, 64f, ctx.y, CONTENT_W - 32f, ctx.metaPaint, COLOR_MUTED)
             ctx.y += 4f
+        }
+        if (hasImage) {
+            val bitmap = BitmapFactory.decodeFile(imagePath)
+            if (bitmap != null) {
+                ctx.y += 8f
+                val maxW = CONTENT_W - 32f
+                val maxH = 168f
+                val scale = minOf(maxW / bitmap.width, maxH / bitmap.height, 1f)
+                val w = bitmap.width * scale
+                val h = bitmap.height * scale
+                ctx.drawBitmap(bitmap, 64f, ctx.y, w, h)
+                ctx.y += h + 6f
+                val caption = if (v.evidenceKind == EvidenceKind.SYNTHETIC_SECURE) {
+                    "Evidenza sintetica — schermata con FLAG_SECURE · ${v.screenTitle}"
+                } else {
+                    "Evidenza: ${v.screenTitle}${v.bounds?.let { " · $it" } ?: ""}"
+                }
+                ctx.drawText(caption, 64f, ctx.y, ctx.metaPaint, COLOR_MUTED)
+                ctx.y += 14f
+                bitmap.recycle()
+            }
         }
         ctx.y += 12f
     }
@@ -561,6 +710,14 @@ class PdfReportExporter(private val context: Context) {
         }
 
         /**
+         * Disegna un bitmap scalato sul canvas della pagina corrente.
+         */
+        fun drawBitmap(bitmap: Bitmap, x: Float, yPos: Float, width: Float, height: Float) {
+            val dest = RectF(x, yPos, x + width, yPos + height)
+            page.canvas.drawBitmap(bitmap, null, dest, null)
+        }
+
+        /**
          * Disegna testo con a capo automatico entro una larghezza massima.
          *
          * Aggiorna [y] alla fine del blocco disegnato.
@@ -628,6 +785,7 @@ class PdfReportExporter(private val context: Context) {
         private const val PAGE_H = 842f
         private const val CONTENT_W = PAGE_W - 80f
         private const val MAX_PER_TYPE = 25
+        private const val MAX_IMAGES_PER_SEVERITY = 30
         private const val COLOR_BRAND = 0xFF0D7377.toInt()
         private const val COLOR_BRAND_DARK = 0xFF0A4F52.toInt()
         private const val COLOR_BRAND_LIGHT = 0xFFE8F5F4.toInt()

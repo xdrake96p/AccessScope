@@ -172,8 +172,13 @@ data class NodeSnapshot(
      *
      * @return `true` se il nome classe contiene "Image" o "Icon".
      */
-    fun isImageClass(): Boolean =
-        className.contains("Image", true) || className.contains("Icon", true)
+    fun isImageClass(): Boolean {
+        val markers = listOf(
+            "Image", "Icon", "Drawable", "Picture", "Photo", "Avatar",
+            "Thumbnail", "Banner", "Cover", "Lottie", "Fresco", "Drawee",
+        )
+        return markers.any { className.contains(it, ignoreCase = true) }
+    }
 
     /**
      * Verifica se un'immagine non ha testo alternativo.

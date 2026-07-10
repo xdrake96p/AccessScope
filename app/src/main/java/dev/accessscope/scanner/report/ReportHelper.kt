@@ -189,6 +189,21 @@ object ReportHelper {
             .map { (key, items) -> key to sortBySeverity(items) }
 
     /**
+     * Raggruppa le violazioni per gravità, poi per schermata/sezione.
+     *
+     * @param violations Elenco violazioni da aggregare.
+     * @return Coppie (severità, gruppi per sezione) nell'ordine [SEVERITY_ORDER].
+     */
+    fun groupViolationsBySeverity(
+        violations: List<AccessibilityViolation>,
+    ): List<Pair<ViolationSeverity, List<Pair<ReportSectionGroup, List<AccessibilityViolation>>>>> =
+        SEVERITY_ORDER.mapNotNull { severity ->
+            val forSeverity = violations.filter { it.type.severity == severity }
+            if (forSeverity.isEmpty()) return@mapNotNull null
+            severity to groupViolationsBySection(forSeverity)
+        }
+
+    /**
      * Raggruppa i risultati TalkBack per schermata e sottosezione.
      *
      * @param findings Elenco dei risultati della simulazione screen reader.
@@ -376,6 +391,7 @@ object ReportHelper {
         if (!v.measuredValue.isNullOrBlank() || !v.requiredValue.isNullOrBlank()) {
             add("Misura: ${v.measuredValue ?: "—"} · Richiesto: ${v.requiredValue ?: "—"}")
         }
+        contrastColorLine(v)?.let { add(it) }
         add("WCAG: ${v.wcagReference}")
         v.remediation?.let { add("Suggerimento: $it") }
         val meta = buildList {
@@ -384,6 +400,21 @@ object ReportHelper {
             v.bounds?.let { add(it) }
         }.joinToString(" · ")
         if (meta.isNotBlank()) add("Posizione: $meta")
+    }
+
+    /**
+     * Riga colori esadecimali per violazioni di contrasto (testo o UI).
+     */
+    fun contrastColorLine(v: AccessibilityViolation): String? {
+        if (v.type != ViolationType.LOW_COLOR_CONTRAST &&
+            v.type != ViolationType.LOW_NON_TEXT_CONTRAST
+        ) {
+            return null
+        }
+        val fg = v.foregroundColorHex?.takeIf { it.isNotBlank() }
+        val bg = v.backgroundColorHex?.takeIf { it.isNotBlank() }
+        if (fg == null && bg == null) return null
+        return "Colori: primo piano ${fg ?: "—"} · sfondo ${bg ?: "—"}"
     }
 
     /**

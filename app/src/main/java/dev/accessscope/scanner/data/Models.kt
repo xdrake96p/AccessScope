@@ -260,6 +260,14 @@ enum class ViolationType(
     ),
 }
 
+/** Tipo di evidenza visiva allegata a una violazione. */
+enum class EvidenceKind {
+    /** Crop da screenshot reale. */
+    SCREENSHOT,
+    /** Wireframe ricostruito su schermata FLAG_SECURE. */
+    SYNTHETIC_SECURE,
+}
+
 /**
  * Singola violazione di accessibilità rilevata su un elemento UI.
  *
@@ -281,6 +289,9 @@ enum class ViolationType(
  * @property measuredValue Valore misurato (es. rapporto di contrasto).
  * @property requiredValue Valore minimo richiesto dalla linea guida.
  * @property remediation Suggerimento per correggere il problema.
+ * @property foregroundColorHex Colore primo piano in esadecimale (violazioni contrasto).
+ * @property backgroundColorHex Colore sfondo in esadecimale (violazioni contrasto).
+ * @property evidenceKind Origine dell'evidenza visiva (screenshot o wireframe sintetico).
  */
 data class AccessibilityViolation(
     val type: ViolationType,
@@ -298,6 +309,15 @@ data class AccessibilityViolation(
     val measuredValue: String? = null,
     val requiredValue: String? = null,
     val remediation: String? = null,
+    val boundsLeft: Int? = null,
+    val boundsTop: Int? = null,
+    val boundsRight: Int? = null,
+    val boundsBottom: Int? = null,
+    val screenEvidenceId: String? = null,
+    val evidenceImagePath: String? = null,
+    val foregroundColorHex: String? = null,
+    val backgroundColorHex: String? = null,
+    val evidenceKind: EvidenceKind = EvidenceKind.SCREENSHOT,
 ) {
     /** Ambito tematico derivato dal [type] della violazione. */
     val area: ViolationArea get() = type.area
@@ -322,6 +342,11 @@ data class AccessibilityViolation(
      */
     val dedupeKey: String
         get() = ViolationDedupeRules.keyFor(this)
+
+    /** `true` se la violazione ha coordinate spaziali valide sull'elemento. */
+    fun hasSpatialBounds(): Boolean =
+        boundsLeft != null && boundsTop != null && boundsRight != null && boundsBottom != null &&
+            (boundsRight ?: 0) > (boundsLeft ?: 0) && (boundsBottom ?: 0) > (boundsTop ?: 0)
 
     companion object {
         /**
@@ -486,6 +511,7 @@ data class ScanSessionState(
     val lastPdfPath: String? = null,
     val lastReliabilityMdPath: String? = null,
     val errorMessage: String? = null,
+    val sessionId: String? = null,
 ) {
     /**
      * Alias retrocompatibile per [uniqueScreens].

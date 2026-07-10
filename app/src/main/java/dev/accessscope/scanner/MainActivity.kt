@@ -7,6 +7,7 @@
 package dev.accessscope.scanner
 
 import android.os.Bundle
+import android.util.Base64
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -29,6 +30,7 @@ import dev.accessscope.scanner.ui.screen.LogCheckerScreen
 import dev.accessscope.scanner.ui.screen.ReportScreen
 import dev.accessscope.scanner.ui.screen.ScanHistoryScreen
 import dev.accessscope.scanner.ui.screen.SettingsScreen
+import dev.accessscope.scanner.ui.screen.ViolationDetailScreen
 import dev.accessscope.scanner.ui.theme.AccessScopeMotion
 import dev.accessscope.scanner.ui.theme.AccessScopeTheme
 import dev.accessscope.scanner.ui.viewmodel.ScanViewModel
@@ -136,6 +138,36 @@ private fun AccessScopeNavHost(viewModel: ScanViewModel) {
                 viewModel = viewModel,
                 onBack = { navController.popBackStack() },
                 onOpenPdf = { path -> PdfHelper.openPdf(context, path) },
+                onOpenViolationDetail = { dedupeKey ->
+                    val encoded = Base64.encodeToString(
+                        dedupeKey.toByteArray(Charsets.UTF_8),
+                        Base64.URL_SAFE or Base64.NO_WRAP,
+                    )
+                    navController.navigate("violation_detail/$encoded")
+                },
+            )
+        }
+        composable(
+            route = "violation_detail/{encodedKey}",
+            arguments = listOf(navArgument("encodedKey") { type = NavType.StringType }),
+            enterTransition = { enter },
+            exitTransition = { exit },
+            popEnterTransition = { popEnter },
+            popExitTransition = { popExit },
+        ) { backStackEntry ->
+            val encoded = backStackEntry.arguments?.getString("encodedKey").orEmpty()
+            val dedupeKey = runCatching {
+                String(Base64.decode(encoded, Base64.URL_SAFE or Base64.NO_WRAP), Charsets.UTF_8)
+            }.getOrDefault(encoded)
+            val evidenceSessionId = uiState.scanState.sessionId
+                ?: viewModel.currentSessionId()
+                ?: uiState.scanState.selectedPackages.firstOrNull()
+                    ?.let { pkg -> viewModel.getScanHistory(pkg).lastOrNull()?.id }
+            ViolationDetailScreen(
+                dedupeKey = dedupeKey,
+                viewModel = viewModel,
+                onBack = { navController.popBackStack() },
+                sessionId = evidenceSessionId,
             )
         }
         composable(

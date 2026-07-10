@@ -5,6 +5,7 @@ package dev.accessscope.scanner.util
 
 import android.content.Context
 import dev.accessscope.scanner.data.AccessibilityViolation
+import dev.accessscope.scanner.data.EvidenceKind
 import dev.accessscope.scanner.data.ArchivedScanSession
 import dev.accessscope.scanner.data.ScreenReaderFinding
 import dev.accessscope.scanner.data.ViolationType
@@ -101,6 +102,14 @@ class ScanHistoryStore(context: Context) {
         return runCatching { parseSession(JSONObject(file.readText())) }.getOrNull()
     }
 
+    /** Tutti gli ID sessione ancora presenti su disco (per retention evidenze). */
+    fun allSessionIds(): Set<String> =
+        sessionsDir.listFiles()
+            ?.filter { it.isFile && it.extension == "json" }
+            ?.map { it.nameWithoutExtension }
+            ?.toSet()
+            .orEmpty()
+
     /**
      * Costruisce una sessione archiviata dallo snapshot corrente prima dello stop.
      */
@@ -113,10 +122,11 @@ class ScanHistoryStore(context: Context) {
         scanScopeLabel: String,
         score: Int,
         pdfPath: String? = null,
+        sessionId: String? = null,
     ): ArchivedScanSession {
         val keys = violations.map { it.dedupeKey }.toSet()
         return ArchivedScanSession(
-            id = UUID.randomUUID().toString(),
+            id = sessionId ?: UUID.randomUUID().toString(),
             completedAtMs = System.currentTimeMillis(),
             targetPackages = targetPackages,
             violations = violations,
@@ -236,6 +246,15 @@ class ScanHistoryStore(context: Context) {
         put("measuredValue", v.measuredValue)
         put("requiredValue", v.requiredValue)
         put("remediation", v.remediation)
+        put("boundsLeft", v.boundsLeft)
+        put("boundsTop", v.boundsTop)
+        put("boundsRight", v.boundsRight)
+        put("boundsBottom", v.boundsBottom)
+        put("screenEvidenceId", v.screenEvidenceId)
+        put("evidenceImagePath", v.evidenceImagePath)
+        put("foregroundColorHex", v.foregroundColorHex)
+        put("backgroundColorHex", v.backgroundColorHex)
+        put("evidenceKind", v.evidenceKind.name)
     }
 
     private fun parseViolation(json: JSONObject): AccessibilityViolation = AccessibilityViolation(
@@ -254,6 +273,17 @@ class ScanHistoryStore(context: Context) {
         measuredValue = json.optString("measuredValue").takeIf { it.isNotBlank() },
         requiredValue = json.optString("requiredValue").takeIf { it.isNotBlank() },
         remediation = json.optString("remediation").takeIf { it.isNotBlank() },
+        boundsLeft = json.optInt("boundsLeft").takeIf { json.has("boundsLeft") },
+        boundsTop = json.optInt("boundsTop").takeIf { json.has("boundsTop") },
+        boundsRight = json.optInt("boundsRight").takeIf { json.has("boundsRight") },
+        boundsBottom = json.optInt("boundsBottom").takeIf { json.has("boundsBottom") },
+        screenEvidenceId = json.optString("screenEvidenceId").takeIf { it.isNotBlank() },
+        evidenceImagePath = json.optString("evidenceImagePath").takeIf { it.isNotBlank() },
+        foregroundColorHex = json.optString("foregroundColorHex").takeIf { it.isNotBlank() },
+        backgroundColorHex = json.optString("backgroundColorHex").takeIf { it.isNotBlank() },
+        evidenceKind = json.optString("evidenceKind").takeIf { it.isNotBlank() }
+            ?.let { runCatching { EvidenceKind.valueOf(it) }.getOrNull() }
+            ?: EvidenceKind.SCREENSHOT,
     )
 
     private fun serializeFinding(f: ScreenReaderFinding): JSONObject = JSONObject().apply {

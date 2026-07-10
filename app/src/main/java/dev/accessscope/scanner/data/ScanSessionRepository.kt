@@ -15,6 +15,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
+import java.util.UUID
 
 /**
  * Fonte di verità per lo stato della scansione di accessibilità.
@@ -36,6 +37,7 @@ class ScanSessionRepository(context: android.content.Context) {
     private val screenReaderKeys = LinkedHashSet<String>()
     private val seenFingerprints = LinkedHashSet<String>()
     private val scannedScreenTitles = LinkedHashMap<String, String>()
+    private var activeSessionId: String? = null
 
     /** Callback invocata quando l'overlay richiede l'arresto della scansione. */
     var stopCallback: (() -> Unit)? = null
@@ -82,6 +84,7 @@ class ScanSessionRepository(context: android.content.Context) {
         screenReaderKeys.clear()
         seenFingerprints.clear()
         scannedScreenTitles.clear()
+        activeSessionId = UUID.randomUUID().toString()
         _state.value = ScanSessionState(
             isScanning = true,
             selectedPackages = packages,
@@ -89,10 +92,12 @@ class ScanSessionRepository(context: android.content.Context) {
             lastPdfPath = null,
             errorMessage = null,
             checkSummaries = emptyList(),
+            sessionId = activeSessionId,
         )
         prefs.edit()
             .putBoolean(KEY_SCANNING, true)
             .putStringSet(KEY_PACKAGES, packages)
+            .putString(KEY_SESSION_ID, activeSessionId)
             .apply()
         AppFileLogger.log(
             "SCAN",
@@ -112,6 +117,7 @@ class ScanSessionRepository(context: android.content.Context) {
         val violations = _state.value.violations.size
         val screens = _state.value.uniqueScreens
         _state.update { it.copy(isScanning = false) }
+        activeSessionId = null
         clearPersistedScan()
         AppFileLogger.log(
             "SCAN",
@@ -129,8 +135,16 @@ class ScanSessionRepository(context: android.content.Context) {
         prefs.edit()
             .remove(KEY_SCANNING)
             .remove(KEY_PACKAGES)
+            .remove(KEY_SESSION_ID)
             .apply()
     }
+
+    /** ID sessione corrente (per evidenze visive in cache). */
+    fun currentSessionId(): String? = _state.value.sessionId ?: activeSessionId
+
+    /** Trova una violazione nella sessione live per [dedupeKey]. */
+    fun findViolation(dedupeKey: String): AccessibilityViolation? =
+        _state.value.violations.find { it.dedupeKey == dedupeKey }
 
     /**
      * Aggiunge violazioni alla sessione, applicando filtri e deduplicazione.
@@ -328,5 +342,6 @@ class ScanSessionRepository(context: android.content.Context) {
         private const val PREFS_NAME = "access_scope_scan"
         private const val KEY_SCANNING = "is_scanning"
         private const val KEY_PACKAGES = "selected_packages"
+        private const val KEY_SESSION_ID = "session_id"
     }
 }

@@ -14,6 +14,7 @@ import dev.accessscope.scanner.service.ScanOverlayService
 import dev.accessscope.scanner.util.AppFileLogger
 import dev.accessscope.scanner.util.FavoriteAppsStore
 import dev.accessscope.scanner.util.ScanHistoryStore
+import dev.accessscope.scanner.util.ScanEvidenceStore
 import dev.accessscope.scanner.util.ScanSettingsStore
 import dev.accessscope.scanner.util.ThemePreferencesStore
 import dev.accessscope.scanner.report.ReportHelper
@@ -47,6 +48,9 @@ class AccessScopeApp : Application() {
 
     /** Store file-based per la cronologia delle sessioni di scansione (max 20 per app). */
     val scanHistoryStore: ScanHistoryStore by lazy { ScanHistoryStore(this) }
+
+    /** Cache JPEG screenshot ed evidenze annotate per sessione di scansione. */
+    val scanEvidenceStore: ScanEvidenceStore by lazy { ScanEvidenceStore(this) }
 
     private val pdfExporter by lazy { PdfReportExporter(this) }
     private val reliabilityExporter by lazy { ScanReliabilityReportExporter(this) }
@@ -124,6 +128,7 @@ class AccessScopeApp : Application() {
                 scanAnalyses = snapshot.scanAnalyses,
                 scanScopeLabel = snapshot.scanScope.label(),
                 score = score,
+                sessionId = snapshot.sessionId,
             )
             lastArchivedSessionId = archived.id
             scanHistoryStore.archive(archived)
@@ -193,6 +198,10 @@ class AccessScopeApp : Application() {
                         AppFileLogger.error("AccessScopeApp", "reliability_md_fail ${error.message}")
                     },
                 )
+            }
+
+            withContext(Dispatchers.IO) {
+                scanEvidenceStore.cleanupExcept(scanHistoryStore.allSessionIds())
             }
         }
     }

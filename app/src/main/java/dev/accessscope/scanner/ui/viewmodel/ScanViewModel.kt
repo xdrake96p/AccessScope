@@ -11,6 +11,7 @@ import android.app.Activity
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import dev.accessscope.scanner.AccessScopeApp
+import dev.accessscope.scanner.data.AccessibilityViolation
 import dev.accessscope.scanner.data.ArchivedScanSession
 import dev.accessscope.scanner.data.InstalledAppInfo
 import dev.accessscope.scanner.data.ScanScope
@@ -130,6 +131,7 @@ class ScanViewModel(application: Application) : AndroidViewModel(application) {
     private val scanSettingsStore = (application as AccessScopeApp).scanSettingsStore
     private val themePreferencesStore = (application as AccessScopeApp).themePreferencesStore
     private val scanHistoryStore = (application as AccessScopeApp).scanHistoryStore
+    private val scanEvidenceStore = (application as AccessScopeApp).scanEvidenceStore
 
     private val _uiState = MutableStateFlow(HomeUiState())
     /** Flusso osservabile dello stato UI della Home; aggiornato da repository, permessi e azioni utente. */
@@ -690,4 +692,36 @@ class ScanViewModel(application: Application) : AndroidViewModel(application) {
      */
     fun getArchivedSession(sessionId: String): ArchivedScanSession? =
         scanHistoryStore.getSession(sessionId)
+
+    /**
+     * Trova una violazione nella sessione live o in una sessione archiviata.
+     */
+    fun findViolation(dedupeKey: String, sessionId: String? = null): AccessibilityViolation? {
+        if (!sessionId.isNullOrBlank()) {
+            return getArchivedSession(sessionId)?.violations?.find { it.dedupeKey == dedupeKey }
+        }
+        return repository.findViolation(dedupeKey)
+    }
+
+    /**
+     * Risolve il path dell'immagine evidenza, generandola on-demand se necessario.
+     */
+    fun resolveEvidencePath(violation: AccessibilityViolation, sessionId: String? = null): String? {
+        violation.evidenceImagePath?.let { path ->
+            if (java.io.File(path).exists()) return path
+        }
+        val sid = sessionId
+            ?: repository.currentSessionId()
+            ?: _uiState.value.scanState.sessionId
+            ?: scanHistoryStore.getLatest(violation.packageName)?.id
+            ?: return null
+        return scanEvidenceStore.annotateOnDemand(sid, violation)
+    }
+
+    /** Etichetta leggibile per un package Android. */
+    fun packageLabel(packageName: String): String =
+        _uiState.value.apps.find { it.packageName == packageName }?.label ?: packageName
+
+    /** ID sessione corrente (per evidenze in cache). */
+    fun currentSessionId(): String? = repository.currentSessionId()
 }

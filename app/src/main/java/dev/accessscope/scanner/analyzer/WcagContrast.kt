@@ -46,6 +46,7 @@ object WcagContrast {
      * @property background Colore ARGB stimato dello sfondo.
      * @property confidence Punteggio di confidenza della misura (0.0–1.0).
      * @property samplesUsed Numero totale di pixel campionati.
+     * @property backgroundSamples Colori campionati per stimare lo sfondo (anello o area interna).
      */
     data class ContrastResult(
         val ratio: Double,
@@ -53,7 +54,18 @@ object WcagContrast {
         val background: Int,
         val confidence: Float,
         val samplesUsed: Int,
+        val backgroundSamples: List<Int> = emptyList(),
+        val foregroundSamples: List<Int> = emptyList(),
     )
+
+    /** Range minimo di luminanza tra campioni sfondo per considerarlo "complesso" (illustrazione/foto). */
+    private const val COMPLEX_BG_LUMINANCE_RANGE = 0.11
+
+    /** Varianza luminanza interna tipica di foto/illustrazioni raster (non icone piatte). */
+    private const val RASTER_CONTENT_LUMINANCE_RANGE = 0.18
+
+    /** Frazione minima di campioni sfondo che devono passare per ignorare un falso positivo. */
+    private const val COMPLEX_BG_PASS_FRACTION = 0.55
 
     /**
      * Verifica se una misurazione è sufficientemente affidabile per generare una violazione.
@@ -91,7 +103,15 @@ object WcagContrast {
         val confidence = (0.55f + separation.coerceIn(0.0, 0.45).toFloat() +
             (fgSamples.size / 16f).coerceAtMost(0.2f)).coerceAtMost(0.98f)
 
-        return ContrastResult(ratio, fg, bg, confidence, fgSamples.size + bgSamples.size)
+        return ContrastResult(
+            ratio = ratio,
+            foreground = fg,
+            background = bg,
+            confidence = confidence,
+            samplesUsed = fgSamples.size + bgSamples.size,
+            backgroundSamples = bgSamples,
+            foregroundSamples = fgSamples,
+        )
     }
 
     /**
@@ -116,7 +136,15 @@ object WcagContrast {
         val confidence = (0.60f + separation.coerceIn(0.0, 0.35).toFloat() +
             (fgSamples.size / 16f).coerceAtMost(0.2f)).coerceAtMost(0.98f)
 
-        return ContrastResult(ratio, fg, bg, confidence, fgSamples.size + bgSamples.size)
+        return ContrastResult(
+            ratio = ratio,
+            foreground = fg,
+            background = bg,
+            confidence = confidence,
+            samplesUsed = fgSamples.size + bgSamples.size,
+            backgroundSamples = bgSamples,
+            foregroundSamples = fgSamples,
+        )
     }
 
     /**
@@ -140,7 +168,84 @@ object WcagContrast {
             background = bg,
             confidence = confidence,
             samplesUsed = fgSamples.size + bgSamples.size,
+            backgroundSamples = bgSamples,
+            foregroundSamples = fgSamples,
         )
+    }
+
+    /**
+     * `true` se i campioni di sfondo hanno luminanza molto variabile (tipico di illustrazioni/foto).
+     */
+    fun isComplexBackground(backgroundSamples: List<Int>): Boolean =
+        isHighLuminanceVariance(backgroundSamples, COMPLEX_BG_LUMINANCE_RANGE)
+
+    /**
+     * `true` se l'area campionata sembra foto/illustrazione raster, non un controllo UI piatto.
+     *
+     * Evita falsi positivi di contrasto su ImageView e grafica decorativa.
+     */
+    fun isLikelyRasterImageContent(result: ContrastResult): Boolean {
+        val fgVaried = isHighLuminanceVariance(result.foregroundSamples, RASTER_CONTENT_LUMINANCE_RANGE)
+        if (fgVaried) return true
+        return fgVaried && isComplexBackground(result.backgroundSamples)
+    }
+
+    private fun isHighLuminanceVariance(samples: List<Int>, minRange: Double): Boolean {
+        if (samples.size < 4) return false
+        val luminances = samples.map { relativeLuminance(it) }
+        return (luminances.max() - luminances.min()) >= minRange
+    }
+
+    /**
+     * Decide se segnalare una violazione di contrasto testo.
+     *
+     * Su sfondo uniforme usa il rapporto aggregato; su sfondo complesso richiede che
+     * la maggioranza dei campioni intorno al testo fallisca la soglia (evita FP su hero illustrati).
+     */
+    fun shouldReportTextContrastFailure(
+        result: ContrastResult,
+        threshold: Double,
+        isLargeText: Boolean,
+    ): Boolean {
+        if (result.ratio >= threshold) return false
+        val bgSamples = result.backgroundSamples
+        val complexBg = bgSamples.isNotEmpty() && isComplexBackground(bgSamples)
+        val complexFg = isHighLuminanceVariance(
+            result.foregroundSamples,
+            COMPLEX_BG_LUMINANCE_RANGE,
+        )
+        if (bgSamples.isEmpty() || (!complexBg && !complexFg)) return true
+
+        val ratios = bgSamples.map { contrastRatio(result.foreground, it) }
+        val passFraction = ratios.count { it >= threshold }.toDouble() / ratios.size
+
+        if (passFraction >= COMPLEX_BG_PASS_FRACTION) return false
+
+        // Titolo grande su illustrazione: worst-case marginale ma leggibile nella maggior parte dei punti
+        if (isLargeText && result.ratio >= 2.75 && passFraction >= 0.34) return false
+
+        // Contrasto catastrofico su tutti i campioni
+        if (passFraction < 0.20 && result.ratio < 2.0) return true
+
+        return passFraction < 0.45
+    }
+
+    /**
+     * Come [shouldReportTextContrastFailure] ma con soglia più alta per icone/controlli UI.
+     */
+    fun shouldReportUiContrastFailure(
+        result: ContrastResult,
+        threshold: Double,
+    ): Boolean {
+        if (result.ratio >= threshold) return false
+        val bgSamples = result.backgroundSamples
+        if (bgSamples.isEmpty() || !isComplexBackground(bgSamples)) return true
+
+        val ratios = bgSamples.map { contrastRatio(result.foreground, it) }
+        val passFraction = ratios.count { it >= threshold }.toDouble() / ratios.size
+        if (passFraction >= 0.65) return false
+        if (passFraction < 0.20 && result.ratio < 1.8) return true
+        return passFraction < 0.40
     }
 
     /**
@@ -219,6 +324,24 @@ object WcagContrast {
         val lighter = max(l1, l2)
         val darker = min(l1, l2)
         return (lighter + 0.05) / (darker + 0.05)
+    }
+
+    /**
+     * Formatta un colore ARGB Android in esadecimale per report e dettaglio tecnico.
+     *
+     * @param color Colore ARGB (`0xAARRGGBB`).
+     * @return `#RRGGBB` se opaco, altrimenti `#AARRGGBB`.
+     */
+    fun formatArgbHex(color: Int): String {
+        val alpha = (color ushr 24) and 0xFF
+        val red = (color ushr 16) and 0xFF
+        val green = (color ushr 8) and 0xFF
+        val blue = color and 0xFF
+        return if (alpha < 255) {
+            String.format("#%02X%02X%02X%02X", alpha, red, green, blue)
+        } else {
+            String.format("#%02X%02X%02X", red, green, blue)
+        }
     }
 
     /**

@@ -12,6 +12,7 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -31,11 +32,13 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import dev.accessscope.scanner.ui.theme.CardShape
+import dev.accessscope.scanner.ui.theme.accessScopeFocusRing
 import dev.accessscope.scanner.ui.theme.CompactShape
 import dev.accessscope.scanner.ui.theme.successContainer
 import dev.accessscope.scanner.ui.theme.successOnContainer
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
+import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
 import androidx.compose.material.icons.outlined.ExpandLess
 import androidx.compose.material.icons.outlined.ExpandMore
 import androidx.compose.material.icons.outlined.PictureAsPdf
@@ -108,6 +111,7 @@ fun ReportScreen(
     viewModel: ScanViewModel,
     onBack: () -> Unit,
     onOpenPdf: (String) -> Unit,
+    onOpenViolationDetail: (String) -> Unit = {},
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val scan = uiState.scanState
@@ -286,7 +290,11 @@ fun ReportScreen(
                         }
                         severityItems.forEachIndexed { index, violation ->
                             item(key = "violation_${key}_${violation.dedupeKey}_$index") {
-                                ViolationCard(violation, packageLabels)
+                                ViolationCard(
+                                    violation = violation,
+                                    packageLabels = packageLabels,
+                                    onOpen = { onOpenViolationDetail(violation.dedupeKey) },
+                                )
                             }
                         }
                     }
@@ -584,25 +592,42 @@ private fun SeverityGroupHeader(severity: ViolationSeverity, count: Int) {
 private fun ViolationCard(
     violation: AccessibilityViolation,
     packageLabels: Map<String, String>,
+    onOpen: () -> Unit,
 ) {
     val type = violation.type
     val appLabel = packageLabels[violation.packageName] ?: violation.packageName
+    val interactionSource = remember { MutableInteractionSource() }
+    val cardShape = RoundedCornerShape(12.dp)
 
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(12.dp))
+            .clip(cardShape)
             .background(severityColor(type.severity).copy(alpha = 0.10f))
+            .accessScopeFocusRing(shape = cardShape, interactionSource = interactionSource)
+            .clickable(
+                interactionSource = interactionSource,
+                indication = null,
+                onClick = onOpen,
+            )
             .padding(12.dp),
         verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                Text(type.displayName, fontWeight = FontWeight.SemiBold)
-                Text(
-                    "${(violation.confidence * 100).roundToInt()}%",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = contentSecondary(),
-                )
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                Text(type.displayName, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        "${(violation.confidence * 100).roundToInt()}%",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = contentSecondary(),
+                    )
+                    Icon(
+                        Icons.AutoMirrored.Outlined.KeyboardArrowRight,
+                        contentDescription = "Vedi evidenza",
+                        tint = contentSecondary(),
+                        modifier = Modifier.size(20.dp),
+                    )
+                }
             }
             Text(type.wcagRef, style = MaterialTheme.typography.labelSmall, color = BrandPrimary)
             Text(violation.simpleExplanation, style = MaterialTheme.typography.bodySmall)

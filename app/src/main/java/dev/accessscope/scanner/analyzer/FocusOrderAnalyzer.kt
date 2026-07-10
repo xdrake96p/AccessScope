@@ -106,6 +106,10 @@ object FocusOrderAnalyzer {
                     bounds = snap.boundsLabel(),
                     sectionTitle = snap.sectionTitle,
                     confidence = 0.8f,
+                    boundsLeft = snap.bounds.left,
+                    boundsTop = snap.bounds.top,
+                    boundsRight = snap.bounds.right,
+                    boundsBottom = snap.bounds.bottom,
                 )
             }
         }
