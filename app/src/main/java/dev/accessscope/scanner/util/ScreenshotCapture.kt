@@ -7,6 +7,13 @@ import android.graphics.Bitmap
  */
 data class ScreenshotCapture(
     val bitmap: Bitmap?,
-    /** Schermata FLAG_SECURE, fallimento secure, o bitmap quasi tutto nero. */
-    val secureOrUnusable: Boolean,
-)
+    /** `ERROR_TAKE_SCREENSHOT_SECURE_WINDOW` dal sistema. */
+    val flagSecure: Boolean = false,
+    /** Bitmap vuoto/nero o capture non utilizzabile (non implica FLAG_SECURE). */
+    val screenshotBlocked: Boolean = false,
+) {
+    /** @deprecated Usare [flagSecure] e [screenshotBlocked] separatamente. */
+    @Deprecated("Use flagSecure or screenshotBlocked")
+    val secureOrUnusable: Boolean
+        get() = flagSecure || screenshotBlocked
+}

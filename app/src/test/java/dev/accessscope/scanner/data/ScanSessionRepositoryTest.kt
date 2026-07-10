@@ -49,13 +49,19 @@ class ScanSessionRepositoryTest {
 
         repository.registerUniqueScreen("fp-home", "Home")
         repository.registerUniqueScreen("fp-settings", "Impostazioni")
-        repository.registerUniqueScreen("fp-home", "Home aggiornata")
+        repository.registerUniqueScreen(
+            "fp-home",
+            "Home aggiornata",
+            ScreenProtectionReason.PIN_OR_PASSWORD,
+        )
 
         val state = repository.state.value
         assertEquals(2, state.uniqueScreens)
         assertEquals(2, state.visitedScreens.size)
         assertEquals(listOf("Home aggiornata", "Impostazioni"), state.visitedScreenTitles)
         assertEquals("Home aggiornata", state.visitedScreens.first().title)
+        assertEquals(ScreenProtectionReason.PIN_OR_PASSWORD, state.visitedScreens.first().protectionReason)
+        assertEquals(ScreenProtectionReason.NONE, state.visitedScreens[1].protectionReason)
         assertEquals(0, state.visitedScreens[0].visitIndex)
         assertEquals(1, state.visitedScreens[1].visitIndex)
     }

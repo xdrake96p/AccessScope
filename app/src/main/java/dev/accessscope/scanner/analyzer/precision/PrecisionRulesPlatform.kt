@@ -6,6 +6,7 @@ package dev.accessscope.scanner.analyzer.precision
 import android.graphics.Rect
 import dev.accessscope.scanner.analyzer.NodeSnapshot
 import dev.accessscope.scanner.analyzer.precision.PrecisionGeometry
+import dev.accessscope.scanner.analyzer.precision.PrecisionLabels
 import dev.accessscope.scanner.analyzer.precision.PrecisionStructural
 
 internal object PrecisionRulesPlatform {
@@ -107,6 +108,44 @@ internal object PrecisionRulesPlatform {
                 host.isWebView() &&
                 host.bounds.contains(snap.bounds.centerX(), snap.bounds.centerY())
         }
+
+    /**
+     * Area cliccabile senza contenuto visibile (empty state, hit slop TextView, wrapper con figlio etichettato).
+     * Evita SMALL_TOUCH_TARGET su zone vuote e contenitori che inoltrano il tap a figli etichettati.
+     */
+    fun isEmptyClickableHitArea(snap: NodeSnapshot, all: List<NodeSnapshot>): Boolean {
+        if (!snap.isInteractiveClickable()) return false
+        if (snap.className.contains("TextView", ignoreCase = true) &&
+            !snap.isHeading &&
+            !snap.hasVisibleText() &&
+            snap.hintText.isNullOrBlank() &&
+            snap.contentDescription.isNullOrBlank()
+        ) {
+            return true
+        }
+        if (snap.hasVisibleText() || !snap.contentDescription.isNullOrBlank() || !snap.hintText.isNullOrBlank()) {
+            return false
+        }
+        val cls = snap.className
+        if (cls.contains("Button", ignoreCase = true) || cls.contains("ImageButton", ignoreCase = true) || snap.isCheckable) {
+            return false
+        }
+        if (PrecisionLabels.hasLabeledDescendant(snap, all)) return true
+        val viewport = PrecisionGeometry.estimateViewport(all)
+        if (viewport.isEmpty) return false
+        val screenArea = viewport.width() * viewport.height().toFloat()
+        if (screenArea <= 0f) return false
+        val snapArea = snap.bounds.width() * snap.bounds.height().toFloat()
+        if (snapArea >= screenArea * 0.5f) {
+            val hasSemanticChild = all.any { other ->
+                other != snap &&
+                    snap.bounds.contains(other.bounds.centerX(), other.bounds.centerY()) &&
+                    isSemanticClickTarget(other)
+            }
+            if (!hasSemanticChild) return true
+        }
+        return false
+    }
 
     /**
      * Target cliccabile semantico (pulsante, switch, checkbox) — esclude layout container clickable.

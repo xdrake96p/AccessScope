@@ -60,14 +60,13 @@ internal class AccessibilityTreeScanner(
         }
         val screenTitle = ScreenTitleResolver.resolve(root, event)
         val fingerprint = ScreenFingerprint.compute(root, packageName, screenTitle)
-        val secureContext = SecureScreenDetector.isSecureContext(root, screenTitle, packageName) ||
-            (capture?.secureOrUnusable == true)
-        val contrastBitmap = if (secureContext) null else capture?.bitmap
+        val assessment = SecureScreenDetector.assess(root, screenTitle, packageName, capture)
+        val contrastBitmap = if (assessment.allowContrast) capture?.bitmap else null
         val result = analyzer.analyzeTree(root, packageName, screenTitle, contrastBitmap, fingerprint)
         val sessionId = repository.currentSessionId()
         val violations = when {
             sessionId == null -> result.violations
-            secureContext -> {
+            assessment.useSecureEvidence -> {
                 val viewport = SecureScreenDetector.rootViewport(root)
                 evidenceStore.enrichViolationsSecure(
                     sessionId = sessionId,
@@ -96,14 +95,17 @@ internal class AccessibilityTreeScanner(
             !seenFingerprintsThisSession.contains(fingerprint)
         if (isNewScreen) {
             seenFingerprintsThisSession.add(fingerprint)
-            repository.registerUniqueScreen(fingerprint, screenTitle)
+            repository.registerUniqueScreen(fingerprint, screenTitle, assessment.reason)
         }
         // #region agent log
-        AppFileLogger.info("A11yService", "pass_summary screen=$screenTitle violations=${result.violations.size}")
+        AppFileLogger.info(
+            "A11yService",
+            "pass_summary screen=$screenTitle protection=${assessment.reason} violations=${result.violations.size}",
+        )
         // #endregion
         AppFileLogger.info(
             "A11yService",
-            "analyzed pkg=$packageName screen=$screenTitle violations=${result.violations.size}",
+            "analyzed pkg=$packageName screen=$screenTitle protection=${assessment.reason} violations=${result.violations.size}",
         )
     }
 }

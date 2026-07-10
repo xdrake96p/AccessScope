@@ -2,6 +2,8 @@ package dev.accessscope.scanner.ui.viewmodel
 
 import dev.accessscope.scanner.data.AccessibilityViolation
 import dev.accessscope.scanner.data.ArchivedScanSession
+import dev.accessscope.scanner.data.EvidenceKind
+import dev.accessscope.scanner.data.ScreenProtectionReason
 import dev.accessscope.scanner.data.ScanSessionRepository
 import dev.accessscope.scanner.data.VisitedScreen
 import dev.accessscope.scanner.report.DynamicReportHelper
@@ -111,10 +113,26 @@ internal class ScanHistoryController(
             ?: repository.currentSessionId()
             ?: uiState.value.scanState.sessionId
             ?: return null
-        return scanEvidenceStore.loadScreenBitmap(sid, frame.screenEvidenceId)
+        val screenBitmap = scanEvidenceStore.loadScreenBitmap(sid, frame.screenEvidenceId)
+        if (screenBitmap != null) return screenBitmap
+        if (frame.protectionReason == ScreenProtectionReason.FLAG_SECURE ||
+            frame.protectionReason == ScreenProtectionReason.PIN_OR_PASSWORD
+        ) {
+            val wireframePath = frame.violations
+                .firstOrNull { it.evidenceKind == EvidenceKind.SYNTHETIC_SECURE }
+                ?.evidenceImagePath
+                ?: frame.violations.firstOrNull()?.evidenceImagePath
+            wireframePath?.let { path ->
+                if (java.io.File(path).exists()) {
+                    return android.graphics.BitmapFactory.decodeFile(path)
+                }
+            }
+        }
+        return null
     }
 
     private fun buildVisitedScreensFromArchived(session: ArchivedScanSession): List<VisitedScreen> {
+        if (session.visitedScreens.isNotEmpty()) return session.visitedScreens
         val fingerprints = session.violations
             .mapNotNull { it.screenFingerprint }
             .distinct()

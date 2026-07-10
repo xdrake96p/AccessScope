@@ -9,8 +9,13 @@ import dev.accessscope.scanner.service.AccessScopeAccessibilityService
 import dev.accessscope.scanner.service.ScanOverlayService
 import dev.accessscope.scanner.ui.selection.AppSelectionPolicy
 import dev.accessscope.scanner.ui.theme.AppThemeMode
+import dev.accessscope.scanner.data.ArchivedScanSession
+import dev.accessscope.scanner.data.ScanSessionState
+import dev.accessscope.scanner.export.ScanReliabilityReportExporter
+import dev.accessscope.scanner.report.SessionComparisonHelper
 import dev.accessscope.scanner.util.AppLaunchHelper
 import dev.accessscope.scanner.util.DebugTrace
+import dev.accessscope.scanner.util.FeedbackIssueLauncher
 import dev.accessscope.scanner.util.PermissionHelper
 import dev.accessscope.scanner.util.ScanSettingsStore
 import dev.accessscope.scanner.util.ThemePreferencesStore
@@ -179,6 +184,85 @@ internal class ScanSessionController(
             onResult(result)
         }
     }
+
+    /**
+     * Risolve il percorso del report affidabilità `.md` per il feedback GitHub.
+     * Usa l'ultimo export se presente, altrimenti rigenera dai dati di sessione.
+     */
+    fun resolveReliabilityMdForFeedback(onResult: (String?) -> Unit) {
+        scope.launch {
+            val path = withContext(Dispatchers.IO) { resolveReliabilityMdPath() }
+            onResult(path)
+        }
+    }
+
+    private fun resolveReliabilityMdPath(): String? {
+        val app = application as AccessScopeApp
+        val scanState = repository.state.value
+
+        scanState.lastReliabilityMdPath?.let { existing ->
+            if (FeedbackIssueLauncher.fileExists(existing)) return existing
+        }
+
+        if (scanState.violations.isNotEmpty() || scanState.visitedScreenTitles.isNotEmpty()) {
+            exportReliabilityFromScanState(scanState, app)?.let { return it }
+        }
+
+        val history = app.scanHistoryStore
+        val archived = scanState.selectedPackages
+            .firstNotNullOfOrNull { pkg -> history.getLatest(pkg) }
+            ?: history.allSessionIds().firstNotNullOfOrNull { id -> history.getSession(id) }
+
+        return archived?.let { exportReliabilityFromArchived(it, app) }
+    }
+
+    private fun exportReliabilityFromScanState(
+        scanState: ScanSessionState,
+        app: AccessScopeApp,
+    ): String? {
+        val comparison = scanState.selectedPackages.firstOrNull()?.let { pkg ->
+            SessionComparisonHelper.compareLatestWithPrevious(
+                app.scanHistoryStore.getLatest(pkg),
+                app.scanHistoryStore.getPrevious(pkg),
+            )
+        }
+        return ScanReliabilityReportExporter(application).export(
+            targetPackages = scanState.selectedPackages,
+            violations = scanState.violations,
+            screenReaderFindings = scanState.screenReaderFindings,
+            uniqueScreens = scanState.uniqueScreens,
+            scanAnalyses = scanState.scanAnalyses,
+            scanScopeLabel = scanState.scanScope.label(),
+            scannedScreens = scanState.visitedScreenTitles,
+            checkSummaries = scanState.checkSummaries,
+            sessionComparison = comparison,
+            appVersion = appVersionName(),
+        ).getOrNull()?.also { path ->
+            repository.setReliabilityMdPath(path)
+        }
+    }
+
+    private fun exportReliabilityFromArchived(
+        archived: ArchivedScanSession,
+        app: AccessScopeApp,
+    ): String? = ScanReliabilityReportExporter(application).export(
+        targetPackages = archived.targetPackages,
+        violations = archived.violations,
+        screenReaderFindings = archived.screenReaderFindings,
+        uniqueScreens = archived.uniqueScreens,
+        scanAnalyses = archived.scanAnalyses,
+        scanScopeLabel = archived.scanScopeLabel,
+        scannedScreens = archived.visitedScreens.map { it.title }.ifEmpty {
+            listOf("Sessione ${archived.id}")
+        },
+        checkSummaries = emptyList(),
+        sessionComparison = null,
+        appVersion = appVersionName(),
+    ).getOrNull()
+
+    private fun appVersionName(): String = runCatching {
+        application.packageManager.getPackageInfo(application.packageName, 0).versionName
+    }.getOrNull().orEmpty()
 
     fun clearStatus() {
         uiState.update { it.copy(statusMessage = null) }

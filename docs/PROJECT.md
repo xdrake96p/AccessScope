@@ -6,7 +6,7 @@
 **Package:** `dev.accessscope.scanner`  
 **Branch principale sviluppo:** `develop`  
 **Branch release stabile:** `main`  
-**Ultimo aggiornamento:** 10 luglio 2026 (v1.3.1 app · v1.0.8 plugin IDE)
+**Ultimo aggiornamento:** 10 luglio 2026 (v1.3.1 app · precisione anti-FP touch/titoli/report)
 
 **Manuale utente e tecnico:** [`docs/MANUALE_UTENTE.md`](MANUALE_UTENTE.md) — installazione, uso plugin AS/VS Code, troubleshooting.
 
@@ -72,7 +72,9 @@ Utente → HomeScreen (selezione app) → Avvia scan
 | `ScanHistoryStore` | Persistenza JSON cronologia sessioni (20 per package) |
 | `SessionComparisonHelper` | Confronto +N/−M risolti tra sessioni |
 | `PdfReportExporter` | Facade export PDF; rendering in `export/pdf/*` |
-| `ScanSessionRepository` | Stato sessione live, dedupe in-memory, fingerprint schermate |
+| `ScanSessionRepository` | Stato sessione live, dedupe in-memory, fingerprint schermate; persistenza in `ScanSessionPersistence` |
+| `SecureScreenDetector` | Valuta `SecureScreenAssessment` (FLAG_SECURE, PIN/password, screenshot bloccato) |
+| `ScreenProtectionReason` | Motivo protezione su `VisitedScreen` (report dinamico, filmstrip) |
 | `ScanViewModel` | StateFlow UI; controller in `ScanAppListController`, `ScanSessionController`, `ScanHistoryController` |
 
 ---
@@ -93,6 +95,54 @@ Utente → HomeScreen (selezione app) → Avvia scan
 ---
 
 ## Cronologia sviluppo
+
+### Precisione anti-FP (touch, titoli, report) — 10 luglio 2026
+
+Miglioramenti senza regressione sul benchmark Nexi v1.3.0 (`MpsVerificationRegressionTest`, `PlatformPatternsRegressionTest`).
+
+**Touch (`SMALL_TOUCH_TARGET`):**
+- `shouldSkipTouchTargetCheck` allineato a overlap: `isClickableLayoutShell`, phantom/anomalous bounds, `isEmptyClickableHitArea`, WebView senza label
+- Nuovi test: `TouchTargetPrecisionTest` (shell, vop_info, bottoni reali, phantom, empty TextView)
+
+**Titoli e fingerprint:**
+- `ScreenFingerprint.fingerprintTitle` preferisce content markers; tab label nel chrome (`tab:…`)
+- `event_text` solo senza fonti stabili; `TitleCache` non riusa titolo in scroll senza match topbar/markers
+- Test: `ScreenTitleFingerprintRegressionTest`
+
+**Secure screen:**
+- Gate multi-segnale in `hasSecureNodes` (no protezione da singolo `isPassword` su login)
+- `GENERIC_PIN_KEYS` ristretto (rimossi `key`/`digit` generici)
+
+**Report dinamico:**
+- `visitedScreens` persistiti in archivio JSON (`ScanHistoryStore`)
+- TalkBack/passed con titolo duplicato assegnati al frame con violazioni
+- Badge filmstrip per reason (PIN / FLAG_SECURE / Screenshot); scroll automatico filmstrip; wireframe su canvas protetto
+
+Verifica: `./gradlew :app:testDebugUnitTest :app:assembleDebug` (**127** test JVM).
+
+### Schermate sensibili + refactor strutturale P1/P2 (10 luglio 2026)
+
+**Rilevamento schermate protette (comportamento invariato: l'albero a11y resta analizzato):**
+
+- `ScreenProtectionReason` su `VisitedScreen` (`NONE`, `FLAG_SECURE`, `PIN_OR_PASSWORD`, `SCREENSHOT_BLOCKED`)
+- `SecureScreenAssessment` in `SecureScreenDetector`: separa FLAG_SECURE, PIN/password (keyword strict `\bpin\b`, `\botp\b`, …), bitmap nero
+- `SCREENSHOT_BLOCKED` non forza modalità secure completa su alberi normali (meno FP su dark theme / loading)
+- Pipeline: `AccessibilityTreeScanner` passa `protectionReason` a `registerUniqueScreen`; contrasto disabilitato solo se `!allowContrast`
+- UI report dinamico: badge «Protetta» nel filmstrip; messaggi differenziati in `ScreenIssueCanvas`
+- Test: `SecureScreenDetectorTest`, aggiornamento `ScanSessionRepositoryTest`
+
+**Split move-only (zero cambio logica analisi):**
+
+| Area | Package / file | Contenuto estratto |
+|------|----------------|-------------------|
+| Analyzer | `analyzer/contrast/` | `WcagContrastMath`, `WcagContrastSampling`, `WcagContrastMeasurement`, `WcagContrastPolicy`, `WcagContrastTypes`; facade `WcagContrast.kt` |
+| Analyzer | `analyzer/node/` | `NodeLabelsSingleChecker`, `NodeTouchSingleChecker`, `NodeFormsSingleChecker`, `NodeTextSingleChecker`, `NodeStructureSingleChecker`, `NodeScreenReaderSingleChecker`, `NodeMediaSingleChecker`, `NodeSingleNodeCheckSupport`; orchestrator `NodeSingleNodeChecker.kt` |
+| Analyzer | `NodeSnapshotFactory.kt` | `AccessibilityNodeInfo.toSnapshot` + helper heading/expanded |
+| Analyzer | `analyzer/precision/` | `PrecisionLabelHierarchy`, `PrecisionHeadingSkips`, `PrecisionDecorativeLabels`; facade `PrecisionLabels.kt` |
+| Analyzer | `analyzer/title/` | `TitlePinWalker`, `TitleTopBarWalker`, `TitleSectionWalker`; facade `TitleTreeWalker.kt` |
+| Data | `ScanSessionPersistence.kt` | SharedPreferences scan interrotta; facade `ScanSessionRepository.kt` |
+
+Verifica: `./gradlew :app:testDebugUnitTest :app:assembleDebug` (105+ test JVM).
 
 ### Refactor strutturale — spezzettamento file grandi (10 luglio 2026)
 

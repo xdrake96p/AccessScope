@@ -25,6 +25,7 @@ import androidx.compose.ui.unit.dp
 import dev.accessscope.scanner.data.AccessibilityViolation
 import dev.accessscope.scanner.data.ScreenReaderFinding
 import dev.accessscope.scanner.report.ReportHelper
+import dev.accessscope.scanner.ui.components.ViolationDetailLine
 import dev.accessscope.scanner.ui.theme.BrandPrimary
 import dev.accessscope.scanner.ui.theme.accessScopeFocusRing
 import dev.accessscope.scanner.ui.theme.contentSecondary
@@ -75,7 +76,11 @@ internal fun ViolationCard(
         Text(type.wcagRef, style = MaterialTheme.typography.labelSmall, color = BrandPrimary)
         Text(violation.simpleExplanation, style = MaterialTheme.typography.bodySmall)
         ReportHelper.violationDetailLines(violation).forEach { line ->
-            Text(line, style = MaterialTheme.typography.labelSmall, color = contentSecondary())
+            ViolationDetailLine(
+                line = line,
+                violation = violation,
+                modifier = Modifier.fillMaxWidth(),
+            )
         }
         Text("App: $appLabel", style = MaterialTheme.typography.labelSmall, color = contentSecondary())
     }

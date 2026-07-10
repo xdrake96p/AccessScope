@@ -56,22 +56,8 @@ fun DynamicReportScreen(
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val scan = uiState.scanState
-    val frames = remember(
-        scan.visitedScreens,
-        scan.violations,
-        scan.screenReaderFindings,
-        scan.checkSummaries,
-        sessionId,
-    ) {
-        DynamicReportHelper.buildFrames(
-            visitedScreens = scan.visitedScreens,
-            violations = scan.violations,
-            talkBackFindings = scan.screenReaderFindings,
-            checkSummaries = scan.checkSummaries,
-            screenEvidenceIdResolver = { fingerprint ->
-                fingerprint.replace(Regex("""[^\w.-]"""), "_").take(120)
-            },
-        )
+    val frames = remember(sessionId, uiState.scanState) {
+        viewModel.buildDynamicReport(sessionId)
     }
 
     var selectedIndex by rememberSaveable { mutableIntStateOf(0) }
@@ -153,6 +139,7 @@ fun DynamicReportScreen(
 
             SeverityFilterRow(
                 violations = currentFrame?.violations.orEmpty(),
+                talkBackCount = currentFrame?.talkBackFindings?.size ?: 0,
                 selected = severityFilter,
                 onSelect = { severityFilter = it },
             )
@@ -166,6 +153,7 @@ fun DynamicReportScreen(
                     onViolationClick = { violation ->
                         selectedDedupeKey = violation.dedupeKey
                     },
+                    protectionReason = frame.protectionReason,
                     modifier = Modifier.padding(horizontal = 16.dp),
                 )
 
@@ -191,11 +179,12 @@ fun DynamicReportScreen(
 @Composable
 private fun SeverityFilterRow(
     violations: List<AccessibilityViolation>,
+    talkBackCount: Int = 0,
     selected: ViolationSeverity?,
     onSelect: (ViolationSeverity?) -> Unit,
 ) {
     val counts = violations.groupingBy { it.type.severity }.eachCount()
-  if (violations.isEmpty()) return
+    if (violations.isEmpty() && talkBackCount == 0) return
 
     FlowRow(
         modifier = Modifier

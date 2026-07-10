@@ -94,6 +94,34 @@ class DynamicReportHelperTest {
     }
 
     @Test
+    fun buildFrames_duplicateTitle_assignsTalkBackOnlyToFrameWithViolations() {
+        val visited = listOf(
+            VisitedScreen("fp-home-a", "Home", 0),
+            VisitedScreen("fp-home-b", "Home", 1),
+        )
+        val violations = listOf(
+            violation(screenTitle = "Home", fingerprint = "fp-home-a"),
+        )
+        val talkBack = listOf(
+            ScreenReaderFinding(
+                packageName = "com.example",
+                screenTitle = "Home",
+                nodeClassName = "Button",
+                announcedText = "OK",
+                issue = "Annuncio incompleto",
+            ),
+        )
+        val frames = DynamicReportHelper.buildFrames(
+            visitedScreens = visited,
+            violations = violations,
+            talkBackFindings = talkBack,
+            checkSummaries = emptyList(),
+        )
+        assertEquals(1, frames[0].talkBackFindings.size)
+        assertEquals(0, frames[1].talkBackFindings.size)
+    }
+
+    @Test
     fun filterFrameViolations_filtersBySeverity() {
         val frame = DynamicScreenFrame(
             fingerprint = "fp",

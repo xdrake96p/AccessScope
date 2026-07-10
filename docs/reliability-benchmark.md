@@ -168,4 +168,11 @@ Baseline: **162358** (13 prob, precisione ~88%, score 81).
 - Skip nodi off-screen, bounds anomali, righe lista full-width
 - Skip contrasto icona toolbar in fascia alta
 - Pattern generici field label (`iban`, `label`, `data_*`, `amount`)
-- Drawer `nav_` / `menu_` / `drawer_` per qualsiasi app
+- Drawer `nav_` / `drawer_` / `menu_` per qualsiasi app
+
+### Modifiche precisione anti-FP (post v1.3.0)
+
+- `SMALL_TOUCH_TARGET`: skip layout shell clickable, zone vuote (`isEmptyClickableHitArea`), phantom bounds — **N16 `vop_info` resta TP**
+- Fingerprint stabile via content markers + tab chrome; meno tile duplicate nel filmstrip
+- Cronologia: `visitedScreens` serializzati in archivio sessione
+- Gate CI: `TouchTargetPrecisionTest`, `ScreenTitleFingerprintRegressionTest` (+127 test JVM)

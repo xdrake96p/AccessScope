@@ -189,6 +189,9 @@ class ScanViewModel(application: Application) : AndroidViewModel(application) {
     fun exportDiagnosticLogs(onResult: (Result<String>) -> Unit) =
         sessionController.exportDiagnosticLogs(onResult)
 
+    fun resolveReliabilityMdForFeedback(onResult: (String?) -> Unit) =
+        sessionController.resolveReliabilityMdForFeedback(onResult)
+
     fun appIconBitmap(packageName: String) = appListController.appIconBitmap(packageName)
 
     fun selectAllVisible() = appListController.selectAllVisible()

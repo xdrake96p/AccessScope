@@ -35,6 +35,7 @@ object FeedbackIssueBuilder {
         description: String,
         scanContext: String? = null,
         deviceInfo: String? = null,
+        reliabilityMdFileName: String? = null,
     ): String {
         val title = URLEncoder.encode("[Feedback] ${type.label}", StandardCharsets.UTF_8)
         val body = buildString {
@@ -52,6 +53,14 @@ object FeedbackIssueBuilder {
                 appendLine()
                 appendLine("## Dispositivo")
                 appendLine(deviceInfo.trim())
+            }
+            if (!reliabilityMdFileName.isNullOrBlank()) {
+                appendLine()
+                appendLine("## Report affidabilità")
+                appendLine(
+                    "File allegato tramite app: `$reliabilityMdFileName` " +
+                        "(usa il foglio condividi per allegarlo alla issue).",
+                )
             }
         }
         val encodedBody = URLEncoder.encode(body, StandardCharsets.UTF_8)

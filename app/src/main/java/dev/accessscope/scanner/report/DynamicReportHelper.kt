@@ -6,6 +6,7 @@ package dev.accessscope.scanner.report
 import dev.accessscope.scanner.data.AccessibilityViolation
 import dev.accessscope.scanner.data.CheckAreaSummary
 import dev.accessscope.scanner.data.ScreenReaderFinding
+import dev.accessscope.scanner.data.ScreenProtectionReason
 import dev.accessscope.scanner.data.VisitedScreen
 import dev.accessscope.scanner.util.ScanEvidenceStore
 
@@ -18,6 +19,7 @@ data class DynamicScreenFrame(
     val talkBackFindings: List<ScreenReaderFinding>,
     val passedCount: Int,
     val screenEvidenceId: String,
+    val protectionReason: ScreenProtectionReason = ScreenProtectionReason.NONE,
 )
 
 object DynamicReportHelper {
@@ -52,6 +54,7 @@ object DynamicReportHelper {
             .mapValues { (_, items) -> items.sumOf { it.passedCount } }
 
         val talkBackByTitle = talkBackFindings.groupBy { it.reportSection }
+        val titleVisitCount = visitedScreens.groupingBy { it.title }.eachCount()
 
         val framesFromVisits = visitedScreens.map { screen ->
             val screenViolations = violationsByFingerprint[screen.fingerprint].orEmpty()
@@ -60,14 +63,30 @@ object DynamicReportHelper {
             } else {
                 screenViolations
             }
+            val shareTitle = (titleVisitCount[screen.title] ?: 1) > 1
+            val talkBackForFrame = if (!shareTitle) {
+                talkBackByTitle[screen.title].orEmpty()
+            } else if (titleViolations.isNotEmpty()) {
+                talkBackByTitle[screen.title].orEmpty()
+            } else {
+                emptyList()
+            }
+            val passedForFrame = if (!shareTitle) {
+                passedByTitle[screen.title] ?: 0
+            } else if (titleViolations.isNotEmpty()) {
+                passedByTitle[screen.title] ?: 0
+            } else {
+                0
+            }
             DynamicScreenFrame(
                 fingerprint = screen.fingerprint,
                 title = screen.title,
                 visitIndex = screen.visitIndex,
                 violations = titleViolations,
-                talkBackFindings = talkBackByTitle[screen.title].orEmpty(),
-                passedCount = passedByTitle[screen.title] ?: 0,
+                talkBackFindings = talkBackForFrame,
+                passedCount = passedForFrame,
                 screenEvidenceId = screenEvidenceIdResolver(screen.fingerprint),
+                protectionReason = screen.protectionReason,
             )
         }
 

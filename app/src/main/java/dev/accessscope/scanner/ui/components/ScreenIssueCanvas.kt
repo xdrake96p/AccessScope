@@ -31,6 +31,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.accessscope.scanner.data.AccessibilityViolation
+import dev.accessscope.scanner.data.ScreenProtectionReason
 import dev.accessscope.scanner.ui.theme.CardShape
 import dev.accessscope.scanner.ui.theme.contentSecondary
 import dev.accessscope.scanner.ui.theme.severityColor
@@ -50,6 +51,7 @@ fun ScreenIssueCanvas(
     violations: List<AccessibilityViolation>,
     selectedDedupeKey: String?,
     onViolationClick: (AccessibilityViolation) -> Unit,
+    protectionReason: ScreenProtectionReason = ScreenProtectionReason.NONE,
     modifier: Modifier = Modifier,
 ) {
     if (bitmap == null) {
@@ -62,7 +64,7 @@ fun ScreenIssueCanvas(
             contentAlignment = Alignment.Center,
         ) {
             Text(
-                "Screenshot non disponibile per questa schermata.",
+                protectionPlaceholderMessage(protectionReason),
                 style = MaterialTheme.typography.bodyMedium,
                 color = contentSecondary(),
                 modifier = Modifier.padding(16.dp),
@@ -141,4 +143,15 @@ fun ScreenIssueCanvas(
             }
         }
     }
+}
+
+private fun protectionPlaceholderMessage(reason: ScreenProtectionReason): String = when (reason) {
+    ScreenProtectionReason.FLAG_SECURE ->
+        "Screenshot bloccato dal sistema (FLAG_SECURE). L'analisi accessibilità è comunque disponibile."
+    ScreenProtectionReason.PIN_OR_PASSWORD ->
+        "Schermata PIN/password: screenshot reale non disponibile per protezione dei dati."
+    ScreenProtectionReason.SCREENSHOT_BLOCKED ->
+        "Screenshot non acquisito (schermata scura o capture non riuscita)."
+    ScreenProtectionReason.NONE ->
+        "Screenshot non disponibile per questa schermata."
 }

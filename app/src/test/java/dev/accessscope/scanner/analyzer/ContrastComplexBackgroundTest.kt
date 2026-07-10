@@ -38,7 +38,7 @@ class ContrastComplexBackgroundTest {
         val accent = Color.parseColor("#5A5A5A")
         val bgSamples = listOf(light, light, light, accent, light, light)
         val worstRatio = WcagContrast.contrastRatio(fg, accent)
-        val result = WcagContrast.ContrastResult(
+        val result = ContrastResult(
             ratio = worstRatio,
             foreground = fg,
             background = accent,
@@ -62,7 +62,7 @@ class ContrastComplexBackgroundTest {
         val fg = Color.parseColor("#D0D0D0")
         val light = Color.parseColor("#F5F5F5")
         val bgSamples = List(6) { light }
-        val result = WcagContrast.ContrastResult(
+        val result = ContrastResult(
             ratio = WcagContrast.contrastRatio(fg, light),
             foreground = fg,
             background = light,

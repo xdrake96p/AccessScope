@@ -5,12 +5,10 @@ package dev.accessscope.scanner.ui.screen
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
@@ -28,8 +26,14 @@ import androidx.compose.ui.unit.dp
 import dev.accessscope.scanner.data.AccessibilityViolation
 import dev.accessscope.scanner.report.ReportHelper
 import dev.accessscope.scanner.ui.accessibility.asSectionHeading
+import dev.accessscope.scanner.ui.components.AccessScopeCard
 import dev.accessscope.scanner.ui.components.AccessScopeTopBar
+import dev.accessscope.scanner.ui.components.ContrastColorLine
+import dev.accessscope.scanner.ui.components.ViolationDetailLine
 import dev.accessscope.scanner.ui.components.ViolationEvidenceViewer
+import dev.accessscope.scanner.ui.components.ViolationExpandableSection
+import dev.accessscope.scanner.ui.components.isContrastViolation
+import dev.accessscope.scanner.ui.components.technicalDetailLines
 import dev.accessscope.scanner.ui.theme.BrandPrimary
 import dev.accessscope.scanner.ui.theme.contentSecondary
 import dev.accessscope.scanner.ui.theme.severityColor
@@ -102,47 +106,71 @@ private fun ViolationDetailContent(
 ) {
     val type = violation.type
     Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        Text(
-            type.displayName,
-            style = MaterialTheme.typography.headlineSmall,
-            fontWeight = FontWeight.Bold,
-            color = severityColor(type.severity),
-            modifier = Modifier.asSectionHeading(),
-        )
-        Text(type.wcagRef, style = MaterialTheme.typography.labelLarge, color = BrandPrimary)
-        Text(
-            "Confidenza ${(violation.confidence * 100).roundToInt()}%",
-            style = MaterialTheme.typography.bodySmall,
-            color = contentSecondary(),
-        )
-        Text(type.plainHint, style = MaterialTheme.typography.bodyLarge)
-
-        Text(
-            "Evidenza visiva",
-            style = MaterialTheme.typography.titleMedium,
-            fontWeight = FontWeight.SemiBold,
-            modifier = Modifier.asSectionHeading(),
-        )
-        ViolationEvidenceViewer(
-            violation = violation,
-            imagePath = imagePath,
-            modifier = Modifier.fillMaxWidth(),
-        )
-
-        if (!violation.hasSpatialBounds()) {
+        AccessScopeCard(modifier = Modifier.fillMaxWidth()) {
             Text(
-                "Problema a livello schermata: l'evidenza mostra la schermata completa.",
+                type.displayName,
+                style = MaterialTheme.typography.headlineSmall,
+                fontWeight = FontWeight.Bold,
+                color = severityColor(type.severity),
+                modifier = Modifier.asSectionHeading(),
+            )
+            Text(type.wcagRef, style = MaterialTheme.typography.labelLarge, color = BrandPrimary)
+            Text(
+                "Confidenza ${(violation.confidence * 100).roundToInt()}%",
                 style = MaterialTheme.typography.bodySmall,
                 color = contentSecondary(),
             )
+            Text(type.plainHint, style = MaterialTheme.typography.bodyLarge)
         }
 
-        Spacer(Modifier.height(4.dp))
-        Text("Dettagli tecnici", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-        ReportHelper.violationDetailLines(violation).forEach { line ->
-            Text(line, style = MaterialTheme.typography.bodySmall, color = contentSecondary())
+        ViolationExpandableSection(
+            title = "Evidenza visiva",
+            initiallyExpanded = true,
+        ) {
+            ViolationEvidenceViewer(
+                violation = violation,
+                imagePath = imagePath,
+                modifier = Modifier.fillMaxWidth(),
+            )
+            if (!violation.hasSpatialBounds()) {
+                Text(
+                    "Problema a livello schermata: l'evidenza mostra la schermata completa.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = contentSecondary(),
+                )
+            }
         }
-        Text("App: $packageLabel", style = MaterialTheme.typography.bodySmall, color = contentSecondary())
-        Text("Schermata: ${violation.screenTitle}", style = MaterialTheme.typography.bodySmall, color = contentSecondary())
+
+        ViolationExpandableSection(
+            title = "Dettagli tecnici",
+            initiallyExpanded = true,
+        ) {
+            if (isContrastViolation(violation)) {
+                ContrastColorLine(violation = violation)
+            }
+            technicalDetailLines(violation).forEach { line ->
+                ViolationDetailLine(
+                    line = line,
+                    violation = violation,
+                )
+            }
+        }
+
+        ViolationExpandableSection(
+            title = "Contesto",
+            initiallyExpanded = false,
+        ) {
+            Text("App: $packageLabel", style = MaterialTheme.typography.bodySmall, color = contentSecondary())
+            Text(
+                "Schermata: ${violation.screenTitle}",
+                style = MaterialTheme.typography.bodySmall,
+                color = contentSecondary(),
+            )
+            ReportHelper.violationDetailLines(violation)
+                .lastOrNull { it.startsWith("Posizione:") }
+                ?.let { positionLine ->
+                    Text(positionLine, style = MaterialTheme.typography.bodySmall, color = contentSecondary())
+                }
+        }
     }
 }

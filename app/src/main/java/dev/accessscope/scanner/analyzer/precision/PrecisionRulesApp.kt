@@ -132,6 +132,8 @@ internal object PrecisionRulesApp {
     fun isInsideWebView(snap: NodeSnapshot, all: List<NodeSnapshot>): Boolean = PrecisionRulesPlatform.isInsideWebView(snap, all)
     fun isSemanticClickTarget(snap: NodeSnapshot): Boolean = PrecisionRulesPlatform.isSemanticClickTarget(snap)
     fun isClickableLayoutShell(snap: NodeSnapshot): Boolean = PrecisionRulesPlatform.isClickableLayoutShell(snap)
+    fun isEmptyClickableHitArea(snap: NodeSnapshot, all: List<NodeSnapshot>): Boolean =
+        PrecisionRulesPlatform.isEmptyClickableHitArea(snap, all)
     fun isLayoutShellOverlap(a: NodeSnapshot, b: NodeSnapshot, all: List<NodeSnapshot>): Boolean = PrecisionRulesPlatform.isLayoutShellOverlap(a, b, all)
     fun isInsideDenseScrollGrid(snap: NodeSnapshot, all: List<NodeSnapshot>, screenArea: Int): Boolean = PrecisionRulesPlatform.isInsideDenseScrollGrid(snap, all, screenArea)
     fun shouldSkipPlatformNoiseAnalysis(snap: NodeSnapshot, all: List<NodeSnapshot>, packageName: String = ""): Boolean = PrecisionRulesPlatform.shouldSkipPlatformNoiseAnalysis(snap, all, packageName)

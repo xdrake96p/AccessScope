@@ -27,7 +27,9 @@ import java.util.UUID
  */
 class ScanSessionRepository(context: android.content.Context) {
 
-    private val prefs = context.getSharedPreferences(PREFS_NAME, android.content.Context.MODE_PRIVATE)
+    private val persistence = ScanSessionPersistence(
+        context.getSharedPreferences(ScanSessionPersistence.PREFS_NAME, android.content.Context.MODE_PRIVATE),
+    )
 
     private val _state = MutableStateFlow(ScanSessionState())
     /** Flusso osservabile dello stato corrente della sessione di scansione. */
@@ -37,6 +39,7 @@ class ScanSessionRepository(context: android.content.Context) {
     private val screenReaderKeys = LinkedHashSet<String>()
     private val seenFingerprints = LinkedHashSet<String>()
     private val scannedScreenTitles = LinkedHashMap<String, String>()
+    private val scannedScreenProtection = LinkedHashMap<String, ScreenProtectionReason>()
     private var activeSessionId: String? = null
 
     private fun buildVisitedScreens(): List<VisitedScreen> =
@@ -45,6 +48,7 @@ class ScanSessionRepository(context: android.content.Context) {
                 fingerprint = fingerprint,
                 title = title,
                 visitIndex = index,
+                protectionReason = scannedScreenProtection[fingerprint] ?: ScreenProtectionReason.NONE,
             )
         }
 
@@ -67,12 +71,10 @@ class ScanSessionRepository(context: android.content.Context) {
      * @return `true` se è stata trovata e ripristinata una scansione in corso.
      */
     fun restorePersistedScan(): Boolean {
-        if (!prefs.getBoolean(KEY_SCANNING, false)) return false
-        val packages = AppSelectionPolicy.enforceMax(
-            prefs.getStringSet(KEY_PACKAGES, emptySet()).orEmpty(),
-        )
+        if (!persistence.hasPersistedScan()) return false
+        val packages = persistence.loadPersistedPackages()
         if (packages.isEmpty()) {
-            clearPersistedScan()
+            persistence.clear()
             return false
         }
         _state.value = ScanSessionState(
@@ -103,6 +105,7 @@ class ScanSessionRepository(context: android.content.Context) {
         screenReaderKeys.clear()
         seenFingerprints.clear()
         scannedScreenTitles.clear()
+        scannedScreenProtection.clear()
         activeSessionId = UUID.randomUUID().toString()
         _state.value = ScanSessionState(
             isScanning = true,
@@ -113,11 +116,7 @@ class ScanSessionRepository(context: android.content.Context) {
             checkSummaries = emptyList(),
             sessionId = activeSessionId,
         )
-        prefs.edit()
-            .putBoolean(KEY_SCANNING, true)
-            .putStringSet(KEY_PACKAGES, packages)
-            .putString(KEY_SESSION_ID, activeSessionId)
-            .apply()
+        persistence.persistStart(packages, activeSessionId!!)
         AppFileLogger.log(
             "SCAN",
             "ScanSession",
@@ -137,7 +136,7 @@ class ScanSessionRepository(context: android.content.Context) {
         val screens = _state.value.uniqueScreens
         _state.update { it.copy(isScanning = false) }
         activeSessionId = null
-        clearPersistedScan()
+        persistence.clear()
         AppFileLogger.log(
             "SCAN",
             "ScanSession",
@@ -148,14 +147,6 @@ class ScanSessionRepository(context: android.content.Context) {
                 "screens" to screens,
             ),
         )
-    }
-
-    private fun clearPersistedScan() {
-        prefs.edit()
-            .remove(KEY_SCANNING)
-            .remove(KEY_PACKAGES)
-            .remove(KEY_SESSION_ID)
-            .apply()
     }
 
     /** ID sessione corrente (per evidenze visive in cache). */
@@ -268,11 +259,17 @@ class ScanSessionRepository(context: android.content.Context) {
      *
      * @param fingerprint Impronta univoca della schermata.
      * @param screenTitle Titolo leggibile della schermata.
+     * @param protectionReason Motivo di protezione screenshot/contrasto per questa schermata.
      */
-    fun registerUniqueScreen(fingerprint: String, screenTitle: String) {
+    fun registerUniqueScreen(
+        fingerprint: String,
+        screenTitle: String,
+        protectionReason: ScreenProtectionReason = ScreenProtectionReason.NONE,
+    ) {
         if (fingerprint.isBlank()) return
         val isNew = !seenFingerprints.contains(fingerprint)
         scannedScreenTitles[fingerprint] = screenTitle
+        scannedScreenProtection[fingerprint] = protectionReason
         if (!isNew) {
             syncVisitedScreensState()
             return
@@ -353,12 +350,5 @@ class ScanSessionRepository(context: android.content.Context) {
     /** Propaga la richiesta di arresto dall'overlay al [stopCallback] registrato. */
     fun requestStopFromOverlay() {
         stopCallback?.invoke()
-    }
-
-    companion object {
-        private const val PREFS_NAME = "access_scope_scan"
-        private const val KEY_SCANNING = "is_scanning"
-        private const val KEY_PACKAGES = "selected_packages"
-        private const val KEY_SESSION_ID = "session_id"
     }
 }

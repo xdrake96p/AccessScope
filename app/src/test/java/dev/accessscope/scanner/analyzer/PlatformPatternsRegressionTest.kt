@@ -204,6 +204,47 @@ class PlatformPatternsRegressionTest {
     }
 
     @Test
+    fun clickableLayoutShells_touchTargetSkipped() {
+        val tile = snap(
+            id = "tile",
+            bounds = Rect(26, 300, 350, 550),
+            className = "android.widget.FrameLayout",
+            clickable = true,
+        )
+        val all = listOf(tile, viewport())
+        assertTrue(PrecisionRules.shouldSkipTouchTargetCheck(tile, all))
+    }
+
+    @Test
+    fun realButtonInsideCard_touchTargetNotSkipped() {
+        val renew = snap(
+            id = "renew",
+            bounds = Rect(800, 800, 920, 840),
+            className = "android.widget.Button",
+            clickable = true,
+        )
+        val all = listOf(renew, viewport())
+        assertFalse(PrecisionRules.shouldSkipTouchTargetCheck(renew, all))
+    }
+
+    @Test
+    fun webViewDescendant_touchTargetSkippedWithoutLabel() {
+        val web = snap(
+            id = "webview",
+            bounds = Rect(0, 200, 1080, 2000),
+            className = "android.webkit.WebView",
+        )
+        val inner = snap(
+            id = "btn_a",
+            bounds = Rect(100, 400, 130, 430),
+            className = "android.view.View",
+            clickable = true,
+        )
+        val all = listOf(web, inner, viewport())
+        assertTrue(PrecisionRules.shouldSkipTouchTargetCheck(inner, all))
+    }
+
+    @Test
     fun webViewDescendant_overlapSkipped() {
         val web = snap(
             id = "webview",

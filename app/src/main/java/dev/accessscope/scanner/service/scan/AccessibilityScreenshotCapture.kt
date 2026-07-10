@@ -32,11 +32,11 @@ internal class AccessibilityScreenshotCapture(
      */
     fun capture(onResult: (ScreenshotCapture) -> Unit) {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
-            onResult(ScreenshotCapture(bitmap = null, secureOrUnusable = false))
+            onResult(ScreenshotCapture(bitmap = null))
             return
         }
         if (!screenshotInFlight.compareAndSet(false, true)) {
-            onResult(ScreenshotCapture(bitmap = null, secureOrUnusable = false))
+            onResult(ScreenshotCapture(bitmap = null))
             return
         }
         service.takeScreenshot(
@@ -49,9 +49,9 @@ internal class AccessibilityScreenshotCapture(
                     val unusable = ScreenshotAnalyzer.isBlackOrEmpty(bitmap)
                     if (unusable) {
                         bitmap.recycle()
-                        onResult(ScreenshotCapture(bitmap = null, secureOrUnusable = true))
+                        onResult(ScreenshotCapture(bitmap = null, screenshotBlocked = true))
                     } else {
-                        onResult(ScreenshotCapture(bitmap = bitmap, secureOrUnusable = false))
+                        onResult(ScreenshotCapture(bitmap = bitmap))
                     }
                 }
 
@@ -61,7 +61,7 @@ internal class AccessibilityScreenshotCapture(
                     if (secure) {
                         AppFileLogger.info("A11yService", "screenshot_secure_window error=$errorCode")
                     }
-                    onResult(ScreenshotCapture(bitmap = null, secureOrUnusable = secure))
+                    onResult(ScreenshotCapture(bitmap = null, flagSecure = secure))
                 }
             },
         )

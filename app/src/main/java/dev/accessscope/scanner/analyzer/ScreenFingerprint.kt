@@ -7,6 +7,8 @@
 package dev.accessscope.scanner.analyzer
 
 import android.view.accessibility.AccessibilityNodeInfo
+import dev.accessscope.scanner.analyzer.title.TitleCandidateLogic
+import dev.accessscope.scanner.analyzer.title.TitleTreeWalker
 import java.util.ArrayDeque
 
 /**
@@ -27,9 +29,24 @@ object ScreenFingerprint {
         packageName: String,
         screenTitle: String,
     ): String {
-        val title = screenTitle.trim().ifBlank { "unknown" }
+        val title = fingerprintTitle(root, screenTitle)
         val chromeIds = mutableListOf<String>()
         collectStructuralChromeIds(root, chromeIds, limit = 12)
+        val chrome = chromeIds.sorted().distinct().joinToString("|")
+        return if (chrome.isNotEmpty()) "$packageName::$title::$chrome" else "$packageName::$title"
+    }
+
+    /**
+     * Titolo stabile per fingerprint: preferisce content markers al titolo display oscillante.
+     */
+    fun fingerprintTitle(root: AccessibilityNodeInfo, displayTitle: String): String {
+        val rootIds = TitleTreeWalker.collectViewIdShorts(root)
+        return TitleCandidateLogic.inferTitleFromContentMarkers(rootIds)?.trim()?.takeIf { it.isNotBlank() }
+            ?: displayTitle.trim().ifBlank { "unknown" }
+    }
+
+    /** Formato fingerprint per test (chrome già raccolto). */
+    internal fun formatForTest(packageName: String, title: String, chromeIds: List<String>): String {
         val chrome = chromeIds.sorted().distinct().joinToString("|")
         return if (chrome.isNotEmpty()) "$packageName::$title::$chrome" else "$packageName::$title"
     }
@@ -56,6 +73,11 @@ object ScreenFingerprint {
                 className.contains("navigationbar", true)
             if (isChrome) {
                 output.add(short)
+            }
+            if (short == "tv_tab" || short.startsWith("tab_")) {
+                node.text?.toString()?.trim()?.takeIf { it.isNotBlank() }?.let { tabLabel ->
+                    output.add("tab:${tabLabel.lowercase()}")
+                }
             }
         }
 

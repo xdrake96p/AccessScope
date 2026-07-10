@@ -30,6 +30,10 @@ import dev.accessscope.scanner.util.AppFileLogger
  */
 object ScreenTitleResolver {
 
+    private val STABLE_TITLE_SOURCES = setOf(
+        "content_markers", "distinctive_ids", "section_title", "nexi_text", "pin", "modal", "pane_title",
+    )
+
     /**
      * Determina il titolo della schermata corrente analizzando radice e evento di accessibilità.
      *
@@ -57,12 +61,6 @@ object ScreenTitleResolver {
         }
 
         val candidates = mutableListOf<TitleCandidate>()
-
-        event.text?.firstOrNull()?.toString()?.trim()?.takeIf { it.isNotBlank() }?.let {
-            if (!TitleCandidateLogic.looksLikeAmount(it)) {
-                candidates += TitleCandidate(TitleCandidateLogic.humanizeTitle(it), 85, "event_text")
-            }
-        }
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
             root.paneTitle?.toString()?.trim()?.takeIf { it.isNotBlank() }?.let {
@@ -110,6 +108,17 @@ object ScreenTitleResolver {
             TitleCache.get(packageKey)?.let { cached ->
                 if (TitleCache.canReuseCachedTitle(root, cached, rootIds)) {
                     candidates += TitleCandidate(cached, 38, "cache")
+                }
+            }
+        }
+
+        val hasStableTitleSource = candidates.any {
+            it.source in STABLE_TITLE_SOURCES
+        }
+        if (!hasStableTitleSource) {
+            event.text?.firstOrNull()?.toString()?.trim()?.takeIf { it.isNotBlank() }?.let {
+                if (!TitleCandidateLogic.looksLikeAmount(it)) {
+                    candidates += TitleCandidate(TitleCandidateLogic.humanizeTitle(it), 55, "event_text")
                 }
             }
         }

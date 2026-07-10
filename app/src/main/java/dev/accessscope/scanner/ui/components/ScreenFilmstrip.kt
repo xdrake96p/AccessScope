@@ -23,7 +23,10 @@ import androidx.compose.material3.Badge
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
+import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -32,6 +35,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import dev.accessscope.scanner.data.ScreenProtectionReason
 import dev.accessscope.scanner.report.DynamicScreenFrame
 import dev.accessscope.scanner.ui.theme.BrandPrimary
 import dev.accessscope.scanner.ui.theme.CompactShape
@@ -52,9 +56,16 @@ fun ScreenFilmstrip(
     selectedIndex: Int,
     thumbnails: Map<String, Bitmap?>,
     onSelect: (Int) -> Unit,
+    listState: LazyListState = rememberLazyListState(),
     modifier: Modifier = Modifier,
 ) {
+    LaunchedEffect(selectedIndex, frames.size) {
+        if (frames.isNotEmpty() && selectedIndex in frames.indices) {
+            listState.animateScrollToItem(selectedIndex)
+        }
+    }
     LazyRow(
+        state = listState,
         modifier = modifier.fillMaxWidth(),
         contentPadding = PaddingValues(horizontal = 16.dp),
         horizontalArrangement = Arrangement.spacedBy(10.dp),
@@ -100,6 +111,16 @@ fun ScreenFilmstrip(
                             color = contentSecondary(),
                         )
                     }
+                    if (frame.protectionReason != ScreenProtectionReason.NONE) {
+                        Badge(
+                            modifier = Modifier
+                                .align(Alignment.BottomStart)
+                                .padding(4.dp),
+                            containerColor = MaterialTheme.colorScheme.tertiary,
+                        ) {
+                            Text(protectionBadgeLabel(frame.protectionReason), style = MaterialTheme.typography.labelSmall)
+                        }
+                    }
                     if (issueCount > 0) {
                         Badge(
                             modifier = Modifier
@@ -130,4 +151,11 @@ fun ScreenFilmstrip(
             }
         }
     }
+}
+
+private fun protectionBadgeLabel(reason: ScreenProtectionReason): String = when (reason) {
+    ScreenProtectionReason.FLAG_SECURE -> "FLAG_SECURE"
+    ScreenProtectionReason.PIN_OR_PASSWORD -> "PIN"
+    ScreenProtectionReason.SCREENSHOT_BLOCKED -> "Screenshot"
+    ScreenProtectionReason.NONE -> "Protetta"
 }

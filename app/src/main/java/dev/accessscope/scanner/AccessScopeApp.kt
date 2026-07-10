@@ -135,6 +135,7 @@ class AccessScopeApp : Application() {
                 scanScopeLabel = snapshot.scanScope.label(),
                 score = score,
                 sessionId = snapshot.sessionId,
+                visitedScreens = snapshot.visitedScreens,
             )
             lastArchivedSessionId = archived.id
             scanHistoryStore.archive(archived)

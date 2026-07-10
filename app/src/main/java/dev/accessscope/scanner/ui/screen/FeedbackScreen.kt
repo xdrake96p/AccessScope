@@ -3,8 +3,6 @@
  */
 package dev.accessscope.scanner.ui.screen
 
-import android.content.Intent
-import android.net.Uri
 import android.os.Build
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -32,6 +30,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -48,6 +47,8 @@ import dev.accessscope.scanner.ui.theme.ControlShape
 import dev.accessscope.scanner.ui.theme.contentSecondary
 import dev.accessscope.scanner.ui.viewmodel.ScanViewModel
 import dev.accessscope.scanner.util.FeedbackIssueBuilder
+import dev.accessscope.scanner.util.FeedbackIssueLauncher
+import kotlinx.coroutines.launch
 
 /**
  * Form per suggerimenti e segnalazioni con apertura GitHub Issues precompilato.
@@ -59,6 +60,7 @@ fun FeedbackScreen(
     onBack: () -> Unit,
 ) {
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     var feedbackType by remember { mutableStateOf(FeedbackIssueBuilder.FeedbackType.BUG) }
     var description by remember { mutableStateOf("") }
@@ -102,7 +104,8 @@ fun FeedbackScreen(
                 )
                 Text(
                     "Descrivi il problema o il suggerimento. Si aprirà il browser con una issue " +
-                        "precompilata: completa e invia manualmente (serve un account GitHub).",
+                        "precompilata e verrà proposto l'allegato del report affidabilità `.md` " +
+                        "(serve un account GitHub).",
                     style = MaterialTheme.typography.bodySmall,
                     color = contentSecondary(),
                 )
@@ -208,20 +211,21 @@ fun FeedbackScreen(
                     } else {
                         null
                     }
-                    val url = FeedbackIssueBuilder.buildUrl(
-                        type = feedbackType,
-                        description = description,
-                        scanContext = scanContext,
-                        deviceInfo = deviceInfo,
-                    )
-                    runCatching {
-                        context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
-                    }.onFailure {
-                        Toast.makeText(
-                            context,
-                            "Impossibile aprire il browser",
-                            Toast.LENGTH_LONG,
-                        ).show()
+                    scope.launch {
+                        viewModel.resolveReliabilityMdForFeedback { mdPath ->
+                            val url = FeedbackIssueBuilder.buildUrl(
+                                type = feedbackType,
+                                description = description,
+                                scanContext = scanContext,
+                                deviceInfo = deviceInfo,
+                                reliabilityMdFileName = mdPath?.substringAfterLast('/'),
+                            )
+                            FeedbackIssueLauncher.launch(
+                                context = context,
+                                issueUrl = url,
+                                reliabilityMdPath = mdPath,
+                            )
+                        }
                     }
                 },
                 modifier = Modifier.fillMaxWidth(),

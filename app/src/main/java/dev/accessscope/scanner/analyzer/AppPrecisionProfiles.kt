@@ -125,7 +125,7 @@ object AppPrecisionProfiles {
     )
 
     private val GENERIC_PIN_KEYS = setOf(
-        "delete", "backspace", "key", "digit",
+        "delete", "backspace",
     )
 
     /** ID/classi scroll container riconosciuti per tutte le app. */

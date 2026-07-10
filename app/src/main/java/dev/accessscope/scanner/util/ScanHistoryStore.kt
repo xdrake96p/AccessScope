@@ -5,8 +5,10 @@ package dev.accessscope.scanner.util
 
 import android.content.Context
 import dev.accessscope.scanner.data.AccessibilityViolation
-import dev.accessscope.scanner.data.EvidenceKind
 import dev.accessscope.scanner.data.ArchivedScanSession
+import dev.accessscope.scanner.data.EvidenceKind
+import dev.accessscope.scanner.data.ScreenProtectionReason
+import dev.accessscope.scanner.data.VisitedScreen
 import dev.accessscope.scanner.data.ScreenReaderFinding
 import dev.accessscope.scanner.data.ViolationType
 import org.json.JSONArray
@@ -123,6 +125,7 @@ class ScanHistoryStore(context: Context) {
         score: Int,
         pdfPath: String? = null,
         sessionId: String? = null,
+        visitedScreens: List<VisitedScreen> = emptyList(),
     ): ArchivedScanSession {
         val keys = violations.map { it.dedupeKey }.toSet()
         return ArchivedScanSession(
@@ -137,6 +140,7 @@ class ScanHistoryStore(context: Context) {
             score = score,
             pdfPath = pdfPath,
             violationKeys = keys,
+            visitedScreens = visitedScreens,
         )
     }
 
@@ -203,6 +207,7 @@ class ScanHistoryStore(context: Context) {
         put("score", session.score)
         put("pdfPath", session.pdfPath)
         put("violationKeys", JSONArray(session.violationKeys.toList()))
+        put("visitedScreens", JSONArray(session.visitedScreens.map { serializeVisitedScreen(it) }))
     }
 
     private fun parseSession(json: JSONObject): ArchivedScanSession {
@@ -210,6 +215,7 @@ class ScanHistoryStore(context: Context) {
         val findingsArr = json.getJSONArray("screenReaderFindings")
         val packagesArr = json.getJSONArray("targetPackages")
         val keysArr = json.getJSONArray("violationKeys")
+        val visitedArr = json.optJSONArray("visitedScreens")
         return ArchivedScanSession(
             id = json.getString("id"),
             completedAtMs = json.getLong("completedAtMs"),
@@ -230,8 +236,33 @@ class ScanHistoryStore(context: Context) {
             violationKeys = buildSet {
                 for (i in 0 until keysArr.length()) add(keysArr.getString(i))
             },
+            visitedScreens = if (visitedArr != null) {
+                buildList {
+                    for (i in 0 until visitedArr.length()) {
+                        add(parseVisitedScreen(visitedArr.getJSONObject(i)))
+                    }
+                }
+            } else {
+                emptyList()
+            },
         )
     }
+
+    private fun serializeVisitedScreen(screen: VisitedScreen): JSONObject = JSONObject().apply {
+        put("fingerprint", screen.fingerprint)
+        put("title", screen.title)
+        put("visitIndex", screen.visitIndex)
+        put("protectionReason", screen.protectionReason.name)
+    }
+
+    private fun parseVisitedScreen(json: JSONObject): VisitedScreen = VisitedScreen(
+        fingerprint = json.getString("fingerprint"),
+        title = json.getString("title"),
+        visitIndex = json.getInt("visitIndex"),
+        protectionReason = json.optString("protectionReason").takeIf { it.isNotBlank() }
+            ?.let { runCatching { ScreenProtectionReason.valueOf(it) }.getOrNull() }
+            ?: ScreenProtectionReason.NONE,
+    )
 
     private fun serializeViolation(v: AccessibilityViolation): JSONObject = JSONObject().apply {
         put("type", v.type.name)

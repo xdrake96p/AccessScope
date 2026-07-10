@@ -98,6 +98,8 @@ internal object PrecisionTouch {
      */
     fun shouldSkipTouchTargetCheck(snap: NodeSnapshot, all: List<NodeSnapshot>, packageName: String = ""): Boolean =
         PrecisionNavigation.shouldSkipDrawerNode(snap) ||
+            PrecisionNavigation.isPhantomClickableBounds(snap) ||
+            PrecisionGeometry.isAnomalousTouchBounds(snap) ||
             PrecisionHome.shouldSkipHomeWidgetAnalysis(snap, all, packageName) ||
             PrecisionNavigation.isInlineTextLink(snap) ||
             PrecisionLabels.isIconInsideLabeledButton(snap, all) ||
@@ -106,6 +108,9 @@ internal object PrecisionTouch {
             PrecisionRulesPlatform.isMapSurface(snap) ||
             (PrecisionRulesPlatform.isInsideMapOrMediaSurface(snap, all) && !snap.isMediaControl()) ||
             PrecisionRulesPlatform.shouldSkipComposeTouch(snap) ||
+            PrecisionRulesPlatform.isClickableLayoutShell(snap) ||
+            PrecisionRulesPlatform.isEmptyClickableHitArea(snap, all) ||
+            (PrecisionRulesPlatform.isInsideWebView(snap, all) && !snap.hasAccessibleName()) ||
             // Le CTA "vere" (es. bottoni 65dp) sono già conformi: evitare rumore inutile.
             // Ma le CTA wrap_content (es. CustomViewButtonCta 27dp) vanno segnalate: NON skippare.
             (PrecisionHome.isCtaContainer(snap, packageName) && snap.bounds.height() >= snap.minTouchTargetPx)

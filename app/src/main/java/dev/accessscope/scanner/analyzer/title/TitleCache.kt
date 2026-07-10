@@ -61,7 +61,10 @@ internal object TitleCache {
             TitleTreeWalker.findTopBarTitle(root)?.let { top ->
                 return top.equals(cached, ignoreCase = true)
             }
-            return true
+            TitleCandidateLogic.inferTitleFromContentMarkers(ids)?.let { content ->
+                return content.equals(cached, ignoreCase = true)
+            }
+            return false
         }
         val fresh = TitleTreeWalker.findSectionTitle(root) ?: NexiTitleHeuristics.findKnownNexiTitles(root) ?:
             NexiTitleHeuristics.findByDistinctiveIds(root)
