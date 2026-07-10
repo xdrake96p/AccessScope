@@ -4,6 +4,12 @@
     <vendor>AccessScope</vendor>
     <description><![CDATA[
       Install, launch and fetch accessibility scan results from AccessScope on connected Android devices.
+
+      <b>Come usare</b>
+      <ul>
+        <li><b>View → Tool Windows → AccessScope</b> per il pannello principale</li>
+        <li><b>Run → Open AccessScope on Device</b> per installare e aprire l'app sul device</li>
+      </ul>
     ]]></description>
     <depends>com.intellij.modules.platform</depends>
 
@@ -12,15 +18,24 @@
             id="AccessScope"
             anchor="right"
             factoryClass="dev.accessscope.plugin.AccessScopeToolWindowFactory"
-            icon="AllIcons.General.InspectionsOK"/>
+            icon="/icons/access_scope.svg"/>
     </extensions>
 
     <actions>
         <action
+            id="AccessScope.OpenToolWindow"
+            class="dev.accessscope.plugin.OpenToolWindowAction"
+            text="AccessScope"
+            description="Open AccessScope tool window"
+            icon="/icons/access_scope.svg">
+            <add-to-group group-id="ToolsMenu" anchor="last"/>
+        </action>
+        <action
             id="AccessScope.InstallLaunch"
             class="dev.accessscope.plugin.InstallLaunchAction"
             text="Open AccessScope on Device"
-            description="Install or update AccessScope and launch it on the selected device">
+            description="Install or update AccessScope and launch it on the selected device"
+            icon="/icons/access_scope.svg">
             <add-to-group group-id="RunMenu" anchor="last"/>
         </action>
     </actions>
