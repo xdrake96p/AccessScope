@@ -5,7 +5,8 @@ package dev.accessscope.scanner.analyzer.precision
 
 import android.graphics.Rect
 import dev.accessscope.scanner.analyzer.NodeSnapshot
-import dev.accessscope.scanner.analyzer.precision.PrecisionRulesApp
+import dev.accessscope.scanner.analyzer.precision.PrecisionGeometry
+import dev.accessscope.scanner.analyzer.precision.PrecisionStructural
 
 internal object PrecisionRulesPlatform {
     private val MAP_SURFACE_MARKERS = listOf("mapview", "googlemap", "maps.", "maplibre", "heremap")
@@ -17,7 +18,7 @@ internal object PrecisionRulesPlatform {
     /** Superficie mappa (MapView, GoogleMap embed): i marker interni non sono controlli UI standard. */
     fun isMapSurface(snap: NodeSnapshot): Boolean {
         val cls = snap.className.lowercase()
-        val id = PrecisionRulesApp.viewIdShort(snap).lowercase()
+        val id = PrecisionGeometry.viewIdShort(snap).lowercase()
         return MAP_SURFACE_MARKERS.any { cls.contains(it) } ||
             (id.contains("map") && snap.bounds.width() > 200 && snap.bounds.height() > 200)
     }
@@ -32,13 +33,13 @@ internal object PrecisionRulesPlatform {
     /** Animazione Lottie non interattiva: decorativa, contrasto non significativo. */
     fun isLottieAnimation(snap: NodeSnapshot): Boolean {
         val cls = snap.className.lowercase()
-        val id = PrecisionRulesApp.viewIdShort(snap).lowercase()
+        val id = PrecisionGeometry.viewIdShort(snap).lowercase()
         return LOTTIE_MARKERS.any { cls.contains(it) || id.contains(it) }
     }
 
     /** Placeholder skeleton/shimmer durante il caricamento. */
     fun isSkeletonPlaceholder(snap: NodeSnapshot): Boolean {
-        val id = PrecisionRulesApp.viewIdShort(snap).lowercase()
+        val id = PrecisionGeometry.viewIdShort(snap).lowercase()
         if (SKELETON_ID_MARKERS.any { id.contains(it) }) return true
         val cls = snap.className.lowercase()
         return cls.contains("shimmer") || cls.contains("skeleton") || cls.contains("placeholder")
@@ -69,13 +70,13 @@ internal object PrecisionRulesPlatform {
 
     /** Bounds del modal/bottom sheet dominante, se presente. */
     fun findModalOverlayBounds(all: List<NodeSnapshot>): Rect? {
-        val viewport = PrecisionRulesApp.estimateViewport(all)
+        val viewport = PrecisionGeometry.estimateViewport(all)
         if (viewport.isEmpty) return null
         val screenArea = viewport.width() * viewport.height().toFloat()
         return all
             .filter { snap ->
                 val cls = snap.className.lowercase()
-                val id = PrecisionRulesApp.viewIdShort(snap).lowercase()
+                val id = PrecisionGeometry.viewIdShort(snap).lowercase()
                 val isModal = MODAL_OVERLAY_MARKERS.any { cls.contains(it) } ||
                     id.contains("bottom_sheet") || id.contains("dialog") || id.contains("modal")
                 isModal && snap.bounds.width() * snap.bounds.height() >= screenArea * 0.35f
@@ -87,7 +88,7 @@ internal object PrecisionRulesPlatform {
     /** Nodo dietro un overlay modale a schermo intero: non analizzare (evita FP su sfondo oscurato). */
     fun isObscuredByModalOverlay(snap: NodeSnapshot, all: List<NodeSnapshot>): Boolean {
         val modal = findModalOverlayBounds(all) ?: return false
-        val viewport = PrecisionRulesApp.estimateViewport(all)
+        val viewport = PrecisionGeometry.estimateViewport(all)
         val screenArea = viewport.width() * viewport.height().toFloat()
         if (modal.width() * modal.height() < screenArea * 0.45f) return false
         return !modal.contains(snap.bounds.centerX(), snap.bounds.centerY())
@@ -128,7 +129,7 @@ internal object PrecisionRulesPlatform {
         ) {
             return false
         }
-        val id = PrecisionRulesApp.viewIdShort(snap)
+        val id = PrecisionGeometry.viewIdShort(snap)
         if (id in setOf("gridview", "recycler", "scrollview_port", "scroll", "content")) return true
         return cls.contains("Layout", ignoreCase = true) ||
             cls.contains("ViewGroup", ignoreCase = true) ||
@@ -153,7 +154,7 @@ internal object PrecisionRulesPlatform {
         val otherIsRealControl = other.className.contains("Button", ignoreCase = true) ||
             other.className.contains("ImageButton", ignoreCase = true)
         if (otherIsRealControl) return false
-        return PrecisionRulesApp.isScrollContainer(shell) ||
+        return PrecisionStructural.isScrollContainer(shell) ||
             shell.className.contains("FrameLayout", ignoreCase = true) ||
             shell.className.contains("ConstraintLayout", ignoreCase = true) ||
             shell.bounds.area() > other.bounds.area() * 2

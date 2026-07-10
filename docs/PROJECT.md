@@ -101,7 +101,7 @@ Refactoring **move-only** dei sorgenti più grandi (>500 righe), senza cambio di
 | Area | Package / file | Contenuto estratto |
 |------|----------------|-------------------|
 | Data | `data/` | `ViolationTypes`, `ViolationModels`, `SessionModels`, `AppModels` (eliminato `Models.kt`) |
-| Analyzer | `analyzer/precision/` | `PrecisionRulesApp`, `PrecisionRulesPlatform`, `PrecisionExtensions`; facade `PrecisionRules.kt` |
+| Analyzer | `analyzer/precision/` | `PrecisionGeometry`, `PrecisionStructural`, `PrecisionNavigation`, `PrecisionHome`, `PrecisionContrast`, `PrecisionTouch`, `PrecisionLabels`, `PrecisionRulesPlatform`, `PrecisionExtensions`; facade `PrecisionRules.kt` |
 | Analyzer | `analyzer/node/` | collector, checker singolo/contrasto/cross-node/strutturale, `ViolationBuilder`; orchestrator `NodeAccessibilityAnalyzer.kt` |
 | Analyzer | `analyzer/title/` | candidati, tree walk, euristiche Nexi, cache; facade `ScreenTitleResolver.kt` |
 | Export | `export/pdf/` | costanti, contesto disegno, renderer copertina/violazioni/sezioni ausiliarie |
