@@ -45,14 +45,19 @@ Nuove funzioni: aggiungere riga a questa matrice e implementare su **entrambi** 
 - Stesso CLI bundled: dopo `:cli:fatJar`, copiare JAR in `vscode-extension/bin/AccessScope-cli.jar`
 - Release Git: `releases/<versione>/` contiene **ZIP + VSIX**
 
-## Documentazione per versione
+## Documentazione novità per versione — OBBLIGATORIO
 
-| IDE | File novità obbligatorio |
-|-----|--------------------------|
-| Android Studio | `android-studio-plugin/whats-new/<versione>.html` |
-| VS Code | `vscode-extension/CHANGELOG.md` (sezione stessa versione) |
+Ad **ogni bump di versione** plugin, aggiornare i file novità **prima** di buildare o pubblicare:
 
-Il contenuto delle novità deve essere **equivalente** (stessi bullet, linguaggio adattato alla piattaforma).
+| IDE | File novità | Visibile come |
+|-----|-------------|---------------|
+| Android Studio | `android-studio-plugin/whats-new/<versione>.html` | Scheda **What's New** in Settings → Plugins |
+| VS Code / Cursor | `vscode-extension/CHANGELOG.md` (sezione `## <versione>`) | Scheda **Changelog** in Extensions |
+
+- Contenuto **equivalente** su entrambi (stessi bullet, linguaggio adattato).
+- Template AS: `whats-new/TEMPLATE.html`.
+- Il build Gradle AS **fallisce** se manca `whats-new/<versione>.html`.
+- Su release Git: aggiornare anche `releases/<versione>/README.md`.
 
 ## Eccezioni ammesse (da dichiarare esplicitamente)
 
@@ -66,7 +71,7 @@ Il contenuto delle novità deve essere **equivalente** (stessi bullet, linguaggi
 - [ ] UI/UX aggiornata su **Android Studio** (`AccessScopeToolWindowFactory`, azioni menu)
 - [ ] UI/UX aggiornata su **VS Code** (`extension.ts`, `sidebarPanel.ts`, `package.json` commands)
 - [ ] Versione identica su entrambi i plugin
-- [ ] `whats-new/<versione>.html` + `CHANGELOG.md` aggiornati
+- [ ] **`whats-new/<versione>.html` creato** + **`CHANGELOG.md` sezione aggiunta** (novità utente)
 - [ ] `docs/MANUALE_UTENTE.md` aggiornato se cambiano installazione, flusso utente o troubleshooting
 - [ ] Build OK: `./gradlew :android-studio-plugin:buildPlugin` e `cd vscode-extension && npm run package`
 

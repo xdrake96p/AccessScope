@@ -1,5 +1,5 @@
 ---
-description: A fine task aggiornare PROJECT.md e KDoc dei file toccati
+description: A fine task aggiornare PROJECT.md, novità plugin e KDoc dei file toccati
 alwaysApply: true
 ---
 
@@ -12,9 +12,28 @@ A **fine di ogni task** (feature, fix, refactor, benchmark), prima di considerar
 - Aggiungere o aggiornare la sezione pertinente (cronologia, architettura, benchmark, changelog commit).
 - Includere: cosa è cambiato, perché, metriche rilevanti (es. precisione Nexi), versione se applicabile.
 - Aggiornare la data in «Ultimo aggiornamento» in cima al file.
-- Non creare altri file `.md` se non richiesti esplicitamente: `docs/PROJECT.md` è il living doc unico.
+- Non creare altri file `.md` se non richiesti esplicitamente, eccetto i file novità plugin (sezione 3) e `docs/MANUALE_UTENTE.md`.
 
-## 2. Aggiornare KDoc (JavaDoc Kotlin) su file modificati o creati
+## 2. Novità plugin IDE — **obbligatorio ad ogni bump di versione**
+
+Se si incrementa la versione del plugin (**Android Studio** e/o **VS Code**), aggiornare **sempre** i file che l'utente vede come “What's New” / changelog:
+
+| IDE | File | Dove appare all'utente |
+|-----|------|------------------------|
+| **Android Studio** | `access-scope-plugin/android-studio-plugin/whats-new/<versione>.html` | Settings → Plugins → AccessScope → **What's New** |
+| **VS Code / Cursor** | `access-scope-plugin/vscode-extension/CHANGELOG.md` | Extensions → AccessScope → **Changelog** |
+
+Regole:
+
+1. **Creare** `whats-new/<versione>.html` **prima** del build AS (Gradle fallisce se manca).
+2. **Aggiungere** sezione `## <versione>` in `CHANGELOG.md` con le **stesse novità** (bullet equivalenti).
+3. Usare template: `android-studio-plugin/whats-new/TEMPLATE.html`.
+4. Includere: nuove funzioni, fix visibili, compatibilità IDE — in **italiano**, orientato all'utente.
+5. Se si pubblica su Git: aggiornare anche `access-scope-plugin/releases/<versione>/README.md`.
+
+Vedi: `.cursor/rules/plugin-parity.mdc`, `.cursor/rules/plugin-release-workflow.mdc`.
+
+## 3. Aggiornare KDoc (JavaDoc Kotlin) su file modificati o creati
 
 Per **ogni** file `.kt` toccato nel task:
 
@@ -44,6 +63,7 @@ object AppIconCache {
 ## Checklist fine task
 
 - [ ] `docs/PROJECT.md` riflette le modifiche del task
+- [ ] Se **bump versione plugin**: `whats-new/<versione>.html` + `CHANGELOG.md` aggiornati
 - [ ] Se toccati plugin IDE: parità AS + VS Code verificata (`.cursor/rules/plugin-parity.mdc`)
 - [ ] Se cambiano flusso/installazione utente: aggiornare `docs/MANUALE_UTENTE.md`
 - [ ] Tutti i file `.kt` nuovi o modificati hanno KDoc aggiornata

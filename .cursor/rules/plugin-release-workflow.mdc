@@ -27,14 +27,16 @@ cp cli/build/libs/cli-1.0.0-all.jar vscode-extension/bin/AccessScope-cli.jar
 ### 2. Android Studio
 
 1. Bump `android-studio-plugin/build.gradle.kts` → `version`
-2. Creare `android-studio-plugin/whats-new/<versione>.html` (obbligatorio per il build)
+2. **Obbligatorio:** creare `android-studio-plugin/whats-new/<versione>.html`  
+   (novità visibili in **What's New**; senza questo file il build fallisce)
 3. `./gradlew :android-studio-plugin:buildPlugin`
 4. Output: `android-studio-plugin/build/distributions/AccessScope-<versione>.zip`
 
 ### 3. VS Code / Cursor
 
 1. Bump `vscode-extension/package.json` → `version` (**identica** al plugin AS)
-2. Aggiornare `vscode-extension/CHANGELOG.md` (stesse novità del whats-new HTML)
+2. **Obbligatorio:** aggiungere sezione `## <versione>` in `vscode-extension/CHANGELOG.md`  
+   (novità visibili in **Changelog** dell'estensione; stesso contenuto del whats-new HTML)
 3. Assicurarsi che `vscode-extension/bin/AccessScope-cli.jar` sia aggiornato (passo 1)
 4. Build VSIX:
    ```bash
@@ -61,7 +63,9 @@ Se cambiano installazione, pulsanti, flusso o troubleshooting → aggiornare `do
 
 - [ ] Parità funzionale verificata (vedi `plugin-parity.mdc`)
 - [ ] Stessa versione AS + VS Code
-- [ ] `whats-new/<versione>.html` + `CHANGELOG.md`
+- [ ] **`whats-new/<versione>.html`** scritto (What's New AS)
+- [ ] **`CHANGELOG.md`** aggiornato con sezione `## <versione>` (Changelog VS Code)
+- [ ] Contenuto novità equivalente tra i due file
 - [ ] CLI JAR aggiornato in `vscode-extension/bin/`
 - [ ] Build ZIP e VSIX OK
 - [ ] `releases/<versione>/` completa (su richiesta)
