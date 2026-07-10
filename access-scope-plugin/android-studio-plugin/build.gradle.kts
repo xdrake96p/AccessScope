@@ -4,7 +4,7 @@ plugins {
 }
 
 group = "dev.accessscope"
-version = "1.0.3"
+version = "1.0.4"
 
 repositories {
     mavenCentral()
@@ -26,8 +26,15 @@ intellij {
 
 tasks {
     prepareSandbox {
+        dependsOn(":cli:fatJar")
         from("${rootProject.projectDir}/cli/build/libs/cli-1.0.0-all.jar") {
             into("AccessScope/lib")
+            rename { "AccessScope-cli.jar" }
+        }
+    }
+    processResources {
+        dependsOn(":cli:fatJar")
+        from("${rootProject.projectDir}/cli/build/libs/cli-1.0.0-all.jar") {
             rename { "AccessScope-cli.jar" }
         }
     }

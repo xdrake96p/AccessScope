@@ -3,13 +3,17 @@ package dev.accessscope.plugin
 import com.google.gson.Gson
 import com.google.gson.JsonObject
 import com.google.gson.reflect.TypeToken
+import com.intellij.ide.plugins.PluginManagerCore
 import com.intellij.openapi.application.ApplicationManager
+import com.intellij.openapi.application.PathManager
 import com.intellij.openapi.components.Service
 import com.intellij.openapi.diagnostic.Logger
+import com.intellij.openapi.extensions.PluginId
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.util.SystemInfo
 import java.io.File
 import java.nio.charset.StandardCharsets
+import java.nio.file.Files
 import java.util.concurrent.TimeUnit
 
 data class DeviceInfo(
@@ -70,23 +74,61 @@ class CliExecutor {
     }
 
     private fun resolveJarPath(): String {
-        val pluginLib = File(PathResolver.pluginLibDir(), "AccessScope-cli.jar")
-        if (pluginLib.exists()) return pluginLib.absolutePath
-        val legacyLib = File(PathResolver.pluginLibDir(), "access-scope-cli.jar")
-        if (legacyLib.exists()) return legacyLib.absolutePath
+        resolveBundledJarFromPluginDir()?.let { return it }
+        resolveBundledJarNearPluginClasses()?.let { return it }
+        resolveDevJar()?.let { return it }
+        return extractCliJarFromResources()
+    }
+
+    private fun resolveBundledJarFromPluginDir(): String? {
+        val plugin = PluginManagerCore.getPlugin(PluginId.getId("dev.accessscope.plugin")) ?: return null
+        val candidates = listOf(
+            plugin.pluginPath.resolve("lib").resolve("AccessScope-cli.jar"),
+            plugin.pluginPath.resolve("lib").resolve("access-scope-cli.jar"),
+            plugin.pluginPath.resolve("AccessScope-cli.jar"),
+        )
+        return candidates.firstOrNull { Files.exists(it) }?.toAbsolutePath()?.toString()
+    }
+
+    private fun resolveBundledJarNearPluginClasses(): String? {
+        val codeSource = CliExecutor::class.java.protectionDomain?.codeSource?.location ?: return null
+        val sourceFile = runCatching { File(codeSource.toURI()) }.getOrNull() ?: return null
+        val libDir = sourceFile.parentFile ?: return null
+        val candidates = listOf(
+            File(libDir, "AccessScope-cli.jar"),
+            File(libDir, "access-scope-cli.jar"),
+            File(libDir.parentFile, "lib/AccessScope-cli.jar"),
+        )
+        return candidates.firstOrNull { it.exists() }?.absolutePath
+    }
+
+    private fun resolveDevJar(): String? {
         val devJar = File(PathResolver.repoRoot(), "cli/build/libs/cli-1.0.0-all.jar")
-        if (devJar.exists()) return devJar.absolutePath
-        error("AccessScope-cli.jar not found")
+        return devJar.takeIf { it.exists() }?.absolutePath
+    }
+
+    private fun extractCliJarFromResources(): String {
+        val cacheDir = File(PathManager.getSystemPath(), "accessscope")
+        cacheDir.mkdirs()
+        val cachedJar = File(cacheDir, "AccessScope-cli.jar")
+        if (cachedJar.exists() && cachedJar.length() > 0L) {
+            return cachedJar.absolutePath
+        }
+        val resourceNames = listOf("AccessScope-cli.jar", "access-scope-cli.jar")
+        val stream = resourceNames.firstNotNullOfOrNull { name ->
+            CliExecutor::class.java.classLoader.getResourceAsStream(name)
+        } ?: error(
+            "AccessScope-cli.jar not found. Reinstall the plugin from the latest AccessScope release ZIP.",
+        )
+        stream.use { input ->
+            cachedJar.outputStream().use { output -> input.copyTo(output) }
+        }
+        log.info("Extracted CLI jar to ${cachedJar.absolutePath}")
+        return cachedJar.absolutePath
     }
 }
 
 object PathResolver {
-    fun pluginLibDir(): File {
-        val jarLocation = CliExecutor::class.java.protectionDomain?.codeSource?.location?.toURI()
-        val pluginRoot = jarLocation?.let { File(it).parentFile?.parentFile }
-        return File(pluginRoot, "lib")
-    }
-
     fun repoRoot(): File = File(System.getProperty("user.dir"))
 }
 
