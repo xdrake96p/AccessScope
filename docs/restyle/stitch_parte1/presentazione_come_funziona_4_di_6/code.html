@@ -1,0 +1,332 @@
+<!DOCTYPE html><html class="light" lang="it"><head>
+<meta charset="utf-8">
+<meta content="width=device-width, initial-scale=1.0" name="viewport">
+<title>AccessScope - Come Funziona</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;600;700;800&amp;family=Inter:wght@400;500&amp;family=JetBrains+Mono:wght@500&amp;display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet">
+<!-- Tailwind Configuration Injection -->
+<script id="tailwind-config">
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            "colors": {
+                "outline": "#6b7a7d",
+                "on-background": "#1c1b1b",
+                "on-surface": "#1c1b1b",
+                "primary-fixed-dim": "#00daf3",
+                "error": "#ba1a1a",
+                "surface-container": "#f0edec",
+                "inverse-on-surface": "#f3f0ef",
+                "tertiary-fixed": "#ffdf96",
+                "surface-bright": "#fcf9f8",
+                "on-error": "#ffffff",
+                "primary-fixed": "#9cf0ff",
+                "on-error-container": "#93000a",
+                "secondary": "#5b00df",
+                "on-tertiary": "#ffffff",
+                "on-secondary-fixed": "#22005d",
+                "secondary-fixed-dim": "#cfbdff",
+                "on-tertiary-fixed-variant": "#594400",
+                "primary-container": "#00e5ff",
+                "inverse-surface": "#313030",
+                "surface": "#fcf9f8",
+                "on-surface-variant": "#3b494c",
+                "background": "#fcf9f8",
+                "surface-container-low": "#f6f3f2",
+                "surface-dim": "#dcd9d9",
+                "on-primary": "#ffffff",
+                "primary": "#006875",
+                "on-primary-fixed": "#001f24",
+                "surface-container-high": "#ebe7e7",
+                "surface-container-highest": "#e5e2e1",
+                "on-primary-fixed-variant": "#004f58",
+                "surface-variant": "#e5e2e1",
+                "tertiary-fixed-dim": "#f3bf26",
+                "surface-tint": "#006875",
+                "on-secondary": "#ffffff",
+                "error-container": "#ffdad6",
+                "secondary-fixed": "#e8ddff",
+                "outline-variant": "#bac9cc",
+                "inverse-primary": "#00daf3",
+                "secondary-container": "#7531ff",
+                "on-secondary-fixed-variant": "#5300cd",
+                "tertiary-container": "#fec931",
+                "on-tertiary-fixed": "#251a00",
+                "on-tertiary-container": "#6f5500",
+                "on-secondary-container": "#eadfff",
+                "on-primary-container": "#00626e",
+                "tertiary": "#765a00",
+                "surface-container-lowest": "#ffffff"
+            },
+            "borderRadius": {
+                "DEFAULT": "0.25rem",
+                "lg": "0.5rem",
+                "xl": "0.75rem",
+                "full": "9999px"
+            },
+            "spacing": {
+                "margin-desktop": "32px",
+                "xs": "4px",
+                "margin-mobile": "20px",
+                "base": "8px",
+                "md": "24px",
+                "gutter": "16px",
+                "lg": "40px",
+                "xl": "64px",
+                "sm": "12px"
+            },
+            "fontFamily": {
+                "headline-lg": ["Hanken Grotesk"],
+                "body-lg": ["Inter"],
+                "display-lg": ["Hanken Grotesk"],
+                "label-sm": ["JetBrains Mono"],
+                "headline-lg-mobile": ["Hanken Grotesk"],
+                "body-md": ["Inter"],
+                "label-md": ["JetBrains Mono"],
+                "headline-md": ["Hanken Grotesk"]
+            },
+            "fontSize": {
+                "headline-lg": ["32px", {"lineHeight": "40px", "fontWeight": "700"}],
+                "body-lg": ["18px", {"lineHeight": "28px", "fontWeight": "400"}],
+                "display-lg": ["40px", {"lineHeight": "48px", "letterSpacing": "-0.02em", "fontWeight": "800"}],
+                "label-sm": ["12px", {"lineHeight": "16px", "letterSpacing": "0.08em", "fontWeight": "500"}],
+                "headline-lg-mobile": ["28px", {"lineHeight": "36px", "fontWeight": "700"}],
+                "body-md": ["16px", {"lineHeight": "24px", "fontWeight": "400"}],
+                "label-md": ["14px", {"lineHeight": "20px", "letterSpacing": "0.05em", "fontWeight": "500"}],
+                "headline-md": ["24px", {"lineHeight": "32px", "fontWeight": "600"}]
+            }
+          },
+        },
+      }
+    </script>
+<style>
+        .glass-panel {
+            background: rgba(252, 249, 248, 0.7);
+            backdrop-filter: blur(20px);
+            border: 1px solid rgba(0, 218, 243, 0.1);
+        }
+        
+        .step-line {
+            background: linear-gradient(to bottom, #00daf3 0%, transparent 100%);
+        }
+
+        @keyframes pulse-glow {
+            0%, 100% { box-shadow: 0 0 10px rgba(0, 218, 243, 0.2); }
+            50% { box-shadow: 0 0 25px rgba(0, 218, 243, 0.6); }
+        }
+
+        .active-glow {
+            animation: pulse-glow 3s infinite ease-in-out;
+        }
+
+        .node-connector {
+            stroke-dasharray: 4;
+            animation: dash 20s linear infinite;
+        }
+
+        @keyframes dash {
+            to { stroke-dashoffset: -100; }
+        }
+    </style>
+</head>
+<body class="bg-background text-on-background font-body-md min-h-screen overflow-x-hidden">
+<!-- TopAppBar -->
+<header class="fixed top-0 w-full bg-background dark:bg-background flex items-center justify-between px-margin-mobile md:px-margin-desktop h-16 z-50 transition-opacity duration-300">
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-primary" style="font-variation-settings: 'FILL' 1;">radar</span>
+<h1 class="font-headline-md text-headline-md text-primary tracking-tight">AccessScope</h1>
+</div>
+<div class="hidden md:flex items-center gap-6">
+<nav class="flex gap-8">
+<a class="font-label-md text-label-md text-on-surface-variant hover:opacity-80 transition-opacity" href="#">PROGETTI</a>
+<a class="font-label-md text-label-md text-primary hover:opacity-80 transition-opacity" href="#">TUTORIAL</a>
+<a class="font-label-md text-label-md text-on-surface-variant hover:opacity-80 transition-opacity" href="#">SUPPORTO</a>
+</nav>
+<button class="bg-primary text-on-primary px-6 py-2 rounded-full font-label-md text-label-md shadow-sm hover:opacity-90 transition-opacity">
+                ACCEDI
+            </button>
+</div>
+<button class="md:hidden text-on-surface-variant">
+<span class="material-symbols-outlined">menu</span>
+</button>
+</header>
+<main class="pt-24 pb-32 px-margin-mobile md:px-margin-desktop max-w-7xl mx-auto relative">
+<!-- Background Illustration Integration -->
+<div class="absolute top-0 right-0 -z-10 opacity-20 w-full h-full pointer-events-none overflow-hidden">
+<img alt="Soft background illustration of a futuristic data diagram" class="object-contain object-right-top w-full h-full scale-110 translate-x-1/4" src="https://lh3.googleusercontent.com/aida-public/AB6AXuADSrHQArgzgPzs3W34_d4FSAwYSYnf_27BiDoU2TG8ze4T7apfd7NZ-Q8pUG79RuPX7lsbV3K4ziAxYRs7zCSbaHcq5RvT4443S0DbmXHOvH6QS_N_VIJRWVnwZRNRo5O-eVq85GhMezRcMUw9gX-5c-XA8Ei-0lodx9UPBlGB_sBwzwJcf0cU56xjpoRb4Wur7NB75HKC3tbJVDkQXJ7w5zHiMtWU4OAIr7kfOvLJ8DVYXlIeatBkgg">
+</div>
+<!-- Section Title -->
+<div class="mb-16 text-center md:text-left">
+<div class="inline-flex items-center gap-2 bg-primary-fixed/20 text-on-primary-fixed-variant px-4 py-1 rounded-full mb-4 border border-primary/10">
+<span class="material-symbols-outlined text-[18px]">psychology</span>
+<span class="font-label-sm text-label-sm uppercase tracking-widest">Procedura Guidata</span>
+</div>
+<h2 class="font-headline-lg-mobile md:font-headline-lg text-headline-lg-mobile md:text-headline-lg text-on-surface mb-2">Come funziona</h2>
+<p class="font-body-lg text-body-lg text-on-surface-variant max-w-2xl">
+                Ottimizza l'accessibilità della tua applicazione Android attraverso il nostro processo di scansione intelligente basato su cloud.
+            </p>
+</div>
+<!-- Horizontal/Vertical Responsive Flowchart -->
+<div class="relative flex flex-col md:flex-row justify-between items-start md:items-center gap-12 md:gap-4 py-8">
+<!-- Connection Line (Desktop Only) -->
+<div class="hidden md:block absolute top-1/2 left-0 w-full h-0.5 bg-outline-variant -z-10 -translate-y-12">
+<div class="h-full bg-primary w-2/5 shadow-[0_0_8px_rgba(0,104,117,0.4)]"></div>
+</div>
+<!-- STEP 1 -->
+<div class="flex flex-row md:flex-col items-center gap-6 md:gap-4 w-full md:w-1/5 group">
+<div class="relative">
+<div class="w-16 h-16 rounded-full bg-primary text-on-primary flex items-center justify-center text-2xl z-10 relative active-glow transition-transform group-hover:scale-110">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 1;">touch_app</span>
+</div>
+<div class="md:hidden absolute top-16 left-1/2 w-0.5 h-12 bg-outline-variant -translate-x-1/2"></div>
+</div>
+<div class="text-left md:text-center">
+<span class="font-label-sm text-label-sm text-primary uppercase block mb-1">Passo 01</span>
+<h3 class="font-headline-md text-[20px] text-on-surface">Seleziona App</h3>
+<p class="font-body-md text-label-sm text-on-surface-variant">Carica l'APK o collega il Play Store.</p>
+</div>
+</div>
+<!-- STEP 2 -->
+<div class="flex flex-row md:flex-col items-center gap-6 md:gap-4 w-full md:w-1/5 group">
+<div class="relative">
+<div class="w-16 h-16 rounded-full bg-surface-container-highest border-2 border-primary text-primary flex items-center justify-center text-2xl z-10 relative transition-transform group-hover:scale-110">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 1;">play_circle</span>
+</div>
+<div class="md:hidden absolute top-16 left-1/2 w-0.5 h-12 bg-outline-variant -translate-x-1/2"></div>
+</div>
+<div class="text-left md:text-center">
+<span class="font-label-sm text-label-sm text-outline block mb-1">Passo 02</span>
+<h3 class="font-headline-md text-[20px] text-on-surface">Avvia Scansione</h3>
+<p class="font-body-md text-label-sm text-on-surface-variant">Inizializza l'audit automatizzato.</p>
+</div>
+</div>
+<!-- STEP 3 (ACTIVE) -->
+<div class="flex flex-row md:flex-col items-center gap-6 md:gap-4 w-full md:w-1/5 group">
+<div class="relative">
+<div class="w-16 h-16 rounded-full bg-surface-container-highest border-2 border-outline-variant text-outline flex items-center justify-center text-2xl z-10 relative transition-transform group-hover:scale-110">
+<span class="material-symbols-outlined">explore</span>
+</div>
+<div class="md:hidden absolute top-16 left-1/2 w-0.5 h-12 bg-outline-variant -translate-x-1/2"></div>
+</div>
+<div class="text-left md:text-center">
+<span class="font-label-sm text-label-sm text-outline block mb-1">Passo 03</span>
+<h3 class="font-headline-md text-[20px] text-on-surface">Naviga App</h3>
+<p class="font-body-md text-label-sm text-on-surface-variant">Il bot simula l'interazione utente.</p>
+</div>
+</div>
+<!-- STEP 4 -->
+<div class="flex flex-row md:flex-col items-center gap-6 md:gap-4 w-full md:w-1/5 group">
+<div class="relative">
+<div class="w-16 h-16 rounded-full bg-surface-container-highest border-2 border-outline-variant text-outline flex items-center justify-center text-2xl z-10 relative transition-transform group-hover:scale-110">
+<span class="material-symbols-outlined">stop_circle</span>
+</div>
+<div class="md:hidden absolute top-16 left-1/2 w-0.5 h-12 bg-outline-variant -translate-x-1/2"></div>
+</div>
+<div class="text-left md:text-center">
+<span class="font-label-sm text-label-sm text-outline block mb-1">Passo 04</span>
+<h3 class="font-headline-md text-[20px] text-on-surface">Stop Scansione</h3>
+<p class="font-body-md text-label-sm text-on-surface-variant">Fine della raccolta dati live.</p>
+</div>
+</div>
+<!-- STEP 5 -->
+<div class="flex flex-row md:flex-col items-center gap-6 md:gap-4 w-full md:w-1/5 group">
+<div class="relative">
+<div class="w-16 h-16 rounded-full bg-surface-container-highest border-2 border-outline-variant text-outline flex items-center justify-center text-2xl z-10 relative transition-transform group-hover:scale-110">
+<span class="material-symbols-outlined">analytics</span>
+</div>
+</div>
+<div class="text-left md:text-center">
+<span class="font-label-sm text-label-sm text-outline block mb-1">Passo 05</span>
+<h3 class="font-headline-md text-[20px] text-on-surface">Report &amp; Fix</h3>
+<p class="font-body-md text-label-sm text-on-surface-variant">Analizza i bug e ottieni suggerimenti.</p>
+</div>
+</div>
+</div>
+<!-- High-end Feature Grid (Bento Style) -->
+<section class="mt-24 grid grid-cols-1 md:grid-cols-3 gap-gutter">
+<div class="md:col-span-2 glass-panel p-md rounded-xl flex flex-col md:flex-row gap-6 items-center shadow-sm overflow-hidden group">
+<div class="w-full md:w-1/2 h-48 rounded-lg relative bg-surface-container-high flex items-center justify-center">
+<img class="w-full h-full object-cover rounded-lg" data-alt="A macro shot of a sleek Android smartphone screen showing a complex accessibility debugging overlay with colored highlights and lines, futuristic technology aesthetic, teal and purple lighting, professional UI design photography." src="https://lh3.googleusercontent.com/aida-public/AB6AXuCWhMkXnMLmVfP_HD8TzYj68r7wSqq3a70KVkVlymkTFp3B2N5sVOkUzhPeEDbF_7DVlnvnwONtvf5mw9vmSlxcl-SWJMRzx9z9-Q5VPXJHnSY6KKOGNkIYYO497CN8eQJx6DZ2xwtBEHB-TBcGCjW9x2IjGpr5C3-WJLlUfJLCsS-t82C3wqEXBz6WE5qkj4Un0jkRhXxAJzYPVCPh_SAXX973t_O0e9WZx2egHjdeN9_6wALvS90clQ">
+<div class="absolute inset-0 bg-primary/10 group-hover:bg-transparent transition-colors"></div>
+</div>
+<div class="w-full md:w-1/2">
+<h4 class="font-headline-md text-headline-md text-on-surface mb-2">Monitoraggio Real-time</h4>
+<p class="font-body-md text-on-surface-variant mb-4">Guarda mentre il nostro sistema HUD identifica ostacoli visivi e strutturali in tempo reale durante la navigazione simulata.</p>
+<div class="flex gap-2">
+<span class="px-3 py-1 bg-surface-container text-primary font-label-sm text-[10px] rounded border border-outline-variant">WCAG 2.1</span>
+<span class="px-3 py-1 bg-surface-container text-primary font-label-sm text-[10px] rounded border border-outline-variant">ANDROID V14</span>
+</div>
+</div>
+</div>
+<div class="glass-panel p-md rounded-xl flex flex-col justify-between shadow-sm border-l-4 border-l-secondary relative overflow-hidden">
+<div class="relative z-10">
+<span class="material-symbols-outlined text-secondary text-4xl mb-4">extension</span>
+<h4 class="font-headline-md text-headline-md text-on-surface mb-2">Automazione Intelligente</h4>
+<p class="font-body-md text-on-surface-variant">I nostri algoritmi apprendono dal layout della tua app per testare percorsi che gli utenti reali potrebbero seguire.</p>
+</div>
+<div class="absolute -bottom-8 -right-8 opacity-5 text-[120px] select-none text-secondary">
+<span class="material-symbols-outlined">auto_fix</span>
+</div>
+</div>
+<div class="glass-panel p-md rounded-xl shadow-sm md:col-start-1">
+<div class="flex items-center gap-3 mb-4">
+<div class="p-2 bg-error-container rounded-lg">
+<span class="material-symbols-outlined text-error">priority_high</span>
+</div>
+<h4 class="font-headline-md text-[18px] text-on-surface">Criticità Immediate</h4>
+</div>
+<div class="space-y-3">
+<div class="flex items-center justify-between p-3 bg-surface-container-low rounded border border-outline-variant/30">
+<span class="font-label-md text-label-md">Contrasto Colore</span>
+<span class="bg-error text-on-error px-2 py-0.5 rounded text-[10px] font-bold">CRITICAL</span>
+</div>
+<div class="flex items-center justify-between p-3 bg-surface-container-low rounded border border-outline-variant/30">
+<span class="font-label-md text-label-md">Dimensioni Touch</span>
+<span class="bg-tertiary-container text-on-tertiary-container px-2 py-0.5 rounded text-[10px] font-bold">WARNING</span>
+</div>
+</div>
+</div>
+<div class="md:col-span-2 glass-panel p-md rounded-xl shadow-sm flex flex-col md:flex-row gap-8 items-center bg-primary/5">
+<div class="flex-1">
+<h4 class="font-headline-md text-headline-md text-on-primary-container mb-2">Pronto per il report finale?</h4>
+<p class="font-body-md text-on-surface-variant">Scarica un PDF dettagliato con screenshot, descrizioni dei bug e frammenti di codice pronti per essere corretti dal tuo team di sviluppo.</p>
+</div>
+<button class="w-full md:w-auto bg-primary text-on-primary h-12 px-8 rounded-full font-label-md flex items-center justify-center gap-2 hover:shadow-lg transition-all active:scale-95">
+                    GENERA REPORT <span class="material-symbols-outlined">arrow_forward</span>
+</button>
+</div>
+</section>
+<div class="flex justify-center items-center gap-3 mt-16 mb-8">
+<div class="w-2.5 h-2.5 rounded-full bg-outline-variant"></div>
+<div class="w-2.5 h-2.5 rounded-full bg-outline-variant"></div>
+<div class="w-2.5 h-2.5 rounded-full bg-outline-variant"></div>
+<div class="w-3 h-3 rounded-full bg-primary shadow-[0_0_8px_rgba(0,104,117,0.4)]"></div>
+<div class="w-2.5 h-2.5 rounded-full bg-outline-variant"></div>
+<div class="w-2.5 h-2.5 rounded-full bg-outline-variant"></div>
+</div></main>
+<!-- BottomNavBar -->
+<script>
+        // Micro-interaction for smooth scrolling reveal
+        document.addEventListener('DOMContentLoaded', () => {
+            const steps = document.querySelectorAll('.group');
+            const observer = new IntersectionObserver((entries) => {
+                entries.forEach((entry, index) => {
+                    if (entry.isIntersecting) {
+                        setTimeout(() => {
+                            entry.target.classList.add('opacity-100', 'translate-y-0');
+                            entry.target.classList.remove('opacity-0', 'translate-y-4');
+                        }, index * 100);
+                    }
+                });
+            }, { threshold: 0.1 });
+
+            steps.forEach(step => {
+                step.classList.add('transition-all', 'duration-700', 'opacity-0', 'translate-y-4');
+                observer.observe(step);
+            });
+        });
+    </script>
+</body></html>

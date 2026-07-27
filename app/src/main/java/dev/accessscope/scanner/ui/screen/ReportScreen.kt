@@ -47,7 +47,7 @@ import dev.accessscope.scanner.ui.components.SessionComparisonCard
 import dev.accessscope.scanner.ui.screen.report.CheckCoverageCard
 import dev.accessscope.scanner.ui.screen.report.GlossaryCard
 import dev.accessscope.scanner.ui.screen.report.PassedChecksCard
-import dev.accessscope.scanner.ui.screen.report.ReportSummaryCard
+import dev.accessscope.scanner.ui.screen.report.ReportDonutOverview
 import dev.accessscope.scanner.ui.screen.report.ScreenOverviewCard
 import dev.accessscope.scanner.ui.screen.report.SectionHeaderCard
 import dev.accessscope.scanner.ui.screen.report.SeverityFilterRow
@@ -165,15 +165,11 @@ fun ReportScreen(
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             item {
-                ReportSummaryCard(
+                ReportDonutOverview(
                     score = score,
-                    scannedScreens = scan.uniqueScreens,
-                    scanAnalyses = scan.scanAnalyses,
-                    scanScopeLabel = scan.scanScope.label(),
-                    appCount = scan.selectedPackages.size,
+                    totalChecks = passedTotal + violations.size,
+                    passedChecks = passedTotal,
                     violationCount = violations.size,
-                    talkBackCount = scan.screenReaderFindings.size,
-                    passedCheckCount = passedTotal,
                 )
             }
 

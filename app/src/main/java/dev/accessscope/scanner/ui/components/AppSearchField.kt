@@ -1,5 +1,8 @@
 /**
- * Barra di ricerca Material 3 integrata per l'elenco app.
+ * Campo di ricerca Material 3 per le app installate (Home e Preferiti).
+ *
+ * @param query Testo corrente.
+ * @param onQueryChange Callback di aggiornamento.
  */
 package dev.accessscope.scanner.ui.components
 
@@ -26,8 +29,8 @@ fun AppSearchField(
         value = query,
         onValueChange = onQueryChange,
         modifier = modifier.fillMaxWidth(),
-        placeholder = { Text("Cerca app per nome o package…") },
-        label = { Text("Cerca app") },
+        placeholder = { Text("Nome o package dell'app installata…") },
+        label = { Text("Cerca app installate") },
         leadingIcon = {
             Icon(Icons.Outlined.Search, contentDescription = "Cerca")
         },

@@ -1,0 +1,211 @@
+<!DOCTYPE html><html lang="it"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@600;700;800&amp;family=Inter:wght@400&amp;family=JetBrains+Mono:wght@500&amp;display=swap" rel="stylesheet"><link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=block" rel="stylesheet"><script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script><script id="tailwind-config">try{
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "inverse-primary": "#00daf3",
+                        "on-background": "#1c1b1b",
+                        "primary-container": "#00e5ff",
+                        "error": "#ba1a1a",
+                        "on-primary-container": "#00626e",
+                        "secondary-container": "#7531ff",
+                        "on-secondary-fixed": "#22005d",
+                        "primary-fixed": "#9cf0ff",
+                        "on-tertiary-container": "#6f5500",
+                        "surface-bright": "#fcf9f8",
+                        "secondary-fixed-dim": "#cfbdff",
+                        "outline-variant": "#bac9cc",
+                        "on-secondary": "#ffffff",
+                        "surface-container-low": "#f6f3f2",
+                        "secondary": "#5b00df",
+                        "on-primary-fixed-variant": "#004f58",
+                        "tertiary-fixed": "#ffdf96",
+                        "tertiary-fixed-dim": "#f3bf26",
+                        "on-tertiary-fixed-variant": "#594400",
+                        "on-primary-fixed": "#001f24",
+                        "background": "#fcf9f8",
+                        "tertiary": "#765a00",
+                        "on-primary": "#ffffff",
+                        "inverse-on-surface": "#f3f0ef",
+                        "on-secondary-container": "#eadfff",
+                        "on-secondary-fixed-variant": "#5300cd",
+                        "surface-tint": "#006875",
+                        "surface-dim": "#dcd9d9",
+                        "secondary-fixed": "#e8ddff",
+                        "surface-container-high": "#ebe7e7",
+                        "on-tertiary-fixed": "#251a00",
+                        "error-container": "#ffdad6",
+                        "tertiary-container": "#fec931",
+                        "surface-container-highest": "#e5e2e1",
+                        "surface": "#fcf9f8",
+                        "surface-container": "#f0edec",
+                        "on-error": "#ffffff",
+                        "primary-fixed-dim": "#00daf3",
+                        "surface-container-lowest": "#ffffff",
+                        "inverse-surface": "#313030",
+                        "on-tertiary": "#ffffff",
+                        "on-error-container": "#93000a",
+                        "on-surface": "#1c1b1b",
+                        "primary": "#006875",
+                        "surface-variant": "#e5e2e1",
+                        "outline": "#6b7a7d",
+                        "on-surface-variant": "#3b494c"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0.25rem",
+                        "lg": "0.5rem",
+                        "xl": "0.75rem",
+                        "full": "9999px"
+                    },
+                    "spacing": {
+                        "gutter": "16px",
+                        "margin-mobile": "20px",
+                        "xs": "4px",
+                        "lg": "40px",
+                        "base": "8px",
+                        "sm": "12px",
+                        "md": "24px",
+                        "xl": "64px",
+                        "margin-desktop": "32px"
+                    },
+                    "fontFamily": {
+                        "headline-lg": ["Hanken Grotesk"],
+                        "headline-md": ["Hanken Grotesk"],
+                        "label-sm": ["JetBrains Mono"],
+                        "display-lg": ["Hanken Grotesk"],
+                        "body-lg": ["Inter"],
+                        "body-md": ["Inter"],
+                        "label-md": ["JetBrains Mono"],
+                        "headline-lg-mobile": ["Hanken Grotesk"]
+                    },
+                    "fontSize": {
+                        "headline-lg": ["32px", { "lineHeight": "40px", "fontWeight": "700" }],
+                        "headline-md": ["24px", { "lineHeight": "32px", "fontWeight": "600" }],
+                        "label-sm": ["12px", { "lineHeight": "16px", "letterSpacing": "0.08em", "fontWeight": "500" }],
+                        "display-lg": ["40px", { "lineHeight": "48px", "letterSpacing": "-0.02em", "fontWeight": "800" }],
+                        "body-lg": ["18px", { "lineHeight": "28px", "fontWeight": "400" }],
+                        "body-md": ["16px", { "lineHeight": "24px", "fontWeight": "400" }],
+                        "label-md": ["14px", { "lineHeight": "20px", "letterSpacing": "0.05em", "fontWeight": "500" }],
+                        "headline-lg-mobile": ["28px", { "lineHeight": "36px", "fontWeight": "700" }]
+                    }
+                }
+            }
+        }
+    }catch(_e){}</script><meta charset="utf-8"></head><body class="bg-background text-on-background min-h-screen pb-24 md:pb-0 pt-16 md:pt-20">
+<!-- TopAppBar -->
+<header class="fixed top-0 left-0 w-full z-50 flex justify-between items-center px-margin-mobile h-16 bg-surface/80 dark:bg-surface-dim/80 backdrop-blur-xl border-b border-outline-variant/30 dark:border-outline/20">
+<button class="text-on-surface-variant dark:text-on-surface-variant hover:bg-primary-container/20 dark:hover:bg-primary-fixed-variant/20 rounded-full p-2 transition-transform duration-150 active:scale-95"><img src="https://lh3.googleusercontent.com/aida-public/AB6AXuA_dfY2U46XAqDdMWB6t1A95IOW16HYDx2yUyZqsAJzhf0O6yHoe3oXbDQGZKs1LP8z2f_FLryv3wTtvWbB1xjIGpf-rdUmO3B5x_KcieMlIGP6n0V9YvVyggxeWD_ZDE8vi6H_kxPf31M31i92Qune5wUZckPN4ZiSxEYokpMC1QggNEko7mTqM3wlkoziz4jGZgJPZLvirHMBCnoaJjc4v652UcmxN0cYwOdmhTAHpItCu6ju-MOIdzo0eLc5BIEqagk" alt="AccessScope Logo" class="w-8 h-8 object-contain"></button>
+<h1 class="font-headline-lg-mobile text-headline-lg-mobile tracking-tighter text-primary dark:text-primary-fixed">AccessScope</h1>
+<button class="text-on-surface-variant dark:text-on-surface-variant hover:bg-primary-container/20 dark:hover:bg-primary-fixed-variant/20 rounded-full p-2 transition-transform duration-150 active:scale-95">
+<span class="material-symbols-outlined" data-icon="settings">settings</span>
+</button>
+</header>
+<main class="px-margin-mobile max-w-4xl mx-auto py-8">
+<h2 class="font-headline-lg text-headline-lg mb-6">Cronologia Scansioni</h2>
+<div class="space-y-4">
+<!-- Scan Item 1 -->
+<div class="bg-surface-container-low rounded-xl p-4 flex items-center justify-between border border-outline-variant/30 hover:border-primary/50 transition-colors">
+<div class="flex items-center gap-4">
+<img class="w-12 h-12 rounded-lg object-cover" data-alt="A sleek, modern app icon featuring a minimalist stylized bird in flight against a vibrant gradient background of deep teal and bright cyan. The design is clean, geometric, and perfectly fits a futuristic tech aesthetic. The overall mood is innovative and dynamic." src="https://lh3.googleusercontent.com/aida-public/AB6AXuCvKAViJUax3SgpyCDkef11cFE2VSDXy_ZsDnHcz2fNNMNOJoPUnjQxt4twbJ1DmqM48bF6gFEYoacF356V6RbI33mkS9H09L1S5_Fv3viRz820z4MYK0NIm_f_7qBm64w8KzuZZ35WdWkjPLMtG_GiDdc0DCIzS27N45ha6yKgpK_nhp_7p_Q-S3AKXD-_F3w_mkmA5W0v_tKKO7XBGroVjyRmM5goaUXC3ScwVum1pnONUX59-xMwqA">
+<div>
+<h3 class="font-headline-md text-headline-md text-base">FinTech Wallet App</h3>
+<p class="font-label-md text-label-md text-on-surface-variant">12 Ottobre, 14:30</p>
+</div>
+</div>
+<div class="flex items-center gap-6">
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-green-600" data-icon="trending_up" data-original-icon="trending">trending_up</span>
+<span class="font-label-md text-label-md text-green-600">+5</span>
+</div>
+<div class="bg-primary/10 text-primary px-3 py-1 rounded-full font-label-md text-label-md">
+                        85/100
+                    </div>
+</div>
+</div>
+<!-- Scan Item 2 -->
+<div class="bg-surface-container-low rounded-xl p-4 flex items-center justify-between border border-outline-variant/30 hover:border-primary/50 transition-colors">
+<div class="flex items-center gap-4">
+<img class="w-12 h-12 rounded-lg object-cover" data-alt="A modern minimalist app icon showing a stylized shopping cart combined with a subtle globe motif, rendered in crisp white lines on a bright electric blue background. The aesthetic is clean, professional, and suggests global e-commerce. The lighting is flat and graphic." src="https://lh3.googleusercontent.com/aida-public/AB6AXuDOxEdve44g9JF3DO9VoEcLqbbQUAXucSrbK_6wyW9pNdxW2YyOPWQ-wkYcX-m-mKf-SOHIcY2lQ9YtmX6Tyv_bL9uMS6IFhsQWL2ufBlTjIQf46nzp59wg7dqEb-p6qD5Te7EDaHPB2_-kX6CQf9txnIgpGjIePSgKUNRKhPdA4r5dVI6qtO3XhoDZgy8zCa_j-4U-Fby64182fKs0aEpzu34wZAyJpVVoSe-k9Xc-QiI85vs8yZlDzQ">
+<div>
+<h3 class="font-headline-md text-headline-md text-base">Global Retail Store</h3>
+<p class="font-label-md text-label-md text-on-surface-variant">11 Ottobre, 09:15</p>
+</div>
+</div>
+<div class="flex items-center gap-6">
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-red-500" data-icon="trending_down">trending_down</span>
+<span class="font-label-md text-label-md text-red-500">-2</span>
+</div>
+<div class="bg-error/10 text-error px-3 py-1 rounded-full font-label-md text-label-md">
+                        62/100
+                    </div>
+</div>
+</div>
+<!-- Scan Item 3 -->
+<div class="bg-surface-container-low rounded-xl p-4 flex items-center justify-between border border-outline-variant/30 hover:border-primary/50 transition-colors">
+<div class="flex items-center gap-4">
+<div class="w-12 h-12 rounded-lg bg-secondary flex items-center justify-center text-on-secondary">
+<span class="material-symbols-outlined" data-icon="medical_services">medical_services</span>
+</div>
+<div>
+<h3 class="font-headline-md text-headline-md text-base">HealthCare Portal</h3>
+<p class="font-label-md text-label-md text-on-surface-variant">10 Ottobre, 16:45</p>
+</div>
+</div>
+<div class="flex items-center gap-6">
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-outline" data-icon="trending_flat">trending_flat</span>
+<span class="font-label-md text-label-md text-outline">0</span>
+</div>
+<div class="bg-primary/10 text-primary px-3 py-1 rounded-full font-label-md text-label-md">
+                        92/100
+                    </div>
+</div>
+</div>
+<!-- Scan Item 4 -->
+<div class="bg-surface-container-low rounded-xl p-4 flex items-center justify-between border border-outline-variant/30 hover:border-primary/50 transition-colors">
+<div class="flex items-center gap-4">
+<div class="w-12 h-12 rounded-lg bg-tertiary flex items-center justify-center text-on-tertiary">
+<span class="material-symbols-outlined" data-icon="school">school</span>
+</div>
+<div>
+<h3 class="font-headline-md text-headline-md text-base">EduLearn Platform</h3>
+<p class="font-label-md text-label-md text-on-surface-variant">09 Ottobre, 11:20</p>
+</div>
+</div>
+<div class="flex items-center gap-6">
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-green-600" data-icon="trending_up">trending_up</span>
+<span class="font-label-md text-label-md text-green-600">+12</span>
+</div>
+<div class="bg-primary/10 text-primary px-3 py-1 rounded-full font-label-md text-label-md">
+                        78/100
+                    </div>
+</div>
+</div>
+</div>
+</main>
+<!-- BottomNavBar -->
+<nav class="md:hidden fixed bottom-0 left-0 w-full z-50 flex justify-around items-center px-4 py-3 pb-safe bg-surface/80 dark:bg-surface-dim/80 backdrop-blur-xl rounded-t-xl border-t border-outline-variant/30 dark:border-outline/20 shadow-[0_-4px_20px_rgba(0,104,117,0.12)]">
+<button class="flex flex-col items-center justify-center text-on-surface-variant dark:text-on-surface-variant/70 hover:text-primary transition-colors">
+<span class="material-symbols-outlined mb-1" data-icon="radar">radar</span>
+<span class="font-label-sm text-label-sm">Scansione</span>
+</button>
+<button class="flex flex-col items-center justify-center text-on-surface-variant dark:text-on-surface-variant/70 hover:text-primary transition-colors">
+<span class="material-symbols-outlined mb-1" data-icon="description">description</span>
+<span class="font-label-sm text-label-sm">Dettagli</span>
+</button>
+<button class="flex flex-col items-center justify-center text-on-surface-variant dark:text-on-surface-variant/70 hover:text-primary transition-colors">
+<span class="material-symbols-outlined mb-1" data-icon="analytics">analytics</span>
+<span class="font-label-sm text-label-sm">Report</span>
+</button>
+<button class="flex flex-col items-center justify-center text-primary dark:text-primary-fixed relative after:content-[''] after:absolute after:-bottom-1 after:w-1 after:h-1 after:bg-primary after:rounded-full after:shadow-[0_0_8px_#006875] scale-110 transition-all duration-200 ease-out hover:text-primary">
+<span class="material-symbols-outlined mb-1" data-icon="history" data-weight="fill" style="font-variation-settings: 'FILL' 1;">history</span>
+<span class="font-label-sm text-label-sm">Storico</span>
+</button>
+</nav>
+
+
+
+</body></html>

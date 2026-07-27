@@ -4,13 +4,17 @@
 package dev.accessscope.scanner.ui.screen
 
 import android.os.Build
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
-import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -19,7 +23,6 @@ import androidx.compose.material.icons.automirrored.outlined.OpenInNew
 import androidx.compose.material.icons.outlined.Feedback
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
@@ -34,6 +37,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -43,7 +47,9 @@ import dev.accessscope.scanner.report.ReportHelper
 import dev.accessscope.scanner.ui.components.AccessScopeCard
 import dev.accessscope.scanner.ui.components.AccessScopeTopBar
 import dev.accessscope.scanner.ui.theme.BrandPrimary
-import dev.accessscope.scanner.ui.theme.ControlShape
+import dev.accessscope.scanner.ui.theme.CompactShape
+import dev.accessscope.scanner.ui.theme.JetBrainsMonoFamily
+import dev.accessscope.scanner.ui.theme.PillShape
 import dev.accessscope.scanner.ui.theme.contentSecondary
 import dev.accessscope.scanner.ui.viewmodel.ScanViewModel
 import dev.accessscope.scanner.util.FeedbackIssueBuilder
@@ -111,29 +117,63 @@ fun FeedbackScreen(
                 )
             }
 
-            AccessScopeCard(modifier = Modifier.fillMaxWidth()) {
-                Text("Tipo segnalazione", fontWeight = FontWeight.SemiBold)
-                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    FeedbackIssueBuilder.FeedbackType.entries.forEach { type ->
-                        FilterChip(
-                            selected = feedbackType == type,
-                            onClick = { feedbackType = type },
-                            label = { Text(type.label) },
+            Text(
+                "TIPO DI FEEDBACK",
+                style = MaterialTheme.typography.labelSmall,
+                fontFamily = JetBrainsMonoFamily,
+                color = contentSecondary(),
+            )
+            // Segmented control stile mockup
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(CompactShape)
+                    .background(MaterialTheme.colorScheme.surfaceContainerHigh)
+                    .padding(4.dp),
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                FeedbackIssueBuilder.FeedbackType.entries.forEach { type ->
+                    val selected = feedbackType == type
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .clip(CompactShape)
+                            .background(
+                                if (selected) MaterialTheme.colorScheme.primaryContainer
+                                else androidx.compose.ui.graphics.Color.Transparent,
+                            )
+                            .clickable { feedbackType = type }
+                            .padding(vertical = 10.dp),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Text(
+                            type.label,
+                            style = MaterialTheme.typography.labelMedium,
+                            fontFamily = JetBrainsMonoFamily,
+                            fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
+                            color = if (selected) MaterialTheme.colorScheme.onPrimaryContainer else contentSecondary(),
+                            maxLines = 1,
                         )
                     }
                 }
             }
 
-            AccessScopeCard(modifier = Modifier.fillMaxWidth()) {
-                Text("Descrizione", fontWeight = FontWeight.SemiBold)
-                OutlinedTextField(
-                    value = description,
-                    onValueChange = { description = it },
-                    modifier = Modifier.fillMaxWidth(),
-                    minLines = 4,
-                    placeholder = { Text("Cosa è successo o cosa vorresti migliorare?") },
-                )
-            }
+            Text(
+                "DESCRIZIONE DETTAGLIATA",
+                style = MaterialTheme.typography.labelSmall,
+                fontFamily = JetBrainsMonoFamily,
+                color = contentSecondary(),
+            )
+            OutlinedTextField(
+                value = description,
+                onValueChange = { description = it },
+                modifier = Modifier.fillMaxWidth(),
+                minLines = 5,
+                shape = CompactShape,
+                placeholder = {
+                    Text("Descrivi i passaggi per riprodurre il problema o i dettagli del tuo suggerimento…")
+                },
+            )
 
             AccessScopeCard(modifier = Modifier.fillMaxWidth()) {
                 Row(
@@ -228,12 +268,20 @@ fun FeedbackScreen(
                         }
                     }
                 },
-                modifier = Modifier.fillMaxWidth(),
-                shape = ControlShape,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(52.dp),
+                shape = PillShape,
             ) {
                 Icon(Icons.AutoMirrored.Outlined.OpenInNew, contentDescription = null)
-                Text("Invia su GitHub", modifier = Modifier.padding(start = 8.dp))
+                Text(
+                    "INVIA SU GITHUB",
+                    modifier = Modifier.padding(start = 8.dp),
+                    fontFamily = JetBrainsMonoFamily,
+                    fontWeight = FontWeight.Bold,
+                )
             }
+            Spacer(Modifier.height(24.dp))
         }
     }
 }

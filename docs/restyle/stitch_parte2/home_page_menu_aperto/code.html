@@ -1,0 +1,315 @@
+<!DOCTYPE html><html class="light" lang="en" style=""><head>
+<meta charset="utf-8">
+<meta content="width=device-width, initial-scale=1.0, viewport-fit=cover" name="viewport">
+<title>AccessScope - Accessibility Auditor</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;600;700;800&amp;family=Inter:wght@400;500;600&amp;family=JetBrains+Mono:wght@500&amp;display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet">
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "secondary-fixed-dim": "#cfbdff",
+                        "outline": "#6b7a7d",
+                        "on-tertiary-container": "#6f5500",
+                        "surface-tint": "#006875",
+                        "secondary": "#5b00df",
+                        "surface-container-high": "#ebe7e7",
+                        "on-secondary": "#ffffff",
+                        "inverse-on-surface": "#f3f0ef",
+                        "on-tertiary-fixed": "#251a00",
+                        "surface-dim": "#dcd9d9",
+                        "tertiary-container": "#fec931",
+                        "surface-container-lowest": "#ffffff",
+                        "surface": "#fcf9f8",
+                        "surface-container-low": "#f6f3f2",
+                        "on-tertiary-fixed-variant": "#594400",
+                        "surface-variant": "#e5e2e1",
+                        "error-container": "#ffdad6",
+                        "primary-container": "#00e5ff",
+                        "on-secondary-fixed-variant": "#5300cd",
+                        "surface-bright": "#fcf9f8",
+                        "on-error": "#ffffff",
+                        "secondary-fixed": "#e8ddff",
+                        "on-primary-fixed-variant": "#004f58",
+                        "error": "#ba1a1a",
+                        "on-surface-variant": "#3b494c",
+                        "on-primary-fixed": "#001f24",
+                        "on-tertiary": "#ffffff",
+                        "on-primary-container": "#00626e",
+                        "primary-fixed": "#9cf0ff",
+                        "on-error-container": "#93000a",
+                        "surface-container": "#f0edec",
+                        "tertiary": "#765a00",
+                        "primary": "#006875",
+                        "primary-fixed-dim": "#00daf3",
+                        "on-background": "#1c1b1b",
+                        "on-secondary-fixed": "#22005d",
+                        "on-surface": "#1c1b1b",
+                        "inverse-surface": "#313030",
+                        "inverse-primary": "#00daf3",
+                        "secondary-container": "#7531ff",
+                        "outline-variant": "#bac9cc",
+                        "on-primary": "#ffffff",
+                        "surface-container-highest": "#e5e2e1",
+                        "background": "#fcf9f8",
+                        "tertiary-fixed-dim": "#f3bf26",
+                        "on-secondary-container": "#eadfff",
+                        "tertiary-fixed": "#ffdf96"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0.25rem",
+                        "lg": "0.5rem",
+                        "xl": "0.75rem",
+                        "full": "9999px"
+                    },
+                    "spacing": {
+                        "xl": "64px",
+                        "sm": "12px",
+                        "margin-mobile": "20px",
+                        "margin-desktop": "32px",
+                        "base": "8px",
+                        "gutter": "16px",
+                        "lg": "40px",
+                        "md": "24px",
+                        "xs": "4px"
+                    },
+                    "fontFamily": {
+                        "label-sm": ["JetBrains Mono"],
+                        "headline-lg": ["Hanken Grotesk"],
+                        "headline-lg-mobile": ["Hanken Grotesk"],
+                        "display-lg": ["Hanken Grotesk"],
+                        "label-md": ["JetBrains Mono"],
+                        "headline-md": ["Hanken Grotesk"],
+                        "body-lg": ["Inter"],
+                        "body-md": ["Inter"]
+                    },
+                    "fontSize": {
+                        "label-sm": ["12px", {"lineHeight": "16px", "letterSpacing": "0.08em", "fontWeight": "500"}],
+                        "headline-lg": ["32px", {"lineHeight": "40px", "fontWeight": "700"}],
+                        "headline-lg-mobile": ["28px", {"lineHeight": "36px", "fontWeight": "700"}],
+                        "display-lg": ["40px", {"lineHeight": "48px", "letterSpacing": "-0.02em", "fontWeight": "800"}],
+                        "label-md": ["14px", {"lineHeight": "20px", "letterSpacing": "0.05em", "fontWeight": "500"}],
+                        "headline-md": ["24px", {"lineHeight": "32px", "fontWeight": "600"}],
+                        "body-lg": ["18px", {"lineHeight": "28px", "fontWeight": "400"}],
+                        "body-md": ["16px", {"lineHeight": "24px", "fontWeight": "400"}]
+                    }
+                },
+            },
+        }
+    </script>
+<style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+        .glass-panel {
+            background: rgba(252, 249, 248, 0.7);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        .primary-glow {
+            box-shadow: 0 10px 30px -10px rgba(0, 104, 117, 0.25);
+        }
+        ::-webkit-scrollbar { width: 0px; background: transparent; }
+    </style>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+</head>
+<body class="bg-background text-on-surface font-body-md min-h-screen pb-32">
+<!-- TopAppBar -->
+<header class="fixed top-0 left-0 right-0 z-50 bg-surface flex justify-between items-center w-full px-margin-mobile h-16 border-b border-outline-variant">
+<div class="flex items-center gap-4">
+<button class="material-symbols-outlined text-primary hover:bg-surface-container transition-colors p-2 rounded-full" onclick="toggleDrawer()">menu</button>
+<h1 class="font-headline-md text-headline-md font-bold text-primary">AccessScope</h1>
+</div>
+<div class="flex items-center gap-2">
+<button class="material-symbols-outlined text-on-surface-variant hover:bg-surface-container transition-colors p-2 rounded-full">account_circle</button>
+</div>
+</header>
+<!-- NavigationDrawer Overlay -->
+<div class="fixed inset-0 bg-black/40 z-[55] transition-opacity duration-300 opacity-100" id="drawer-overlay" onclick="toggleDrawer()"></div>
+<!-- NavigationDrawer -->
+<aside class="fixed inset-y-0 left-0 z-[60] flex flex-col p-md bg-surface backdrop-blur-md full-height w-80 rounded-r-xl border-r border-outline-variant/30 transition-transform duration-300 ease-in-out translate-x-0" id="drawer">
+<div class="flex flex-col gap-sm mb-lg"><div class="flex items-center gap-md"><img src="https://lh3.googleusercontent.com/aida-public/AB6AXuBo4eqjOF6B2OXBlWRPnQZ-_ZyJMAn-2cDoObId_af7fC1rdqTPxDTsx81sOLkv2iaAiG2lhAobo-HI9ilFwE-brVtJ0foGY_jqbh_Gq3FDqnKR71Ategq_DRTNIP0T_4tyRCos-EfGPDOgizcT2TJFpGTUQzUiCDSczLfH_ex2q7X3zfKQ5jUyqytPSni5gLpM704mYn1ypCHDJvc-diQNpEe51AezQBxNq4u4AqXI4Uks-uu0MFmg7iYgIJu8_HlkLuI" alt="AccessScope Logo" class="w-12 h-12 rounded-lg object-cover shadow-sm"><div><h2 class="font-headline-md text-label-md font-bold text-primary">AccessScope</h2><p class="text-on-surface-variant text-label-sm">Accessibility Auditor</p></div></div><p class="text-outline text-label-sm mt-xs">v2.4.0</p></div>
+<nav class="flex flex-col gap-base"><a class="flex items-center gap-md p-md rounded-lg bg-primary-container text-on-primary-container border-l-4 border-primary transition-all" href="#"><span class="material-symbols-outlined">history</span><span class="font-label-md text-label-md">Cronologia scansioni</span></a><a class="flex items-center gap-md p-md rounded-lg text-on-surface-variant hover:bg-surface-container-high transition-all" href="#"><span class="material-symbols-outlined">restore</span><span class="font-label-md text-label-md">Ultima sessione</span></a><a class="flex items-center gap-md p-md rounded-lg text-on-surface-variant hover:bg-surface-container-high transition-all" href="#"><span class="material-symbols-outlined">analytics</span><span class="font-label-md text-label-md">Suggerimenti e Segnalazioni</span></a></nav>
+</aside>
+<main class="mt-16 px-margin-mobile pt-md space-y-md">
+<!-- Main Action (Scan) -->
+<section class="relative overflow-hidden rounded-xl bg-primary text-on-primary p-lg primary-glow">
+<!-- Atmospheric Shader Placeholder -->
+<div class="absolute inset-0 opacity-20 pointer-events-none">
+</div>
+<div class="relative z-10 space-y-md">
+<div>
+<h2 class="font-headline-lg-mobile text-headline-lg-mobile">Pronto all'analisi?</h2>
+<p class="font-body-md text-primary-fixed opacity-90">0 app selezionate per la scansione</p>
+</div>
+<button class="w-full bg-primary-container text-on-primary-container py-md px-lg rounded-xl font-headline-md text-headline-md flex items-center justify-center gap-sm active:scale-95 transition-all">
+<span class="material-symbols-outlined">play_arrow</span>
+                    Avvia scansione
+                </button>
+</div>
+</section>
+<!-- Last Session Overview (Bento Style) -->
+<section class="space-y-sm">
+<div class="flex items-center justify-between">
+<h3 class="font-headline-md text-label-md font-bold uppercase tracking-widest text-outline">Ultima Sessione</h3>
+<span class="text-primary font-label-sm">VEDI DETTAGLI</span>
+</div>
+<div class="grid grid-cols-2 gap-sm">
+<!-- Score Card -->
+<div class="col-span-1 bg-surface-container-low p-md rounded-xl border border-outline-variant flex flex-col items-center justify-center gap-sm">
+<div class="relative flex items-center justify-center">
+<svg class="w-20 h-20 transform -rotate-90">
+<circle class="text-surface-variant" cx="40" cy="40" fill="transparent" r="34" stroke="currentColor" stroke-width="8"></circle>
+<circle class="text-primary transition-all duration-1000" cx="40" cy="40" fill="transparent" r="34" stroke="currentColor" stroke-dasharray="213.6" stroke-dashoffset="36.3" stroke-width="8"></circle>
+</svg>
+<span class="absolute font-headline-md text-headline-md text-primary">83%</span>
+</div>
+<p class="font-label-md text-label-sm text-center">Compliance</p>
+</div>
+<!-- Stats Grid -->
+<div class="col-span-1 grid grid-rows-2 gap-sm">
+<div class="bg-surface-container-low p-sm rounded-xl border border-outline-variant flex flex-col justify-center">
+<div class="flex items-center gap-xs">
+<span class="w-2 h-2 rounded-full bg-primary"></span>
+<span class="font-label-sm text-outline">TOTALI</span>
+</div>
+<p class="font-headline-md text-headline-md text-on-surface">120</p>
+</div>
+<div class="bg-surface-container-low p-sm rounded-xl border border-outline-variant flex gap-sm">
+<div class="flex-1">
+<span class="font-label-sm text-outline">OK</span>
+<p class="font-headline-md text-headline-md text-primary">100</p>
+</div>
+<div class="flex-1">
+<span class="font-label-sm text-outline text-error">KO</span>
+<p class="font-headline-md text-headline-md text-error">20</p>
+</div>
+</div>
+</div>
+</div>
+</section>
+<!-- Search & Filter -->
+<section class="space-y-sm">
+<div class="relative group">
+<span class="absolute left-4 top-1/2 -translate-y-1/2 material-symbols-outlined text-outline group-focus-within:text-primary transition-colors">search</span>
+<input class="w-full bg-surface-container-low border-b-2 border-outline-variant focus:border-primary focus:ring-0 rounded-t-lg px-xl py-md font-body-md transition-all outline-none" placeholder="Cerca app da analizzare" type="text">
+</div>
+<div class="flex items-center justify-between px-xs">
+<div class="flex items-center gap-sm">
+<span class="material-symbols-outlined text-primary text-[20px]">rocket_launch</span>
+<p class="font-label-md text-label-md text-on-surface-variant">Lancio automatico attivo</p>
+</div>
+<label class="relative inline-flex items-center cursor-pointer">
+<input checked="" class="sr-only peer" type="checkbox">
+<div class="w-11 h-6 bg-surface-variant peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary"></div>
+</label>
+</div>
+</section>
+<!-- App List -->
+<section class="space-y-base">
+<h3 class="font-headline-md text-label-md font-bold uppercase tracking-widest text-outline px-xs">Elenco app (72)</h3>
+<div class="space-y-sm">
+<!-- App Item 1 -->
+<div class="bg-surface-container-low p-md rounded-xl border border-outline-variant/30 flex items-center justify-between hover:bg-surface-container transition-colors cursor-pointer group">
+<div class="flex items-center gap-md">
+<div class="relative">
+<img class="w-12 h-12 rounded-lg object-cover shadow-sm" data-alt="A clean icon representing an accessibility scanner application with a checkmark and magnifying glass, designed in a sleek minimalist style with a primary teal color palette against a soft light-mode background." src="https://lh3.googleusercontent.com/aida-public/AB6AXuBWALU_GzNbwOi1x75IyRMLK_Bb2zt4B-kXv-UPgZM1kf_XhzMVjnSa1ulbs_ehb4BtMX7DzLX2EpPg8E4bkNSJymV_1q__8AXq7nmnVqs4CZvTe31KEcETtmvxOqH55Q8aqze2L1pnJCG4QTisQMiWTmFWBgQe0iNmAhEBmSLSmVSlDzl9VmzwmL-c85OTQXvvzMe0K3zO7RSlARJKUUvbq4-6t06lY3Pf2Rolcii1NdA-kJLiN8mfbw">
+<div class="absolute -bottom-1 -right-1 bg-white rounded-full p-0.5 border border-outline-variant">
+<span class="material-symbols-outlined text-[14px] text-primary" style="font-variation-settings: 'FILL' 1;">star</span>
+</div>
+</div>
+<div>
+<h4 class="font-headline-md text-label-md font-semibold text-on-surface">Accessibility Scanner</h4>
+<p class="font-label-sm text-outline truncate w-40">com.google.android.apps.access</p>
+</div>
+</div>
+<div class="flex items-center gap-md">
+<div class="text-right hidden sm:block">
+<p class="font-label-sm text-primary">SCAN ESEGUITO</p>
+<p class="font-label-sm text-outline">2 ore fa</p>
+</div>
+<span class="material-symbols-outlined text-outline group-hover:translate-x-1 transition-transform">chevron_right</span>
+</div>
+</div>
+<!-- App Item 2 -->
+<div class="bg-surface-container-low p-md rounded-xl border border-outline-variant/30 flex items-center justify-between hover:bg-surface-container transition-colors cursor-pointer group">
+<div class="flex items-center gap-md">
+<div class="relative">
+<img class="w-12 h-12 rounded-lg object-cover shadow-sm" data-alt="A stylized digital icon for a captive portal application, featuring a globe with a keyhole element, rendered in high-definition futuristic minimal graphics with electric cyan and white accents on a neutral backdrop." src="https://lh3.googleusercontent.com/aida-public/AB6AXuALzhj-rZIZ1rXRtIsHq-VbvrFAcMADGgpFBC_MNyzHlLYPppyT867v_GETbpht9p43IK5sNo54jw_q1HTtVDQfdxVUMu4TqaZpzLp3T01LnQA4ZpBffWWqVQ2_kBFoK-R9Ytbv7wEOE2YNg1_5htFDtI7jHLNAyjzywWoEPZ0s9gb2aLVU2y6G56loczp2G1uVUtxXGiMS8kA3KAseRorT1iC6vWhS8eqWSFs1OBqFvXZFS98VQ45N8w">
+</div>
+<div>
+<h4 class="font-headline-md text-label-md font-semibold text-on-surface">Accesso a captive portal</h4>
+<p class="font-label-sm text-outline truncate w-40">com.google.android.captive</p>
+</div>
+</div>
+<div class="flex items-center gap-md">
+<span class="material-symbols-outlined text-outline group-hover:translate-x-1 transition-transform">chevron_right</span>
+</div>
+</div>
+<!-- App Item 3 -->
+<div class="bg-surface-container-low p-md rounded-xl border border-outline-variant/30 flex items-center justify-between hover:bg-surface-container transition-colors cursor-pointer group">
+<div class="flex items-center gap-md">
+<div class="relative">
+<img class="w-12 h-12 rounded-lg object-cover shadow-sm" data-alt="A professional minimalist app icon representing a digital calendar or schedule tool, with clean geometric lines and a balanced color scheme of primary teal and soft grey, emphasizing precision and modern UI design." src="https://lh3.googleusercontent.com/aida-public/AB6AXuBhq1QQjww-f45vHDilYvQh-PniatBoKwztBpATIqlqAFvv6kOIOFudo3EXcMkXSChp1ogCXgjcZW_e-AENzzgSXfYzSPMzEv2l3CvnXC5ioAMW-m0cUpUgtB3hhRiNdvRb_RLoXWO2F0g45z0c7DYkEvIeL05QsFZ6rq7GvhRmGsBC_ZQ6l8uJ4Tf0ySoixdrabChBi6hlkOj4HL8jdAT6MZB862sbAgDKw7VndSx-dVk7Grs4VcXCdQ">
+</div>
+<div>
+<h4 class="font-headline-md text-label-md font-semibold text-on-surface">Calendario</h4>
+<p class="font-label-sm text-outline truncate w-40">com.google.android.calendar</p>
+</div>
+</div>
+<div class="flex items-center gap-md">
+<span class="material-symbols-outlined text-outline group-hover:translate-x-1 transition-transform">chevron_right</span>
+</div>
+</div>
+</div>
+</section>
+</main>
+<!-- BottomNavBar -->
+<nav class="fixed bottom-0 left-0 w-full z-50 flex justify-around items-center px-4 py-2 pb-safe bg-surface border-t border-outline-variant shadow-md rounded-t-xl">
+<a class="flex flex-col items-center justify-center text-primary font-bold active:scale-90 transition-transform duration-200" href="#">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 1;">home</span>
+<span class="font-label-sm text-label-sm">Home</span>
+<span class="w-1.5 h-1.5 bg-primary rounded-full mt-0.5"></span>
+</a>
+<a class="flex flex-col items-center justify-center text-on-surface-variant hover:bg-surface-container-low transition-all active:scale-90" href="#">
+<span class="material-symbols-outlined">star</span>
+<span class="font-label-sm text-label-sm">Favorites</span>
+</a>
+<a class="flex flex-col items-center justify-center text-on-surface-variant hover:bg-surface-container-low transition-all active:scale-90" href="#">
+<span class="material-symbols-outlined">settings</span>
+<span class="font-label-sm text-label-sm">Settings</span>
+</a>
+</nav>
+<script>
+        function toggleDrawer() {
+            const drawer = document.getElementById('drawer');
+            const overlay = document.getElementById('drawer-overlay');
+            const isOpen = drawer.classList.contains('translate-x-0');
+            
+            if (isOpen) {
+                drawer.classList.remove('translate-x-0');
+                drawer.classList.add('-translate-x-full');
+                overlay.classList.add('opacity-0', 'pointer-events-none');
+                overlay.classList.remove('opacity-100', 'pointer-events-auto');
+            } else {
+                drawer.classList.add('translate-x-0');
+                drawer.classList.remove('-translate-x-full');
+                overlay.classList.remove('opacity-0', 'pointer-events-none');
+                overlay.classList.add('opacity-100', 'pointer-events-auto');
+            }
+        }
+    </script>
+
+
+
+
+</body></html>

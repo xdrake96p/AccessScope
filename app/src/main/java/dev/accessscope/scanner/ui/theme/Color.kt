@@ -1,5 +1,10 @@
 /**
- * Palette premium AccessScope — ciano, lavanda, viola (WCAG AAA).
+ * Palette AccessScope — design system "Scanner & HUD" (Electric Teal).
+ *
+ * Token chiaro/scuro dai DESIGN.md Stitch (`docs/restyle/stitch_parte1`).
+ * Le costanti storiche del tema precedente sono mantenute come getter
+ * composable di compatibilità che delegano a [MaterialTheme.colorScheme],
+ * così i componenti esistenti non richiedono modifiche.
  */
 package dev.accessscope.scanner.ui.theme
 
@@ -8,86 +13,146 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
+import dev.accessscope.scanner.data.ViolationSeverity
 
-// —— Accenti brand ——
-/** Ciano vibrante (dark) / ciano soft (light primary). */
-val CyanAccent = Color(0xFF06B6D4)
+// —— Light scheme (DESIGN.md light) ——
+val PrimaryLight = Color(0xFF006875)
+val OnPrimaryLight = Color(0xFFFFFFFF)
+val PrimaryContainerLight = Color(0xFF00E5FF)
+val OnPrimaryContainerLight = Color(0xFF00626E)
+val SecondaryLight = Color(0xFF5B00DF)
+val OnSecondaryLight = Color(0xFFFFFFFF)
+val SecondaryContainerLight = Color(0xFF7531FF)
+val OnSecondaryContainerLight = Color(0xFFEADFFF)
+val TertiaryLight = Color(0xFF765A00)
+val OnTertiaryLight = Color(0xFFFFFFFF)
+val TertiaryContainerLight = Color(0xFFFEC931)
+val OnTertiaryContainerLight = Color(0xFF6F5500)
+val ErrorLight = Color(0xFFBA1A1A)
+val OnErrorLight = Color(0xFFFFFFFF)
+val ErrorContainerLight = Color(0xFFFFDAD6)
+val OnErrorContainerLight = Color(0xFF93000A)
+val BackgroundLight = Color(0xFFFCF9F8)
+val OnBackgroundLight = Color(0xFF1C1B1B)
+val SurfaceLight = Color(0xFFFCF9F8)
+val OnSurfaceLight = Color(0xFF1C1B1B)
+val SurfaceVariantLight = Color(0xFFE5E2E1)
+val OnSurfaceVariantLight = Color(0xFF3B494C)
+val OutlineLight = Color(0xFF6B7A7D)
+val OutlineVariantLight = Color(0xFFBAC9CC)
+val SurfaceDimLight = Color(0xFFDCD9D9)
+val SurfaceBrightLight = Color(0xFFFCF9F8)
+val SurfaceContainerLowestLight = Color(0xFFFFFFFF)
+val SurfaceContainerLowLight = Color(0xFFF6F3F2)
+val SurfaceContainerLight = Color(0xFFF0EDEC)
+val SurfaceContainerHighLight = Color(0xFFEBE7E7)
+val SurfaceContainerHighestLight = Color(0xFFE5E2E1)
+val InverseSurfaceLight = Color(0xFF313030)
+val InverseOnSurfaceLight = Color(0xFFF3F0EF)
+val InversePrimaryLight = Color(0xFF00DAF3)
 
-/** Ciano chiaro per gradienti light. */
-val CyanSoft = Color(0xFF22D3EE)
+// —— Dark scheme (DESIGN.md dark) ——
+val PrimaryDark = Color(0xFFC3F5FF)
+val OnPrimaryDark = Color(0xFF00363D)
+val PrimaryContainerDark = Color(0xFF00E5FF)
+val OnPrimaryContainerDark = Color(0xFF00626E)
+val SecondaryDark = Color(0xFFD1BEEF)
+val OnSecondaryDark = Color(0xFF372950)
+val SecondaryContainerDark = Color(0xFF50426B)
+val OnSecondaryContainerDark = Color(0xFFC2B0E0)
+val TertiaryDark = Color(0xFFDCF0F8)
+val OnTertiaryDark = Color(0xFF213339)
+val TertiaryContainerDark = Color(0xFFC0D4DC)
+val OnTertiaryContainerDark = Color(0xFF4A5C63)
+val ErrorDark = Color(0xFFFFB4AB)
+val OnErrorDark = Color(0xFF690005)
+val ErrorContainerDark = Color(0xFF93000A)
+val OnErrorContainerDark = Color(0xFFFFDAD6)
+val BackgroundDark = Color(0xFF0D1518)
+val OnBackgroundDark = Color(0xFFDBE4E8)
+val SurfaceDark = Color(0xFF0D1518)
+val OnSurfaceDark = Color(0xFFDBE4E8)
+val SurfaceVariantDark = Color(0xFF2E3639)
+val OnSurfaceVariantDark = Color(0xFFBAC9CC)
+val OutlineDark = Color(0xFF849396)
+val OutlineVariantDark = Color(0xFF3B494C)
+val SurfaceDimDark = Color(0xFF0D1518)
+val SurfaceBrightDark = Color(0xFF323A3E)
+val SurfaceContainerLowestDark = Color(0xFF070F12)
+val SurfaceContainerLowDark = Color(0xFF151D20)
+val SurfaceContainerDark = Color(0xFF192124)
+val SurfaceContainerHighDark = Color(0xFF232B2E)
+val SurfaceContainerHighestDark = Color(0xFF2E3639)
+val InverseSurfaceDark = Color(0xFFDBE4E8)
+val InverseOnSurfaceDark = Color(0xFF2A3235)
+val InversePrimaryDark = Color(0xFF006875)
 
-/** Lavanda — accento secondario light. */
-val LavenderAccent = Color(0xFFA78BFA)
+// —— Colori "fixed" (identici nei due schemi, per DESIGN.md) ——
+val PrimaryFixed = Color(0xFF9CF0FF)
+val PrimaryFixedDim = Color(0xFF00DAF3)
+val OnPrimaryFixed = Color(0xFF001F24)
+val OnPrimaryFixedVariant = Color(0xFF004F58)
+val SecondaryFixed = Color(0xFFE8DDFF)
+val SecondaryFixedDim = Color(0xFFCFBDFF)
+val OnSecondaryFixed = Color(0xFF22005D)
+val OnSecondaryFixedVariant = Color(0xFF5300CD)
+val TertiaryFixed = Color(0xFFFFDF96)
+val TertiaryFixedDim = Color(0xFFF3BF26)
+val OnTertiaryFixed = Color(0xFF251A00)
+val OnTertiaryFixedVariant = Color(0xFF594400)
 
-/** Viola profondo — accento dark/gradiente. */
-val VioletDeep = Color(0xFF6D28D9)
+// —— Semantici custom ——
+/**
+ * Ambra preferiti (stella), adattiva light/dark.
+ *
+ * Light `#8B6914` ≈ 5.1:1 su bianco (WCAG 1.4.11 UI ≥ 3:1);
+ * dark `#FEC931` ≈ 12.5:1 su surface scura. Il giallo Stitch puro
+ * (`#FEC931`) fallisce sul tema chiaro (~1.5:1).
+ */
+private val FavoriteAccentLight = Color(0xFF8B6914)
+private val FavoriteAccentDark = Color(0xFFFEC931)
 
-/** Viola scuro per testo su container. */
-val VioletDark = Color(0xFF5B21B6)
+/** Accento preferiti (stella): leggibile su entrambi i temi. */
+val FavoriteAccent: Color
+    @Composable get() = if (isDarkScheme) FavoriteAccentDark else FavoriteAccentLight
 
-/** Compatibilità: primario brand. */
-val BrandPrimary = Color(0xFF0891B2)
+/** `true` se lo schema corrente è scuro (stima da luminanza del background). */
+private val isDarkScheme: Boolean
+    @Composable get() = MaterialTheme.colorScheme.background.luminance() < 0.5f
 
-val BrandSecondary = Color(0xFF7C3AED)
+// —— Compatibilità col tema precedente (getter delegati allo scheme) ——
+/** @deprecated Usare `MaterialTheme.colorScheme.primary`. */
+val BrandPrimary: Color
+    @Composable get() = MaterialTheme.colorScheme.primary
 
-val BrandDark = VioletDark
+/** @deprecated Usare `MaterialTheme.colorScheme.secondary`. */
+val BrandSecondary: Color
+    @Composable get() = MaterialTheme.colorScheme.secondary
 
-// —— Light surfaces ——
-val SurfaceLight = Color(0xFFF8F9FA)
+/** @deprecated Usare `MaterialTheme.colorScheme.inversePrimary`. */
+val BrandDark: Color
+    @Composable get() = MaterialTheme.colorScheme.inversePrimary
 
-val CardSurface = Color(0xFFFFFFFF)
+/** @deprecated Usare `MaterialTheme.colorScheme.error`. */
+val Danger: Color
+    @Composable get() = MaterialTheme.colorScheme.error
 
-val BrandLight = Color(0xFFE0F2FE)
+/** @deprecated Usare `MaterialTheme.colorScheme.primary` (successo = teal nel nuovo design). */
+val Success: Color
+    @Composable get() = MaterialTheme.colorScheme.primary
 
-// —— Dark surfaces ——
-/** Grigio scuro profondo (#121212) — evita nero puro. */
-val SurfaceDark = Color(0xFF121212)
+/**
+ * Accento di avviso (gravità MODERATE): ambra `tertiary` nel chiaro,
+ * `tertiaryFixedDim` nello scuro per mantenere la leggibilità.
+ */
+val Warning: Color
+    @Composable get() = if (isDarkScheme) TertiaryFixedDim else MaterialTheme.colorScheme.tertiary
 
-/** Card dark — leggermente più chiara dello sfondo (#1E1E1E). */
-val CardSurfaceDark = Color(0xFF1E1E1E)
-
-val BrandLightDark = Color(0xFF1E3A5F)
-
-// —— Text ——
-/** Testo primario light — grigio scuro, non nero puro. */
-val TextPrimary = Color(0xFF212529)
-
-val TextSecondary = Color(0xFF495057)
-
-/** Testo primario dark — grigio chiaro, non bianco puro. */
-val TextPrimaryDark = Color(0xFFE0E0E0)
-
-val TextSecondaryDark = Color(0xFFB0B0B0)
-
-// —— Semantic ——
-val Danger = Color(0xFFDC2626)
-
-val Warning = Color(0xFFD97706)
-
-val Success = Color(0xFF059669)
-
-/** Accento preferiti — ambra Material, visibile in entrambi i temi. */
-val FavoriteAccent = Color(0xFFF59E0B)
-
-val FocusRing = CyanAccent
-
-/** Gradiente header light: ciano soft → lavanda. */
-val HeaderGradientLight = Brush.horizontalGradient(
-    colors = listOf(Color(0xFF67E8F9), Color(0xFF7DD3FC), Color(0xFFC4B5FD)),
-)
-
-/** Gradiente header brand Navy→Teal (equivalente Compose di @drawable/bg_header_gradient). */
-val HeaderBrandGradient = Brush.linearGradient(
-    colors = listOf(Color(0xFF0D2C54), Color(0xFF00A3A6)),
-)
-
-/** Gradiente header dark: ciano → viola profondo. */
-val HeaderGradientDark = Brush.horizontalGradient(
-    colors = listOf(Color(0xFF0891B2), Color(0xFF06B6D4), Color(0xFF6D28D9)),
-)
-
+/** Gradiente hero del nuovo brand: primary → inversePrimary (teal). */
 @Composable
-fun headerGradient(): Brush = HeaderBrandGradient
+fun headerGradient(): Brush = Brush.horizontalGradient(
+    colors = listOf(MaterialTheme.colorScheme.primary, MaterialTheme.colorScheme.inversePrimary),
+)
 
 @Composable
 fun brandHighlightContainer(): Color = MaterialTheme.colorScheme.primaryContainer
@@ -95,21 +160,26 @@ fun brandHighlightContainer(): Color = MaterialTheme.colorScheme.primaryContaine
 @Composable
 fun contentSecondary(): Color = MaterialTheme.colorScheme.onSurfaceVariant
 
-/** Sfondo container per metriche di successo — adattivo light/dark. */
+/** Sfondo container per metriche di successo — teal soft, adattivo light/dark. */
 @Composable
-fun successContainer(): Color {
-    val isDark = MaterialTheme.colorScheme.background.luminance() < 0.5f
-    return Success.copy(alpha = if (isDark) 0.16f else 0.10f)
-}
+fun successContainer(): Color =
+    MaterialTheme.colorScheme.primaryContainer.copy(alpha = if (isDarkScheme) 0.25f else 0.40f)
 
 /** Testo su container di successo. */
 @Composable
-fun successOnContainer(): Color = Success
+fun successOnContainer(): Color = MaterialTheme.colorScheme.onPrimaryContainer
 
-fun severityColor(severity: dev.accessscope.scanner.data.ViolationSeverity): Color =
-    when (severity) {
-        dev.accessscope.scanner.data.ViolationSeverity.CRITICAL -> Danger
-        dev.accessscope.scanner.data.ViolationSeverity.SERIOUS -> Warning
-        dev.accessscope.scanner.data.ViolationSeverity.MODERATE -> Color(0xFFF59E0B)
-        dev.accessscope.scanner.data.ViolationSeverity.MINOR -> TextSecondary
-    }
+/**
+ * Colore accento per gravità di violazione, coerente coi mockup Stitch:
+ * CRITICAL/SERIOUS → error, MODERATE → ambra [Warning], MINOR → onSurfaceVariant.
+ *
+ * Nota (dogfooding WCAG): MINOR usa `onSurfaceVariant` e non `outline` perché
+ * `outline` (#6B7A7D su #FCF9F8 = 4.26:1) non raggiunge AA 4.5:1 sul tema chiaro.
+ */
+@Composable
+fun severityColor(severity: ViolationSeverity): Color = when (severity) {
+    ViolationSeverity.CRITICAL -> MaterialTheme.colorScheme.error
+    ViolationSeverity.SERIOUS -> MaterialTheme.colorScheme.error
+    ViolationSeverity.MODERATE -> Warning
+    ViolationSeverity.MINOR -> MaterialTheme.colorScheme.onSurfaceVariant
+}

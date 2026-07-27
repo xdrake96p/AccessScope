@@ -1,0 +1,240 @@
+<!DOCTYPE html><html lang="it" class="light"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;500;600;700;800&amp;family=Inter:wght@400;500;600&amp;family=JetBrains+Mono:wght@400;500&amp;family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=block" rel="stylesheet"><script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script><script id="tailwind-config">try{
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            "colors": {
+                    "tertiary-fixed": "#ffdf96",
+                    "surface-container": "#f0edec",
+                    "surface-bright": "#fcf9f8",
+                    "background": "#fcf9f8",
+                    "on-secondary-fixed-variant": "#5300cd",
+                    "surface-container-lowest": "#ffffff",
+                    "on-surface": "#1c1b1b",
+                    "on-primary-fixed": "#001f24",
+                    "on-error-container": "#93000a",
+                    "surface": "#fcf9f8",
+                    "outline-variant": "#bac9cc",
+                    "on-secondary-fixed": "#22005d",
+                    "on-tertiary-fixed": "#251a00",
+                    "on-secondary-container": "#eadfff",
+                    "primary": "#006875",
+                    "inverse-on-surface": "#f3f0ef",
+                    "on-primary-container": "#00626e",
+                    "on-tertiary-fixed-variant": "#594400",
+                    "surface-variant": "#e5e2e1",
+                    "primary-fixed-dim": "#00daf3",
+                    "on-tertiary": "#ffffff",
+                    "on-secondary": "#ffffff",
+                    "secondary": "#5b00df",
+                    "on-primary-fixed-variant": "#004f58",
+                    "surface-container-high": "#ebe7e7",
+                    "surface-container-low": "#f6f3f2",
+                    "outline": "#6b7a7d",
+                    "inverse-primary": "#00daf3",
+                    "error-container": "#ffdad6",
+                    "secondary-container": "#7531ff",
+                    "surface-tint": "#006875",
+                    "surface-container-highest": "#e5e2e1",
+                    "on-surface-variant": "#3b494c",
+                    "primary-fixed": "#9cf0ff",
+                    "on-tertiary-container": "#6f5500",
+                    "error": "#ba1a1a",
+                    "tertiary-container": "#fec931",
+                    "surface-dim": "#dcd9d9",
+                    "tertiary-fixed-dim": "#f3bf26",
+                    "secondary-fixed-dim": "#cfbdff",
+                    "on-error": "#ffffff",
+                    "on-background": "#1c1b1b",
+                    "primary-container": "#00e5ff",
+                    "inverse-surface": "#313030",
+                    "tertiary": "#765a00",
+                    "secondary-fixed": "#e8ddff",
+                    "on-primary": "#ffffff"
+            },
+            "borderRadius": {
+                    "DEFAULT": "0.25rem",
+                    "lg": "0.5rem",
+                    "xl": "0.75rem",
+                    "full": "9999px"
+            },
+            "spacing": {
+                    "margin-desktop": "32px",
+                    "lg": "40px",
+                    "base": "8px",
+                    "sm": "12px",
+                    "md": "24px",
+                    "margin-mobile": "20px",
+                    "gutter": "16px",
+                    "xs": "4px",
+                    "xl": "64px"
+            },
+            "fontFamily": {
+                    "display-lg": ["Hanken Grotesk"],
+                    "body-lg": ["Inter"],
+                    "label-md": ["JetBrains Mono"],
+                    "label-sm": ["JetBrains Mono"],
+                    "headline-md": ["Hanken Grotesk"],
+                    "body-md": ["Inter"],
+                    "headline-lg-mobile": ["Hanken Grotesk"],
+                    "headline-lg": ["Hanken Grotesk"]
+            },
+            "fontSize": {
+                    "display-lg": ["40px", {"lineHeight": "48px", "letterSpacing": "-0.02em", "fontWeight": "800"}],
+                    "body-lg": ["18px", {"lineHeight": "28px", "fontWeight": "400"}],
+                    "label-md": ["14px", {"lineHeight": "20px", "letterSpacing": "0.05em", "fontWeight": "500"}],
+                    "label-sm": ["12px", {"lineHeight": "16px", "letterSpacing": "0.08em", "fontWeight": "500"}],
+                    "headline-md": ["24px", {"lineHeight": "32px", "fontWeight": "600"}],
+                    "body-md": ["16px", {"lineHeight": "24px", "fontWeight": "400"}],
+                    "headline-lg-mobile": ["28px", {"lineHeight": "36px", "fontWeight": "700"}],
+                    "headline-lg": ["32px", {"lineHeight": "40px", "fontWeight": "700"}]
+            }
+          },
+        },
+      }
+    }catch(_e){}</script><meta charset="utf-8"></head><body class="bg-background text-on-surface font-body-md min-h-screen pb-32">
+<!-- TopAppBar -->
+<header class="sticky top-0 z-50 glass-effect border-b border-outline-variant/30 flex justify-between items-center w-full px-margin-mobile h-16">
+<div class="flex items-center gap-4">
+<button class="material-symbols-outlined text-on-surface-variant hover:bg-surface-container transition-colors p-2 rounded-full active:scale-95" data-original-icon="arrow_back">arrow_back</button>
+<h1 class="font-headline-md text-headline-md font-bold text-primary">Preferiti</h1>
+</div>
+
+</header>
+<main class="max-w-4xl mx-auto px-margin-mobile mt-6 space-y-8">
+<!-- Search Bar -->
+<section class="relative group">
+<div class="absolute inset-y-0 left-4 flex items-center pointer-events-none">
+<span class="material-symbols-outlined text-outline">search</span>
+</div>
+<input type="text" placeholder="Cerca app da aggiungere" class="w-full h-14 pl-12 pr-4 rounded-xl bg-surface-container-low border-b-2 border-outline-variant focus:border-primary focus:ring-0 transition-all font-body-md placeholder:text-outline-variant">
+</section>
+<!-- Favorited Apps Grid -->
+<section>
+<div class="flex items-center justify-between mb-4">
+<h2 class="font-headline-md text-headline-md text-on-surface">App Preferite</h2>
+<span class="bg-primary-container text-on-primary-container px-3 py-1 rounded-full font-label-sm text-label-sm">2 Apps</span>
+</div>
+<div class="bento-grid">
+<!-- App Card 1 -->
+<div class="bg-surface-container-lowest border border-outline-variant/30 rounded-xl p-4 flex flex-col items-center text-center space-y-3 hover:shadow-lg transition-all group relative">
+<div class="absolute top-2 right-2">
+<button class="material-symbols-outlined text-tertiary-container fill-icon" style="font-variation-settings: 'FILL' 1;">star</button>
+</div>
+<div class="w-16 h-16 rounded-2xl overflow-hidden shadow-sm">
+<img class="w-full h-full object-cover" data-alt="A modern, high-tech app icon for an accessibility scanner featuring a stylized human figure and scanning laser beams. The design is minimalist with a palette of vibrant teal and deep charcoal, reflecting a precise diagnostic tool aesthetic within the AccessScope ecosystem." src="https://lh3.googleusercontent.com/aida-public/AB6AXuDtOuCWDK8S48TakLwGW7-HSxhnsPpYYfabgaM9OsPQOf7kdO_4znTICg1QC2o4Y2TTelMW37n7tSvjr_GPZpjGRVQSGMDLiRBa5c0T6n8aWfCRcPSAEPDZJAv3uRGtL57CZqxJm3tNF6nWdj6-CjERW9HP8LN0eumw4eHqWIxAQWCOtoRqMpRprzc0g_yXCj3l4zur_YEX8sP184TXYaL4nWrcI2EkyLt7sQ2MSH21cmaDFMmS8KAQHA">
+</div>
+<div class="space-y-1">
+<p class="font-headline-md text-[16px] text-on-surface font-semibold leading-tight">Accessibility Scanner</p>
+<p class="font-label-sm text-label-sm text-outline">Strumenti</p>
+</div>
+</div>
+<!-- App Card 2 -->
+<div class="bg-surface-container-lowest border border-outline-variant/30 rounded-xl p-4 flex flex-col items-center text-center space-y-3 hover:shadow-lg transition-all group relative">
+<div class="absolute top-2 right-2">
+<button class="material-symbols-outlined text-tertiary-container fill-icon" style="font-variation-settings: 'FILL' 1;">star</button>
+</div>
+<div class="w-16 h-16 rounded-2xl overflow-hidden shadow-sm">
+<img class="w-full h-full object-cover" data-alt="A professional financial services app icon for Nexi, featuring a clean white background with a modern blue corporate logo. The visual style is sleek and minimalist, emphasizing security and precision in line with the high-tech diagnostic HUD theme of the application." src="https://lh3.googleusercontent.com/aida-public/AB6AXuBJes5kW3TqSNTaiw-VQxW7amN6YatftgfDuhK8vaEJx4Bc5FRitygmiimxXxrF58q-52pNrw-eAN0_mYTcAZ_qOA_FM35JyShw60DZXNw31-yJ9prOOIFddjp4ZT_Dh4V5ygDlohN4_Im3Tb49acaEbgCP5kgCWohr1r21tHlLemTdAfWxTiagdTVGlmVhkhmCWeAbcMZzuzqiCMoRIOPIBI7U-tnEp5cv_YSP1roK8WZLMuK1dkFYjg">
+</div>
+<div class="space-y-1">
+<p class="font-headline-md text-[16px] text-on-surface font-semibold leading-tight">Nexi Pay</p>
+<p class="font-label-sm text-label-sm text-outline">Finanza</p>
+</div>
+</div>
+</div>
+</section>
+<!-- Other Apps List -->
+<section class="space-y-4">
+<h2 class="font-headline-md text-headline-md text-on-surface">Altre App</h2>
+<div class="space-y-2">
+<!-- List Item 1 -->
+<div class="flex items-center justify-between p-4 bg-surface-container-low/50 hover:bg-surface-container rounded-xl transition-colors border border-transparent hover:border-outline-variant/30">
+<div class="flex items-center gap-4">
+<div class="w-12 h-12 rounded-lg overflow-hidden flex-shrink-0">
+<img class="w-full h-full object-cover" data-alt="A minimalist messaging app icon featuring a clean white background and a stylized green speech bubble. The design is simple and modern, following the futuristic minimalist pillars of the AccessScope design system with sharp edges and vibrant semantic accents." src="https://lh3.googleusercontent.com/aida-public/AB6AXuAQXuwBAr9HE8Ghkk_P7RbZ8aoC3M9EZtjWvKjDZJmgywN20W08uhaSSSvXtQCN4VjHEWuEo1wlUlH9ZqXV-W5TT7E8otUkNuXiYQu1UMSpohCoAwbfPrayW3ZkXUvkqrZI6YkScMdAorol_z-PGYKFVswCda3i7-36pzo1ecP1IZgkLgKXIgx1FxtcPUvIqNy0PRP77P2DNAP9qfM3O537-c82sd2bWcXCi69FQxgH-ULPIpdp2zWvgQ">
+</div>
+<div>
+<p class="font-body-md font-semibold text-on-surface">WhatsApp Messenger</p>
+<p class="font-label-sm text-label-sm text-outline">Comunicazione</p>
+</div>
+</div>
+<button class="material-symbols-outlined text-outline-variant hover:text-tertiary-container transition-all hover:scale-110">star</button>
+</div>
+<!-- List Item 2 -->
+<div class="flex items-center justify-between p-4 bg-surface-container-low/50 hover:bg-surface-container rounded-xl transition-colors border border-transparent hover:border-outline-variant/30">
+<div class="flex items-center gap-4">
+<div class="w-12 h-12 rounded-lg overflow-hidden flex-shrink-0">
+<img class="w-full h-full object-cover" data-alt="A sleek, modern map application icon showing a stylized grid and a location pin. The palette uses primary electric teal and cool grays, maintaining the layered intelligence and surgical layout look of a futuristic diagnostic instrument." src="https://lh3.googleusercontent.com/aida-public/AB6AXuC2b35Kj_rlHQ0olATur-NeyAvIfXjdAw2Ne0OqJljT1AnUuYdt27HaLe08FwFMAoe_q_pvNZtQpHEySWi4NJeBBIEfit-vADd8fNqubx2BmkO8HqO3aDERYgCLTTMla5nlZ5VK2AzwVRT7AalhEb0HhV_eMNDCcw2JmZzH-0PGTomsuRxxltbzM-cu-Zr8ObisVxZUt9nrxtBqFORj9k5TdVj6F9_Ku6DB07wESjy1OE5dJIwvwMJkOg">
+</div>
+<div>
+<p class="font-body-md font-semibold text-on-surface">Google Maps</p>
+<p class="font-label-sm text-label-sm text-outline">Viaggi e navigazione</p>
+</div>
+</div>
+<button class="material-symbols-outlined text-outline-variant hover:text-tertiary-container transition-all hover:scale-110">star</button>
+</div>
+<!-- List Item 3 -->
+<div class="flex items-center justify-between p-4 bg-surface-container-low/50 hover:bg-surface-container rounded-xl transition-colors border border-transparent hover:border-outline-variant/30">
+<div class="flex items-center gap-4">
+<div class="w-12 h-12 rounded-lg overflow-hidden flex-shrink-0">
+<img class="w-full h-full object-cover" data-alt="A minimalist camera app icon with a stylized lens aperture in high contrast black and white. The design is sharp and purposeful, fitting the precision engineering aesthetic of the AccessScope tool, illuminated by subtle tonal elevation." src="https://lh3.googleusercontent.com/aida-public/AB6AXuClTXMy9DJp_3zGZ0jeDNzdb_MP9esAONsyZbW1SvNohfQbSzw4f26pkF7zHxd3BS0QE22hk4bkgiXWWUMucCwSDgzgprDSwKUgkZYtARy6r_xT-n6klvOnJpRvhfo09b9URJjji0cD1cpMmm6W3wzz_8KNZIybIqN7aev22fbEke9WXYosbMJerE8cbETDt2jkWjKflW6LudCbohXqzpxwUSqvmqSI_Xh_Lo1tcn2uiY2Pv-B6Hm55Lg">
+</div>
+<div>
+<p class="font-body-md font-semibold text-on-surface">Camera</p>
+<p class="font-label-sm text-label-sm text-outline">Sistema</p>
+</div>
+</div>
+<button class="material-symbols-outlined text-outline-variant hover:text-tertiary-container transition-all hover:scale-110">star</button>
+</div>
+</div>
+</section>
+</main>
+<!-- BottomNavBar -->
+<nav class="fixed bottom-0 left-0 w-full z-50 flex justify-around items-center px-4 py-2 pb-safe bg-surface border-t border-outline-variant shadow-md">
+<a class="flex flex-col items-center justify-center text-on-surface-variant hover:bg-surface-container-low transition-colors rounded-xl px-4 py-1" href="#">
+<span class="material-symbols-outlined">home</span>
+<span class="font-label-sm text-label-sm-mobile">Home</span>
+</a>
+<a class="flex flex-col items-center justify-center text-primary font-bold transition-all px-4 py-1 relative" href="#">
+<span class="material-symbols-outlined fill-icon" style="font-variation-settings: 'FILL' 1;">star</span>
+<span class="font-label-sm text-label-sm-mobile">Favorites</span>
+<div class="absolute bottom-0 w-1.5 h-1.5 rounded-full bg-primary mt-1"></div>
+</a>
+<a class="flex flex-col items-center justify-center text-on-surface-variant hover:bg-surface-container-low transition-colors rounded-xl px-4 py-1" href="#">
+<span class="material-symbols-outlined">settings</span>
+<span class="font-label-sm text-label-sm-mobile">Settings</span>
+</a>
+</nav>
+<script>
+        // Micro-interaction for the star buttons
+        document.querySelectorAll('button.material-symbols-outlined').forEach(btn => {
+            if (btn.innerText === 'star') {
+                btn.addEventListener('click', (e) => {
+                    const isFilled = btn.style.fontVariationSettings.includes("'FILL' 1");
+                    if (isFilled) {
+                        btn.style.fontVariationSettings = "'FILL' 0";
+                        btn.classList.remove('text-tertiary-container');
+                        btn.classList.add('text-outline-variant');
+                    } else {
+                        btn.style.fontVariationSettings = "'FILL' 1";
+                        btn.classList.remove('text-outline-variant');
+                        btn.classList.add('text-tertiary-container');
+                    }
+                    btn.classList.add('scale-125');
+                    setTimeout(() => btn.classList.remove('scale-125'), 200);
+                });
+            }
+        });
+
+        // Search highlight interaction
+        const searchInput = document.querySelector('input');
+        searchInput.addEventListener('focus', () => {
+            searchInput.parentElement.classList.add('scale-[1.01]');
+        });
+        searchInput.addEventListener('blur', () => {
+            searchInput.parentElement.classList.remove('scale-[1.01]');
+        });
+    </script>
+
+</body></html>

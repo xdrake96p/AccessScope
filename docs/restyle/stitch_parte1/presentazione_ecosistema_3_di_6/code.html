@@ -1,0 +1,256 @@
+<!DOCTYPE html><html class="light" lang="it"><head>
+<meta charset="utf-8">
+<meta content="width=device-width, initial-scale=1.0" name="viewport">
+<title>AccessScope - Ecosistema</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;600;700;800&amp;family=Inter:wght@400;500&amp;family=JetBrains+Mono:wght@500&amp;display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet">
+<script id="tailwind-config">
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            "colors": {
+                    "outline": "#6b7a7d",
+                    "on-background": "#1c1b1b",
+                    "on-surface": "#1c1b1b",
+                    "primary-fixed-dim": "#00daf3",
+                    "error": "#ba1a1a",
+                    "surface-container": "#f0edec",
+                    "inverse-on-surface": "#f3f0ef",
+                    "tertiary-fixed": "#ffdf96",
+                    "surface-bright": "#fcf9f8",
+                    "on-error": "#ffffff",
+                    "primary-fixed": "#9cf0ff",
+                    "on-error-container": "#93000a",
+                    "secondary": "#5b00df",
+                    "on-tertiary": "#ffffff",
+                    "on-secondary-fixed": "#22005d",
+                    "secondary-fixed-dim": "#cfbdff",
+                    "on-tertiary-fixed-variant": "#594400",
+                    "primary-container": "#00e5ff",
+                    "inverse-surface": "#313030",
+                    "surface": "#fcf9f8",
+                    "on-surface-variant": "#3b494c",
+                    "background": "#fcf9f8",
+                    "surface-container-low": "#f6f3f2",
+                    "surface-dim": "#dcd9d9",
+                    "on-primary": "#ffffff",
+                    "primary": "#006875",
+                    "on-primary-fixed": "#001f24",
+                    "surface-container-high": "#ebe7e7",
+                    "surface-container-highest": "#e5e2e1",
+                    "on-primary-fixed-variant": "#004f58",
+                    "surface-variant": "#e5e2e1",
+                    "tertiary-fixed-dim": "#f3bf26",
+                    "surface-tint": "#006875",
+                    "on-secondary": "#ffffff",
+                    "error-container": "#ffdad6",
+                    "secondary-fixed": "#e8ddff",
+                    "outline-variant": "#bac9cc",
+                    "inverse-primary": "#00daf3",
+                    "secondary-container": "#7531ff",
+                    "on-secondary-fixed-variant": "#5300cd",
+                    "tertiary-container": "#fec931",
+                    "on-tertiary-fixed": "#251a00",
+                    "on-tertiary-container": "#6f5500",
+                    "on-secondary-container": "#eadfff",
+                    "on-primary-container": "#00626e",
+                    "tertiary": "#765a00",
+                    "surface-container-lowest": "#ffffff"
+            },
+            "borderRadius": {
+                    "DEFAULT": "0.25rem",
+                    "lg": "0.5rem",
+                    "xl": "0.75rem",
+                    "full": "9999px"
+            },
+            "spacing": {
+                    "margin-desktop": "32px",
+                    "xs": "4px",
+                    "margin-mobile": "20px",
+                    "base": "8px",
+                    "md": "24px",
+                    "gutter": "16px",
+                    "lg": "40px",
+                    "xl": "64px",
+                    "sm": "12px"
+            },
+            "fontFamily": {
+                    "headline-lg": ["Hanken Grotesk"],
+                    "body-lg": ["Inter"],
+                    "display-lg": ["Hanken Grotesk"],
+                    "label-sm": ["JetBrains Mono"],
+                    "headline-lg-mobile": ["Hanken Grotesk"],
+                    "body-md": ["Inter"],
+                    "label-md": ["JetBrains Mono"],
+                    "headline-md": ["Hanken Grotesk"]
+            },
+            "fontSize": {
+                    "headline-lg": ["32px", {"lineHeight": "40px", "fontWeight": "700"}],
+                    "body-lg": ["18px", {"lineHeight": "28px", "fontWeight": "400"}],
+                    "display-lg": ["40px", {"lineHeight": "48px", "letterSpacing": "-0.02em", "fontWeight": "800"}],
+                    "label-sm": ["12px", {"lineHeight": "16px", "letterSpacing": "0.08em", "fontWeight": "500"}],
+                    "headline-lg-mobile": ["28px", {"lineHeight": "36px", "fontWeight": "700"}],
+                    "body-md": ["16px", {"lineHeight": "24px", "fontWeight": "400"}],
+                    "label-md": ["14px", {"lineHeight": "20px", "letterSpacing": "0.05em", "fontWeight": "500"}],
+                    "headline-md": ["24px", {"lineHeight": "32px", "fontWeight": "600"}]
+            }
+          },
+        },
+      }
+    </script>
+<style>
+        .glass-card {
+            background: rgba(255, 255, 255, 0.6);
+            backdrop-filter: blur(20px);
+            border: 1px solid rgba(255, 255, 255, 0.4);
+            box-shadow: 0 4px 30px rgba(0, 0, 0, 0.05);
+        }
+        .glow-primary {
+            box-shadow: 0 0 30px 0 rgba(0, 218, 243, 0.12);
+        }
+        .node-connector {
+            background: linear-gradient(90deg, transparent, #00daf3, transparent);
+            height: 1px;
+            width: 100%;
+        }
+        .animate-float {
+            animation: float 6s ease-in-out infinite;
+        }
+        @keyframes float {
+            0%, 100% { transform: translateY(0px); }
+            50% { transform: translateY(-10px); }
+        }
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+    </style>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+</head>
+<body class="bg-background text-on-background font-body-md text-body-md min-h-screen flex flex-col">
+<!-- Top Navigation Anchor -->
+<header class="fixed top-0 w-full bg-background/80 backdrop-blur-md z-50 flex items-center justify-between px-margin-mobile md:px-margin-desktop h-16">
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-primary" style="font-size: 28px;">radar</span>
+<span class="font-headline-md text-headline-md text-primary tracking-tight">AccessScope</span>
+</div>
+<button class="font-label-md text-label-md text-on-surface-variant hover:opacity-80 transition-opacity">Skip Tutorial</button>
+</header>
+<main class="flex-1 pt-24 pb-32 px-margin-mobile md:px-margin-desktop max-w-7xl mx-auto w-full">
+<!-- Hero Section -->
+<div class="text-center mb-12">
+<h1 class="font-display-lg text-display-lg mb-4 text-on-background">Trova, Capisci, Correggi</h1>
+<p class="font-body-lg text-body-lg text-on-surface-variant max-w-2xl mx-auto">
+                Un ecosistema integrato per l'accessibilità digitale, dalla scansione in tempo reale alla correzione automatizzata con IA.
+            </p>
+</div>
+<!-- Ecosystem Visualization -->
+<div class="grid grid-cols-1 lg:grid-cols-3 gap-gutter items-stretch">
+<!-- Component 1: App Mobile (Scanner) -->
+<div class="glass-card rounded-xl p-md flex flex-col items-center text-center transition-all hover:scale-[1.02] glow-primary border-primary/20">
+<div class="w-16 h-16 rounded-full bg-primary-container/20 flex items-center justify-center mb-md">
+<span class="material-symbols-outlined text-primary text-4xl">smartphone</span>
+</div>
+<h3 class="font-headline-md text-headline-md mb-base">App Mobile</h3>
+<span class="font-label-sm text-label-sm bg-primary/10 text-primary px-3 py-1 rounded-full mb-md">SCANNER REALE</span>
+<p class="text-on-surface-variant mb-lg">
+                    Analisi euristica on-device per identificare barriere architettoniche digitali mentre navighi l'app.
+                </p>
+<div class="mt-auto w-full aspect-video rounded-lg overflow-hidden bg-surface-container flex items-center justify-center relative">
+<img class="object-cover w-full h-full" data-alt="A futuristic mobile application interface showing a real-time accessibility audit in progress. The UI features neon teal highlighting over buttons and text fields with diagnostic overlays and technical data readouts. The background is a clean, minimalist light-mode design with subtle glassmorphic elements and high-tech UI components." src="https://lh3.googleusercontent.com/aida-public/AB6AXuCc29v-Q__k3JN0a-DcW9zFWXOvMfTwVcytKAcIRzyacguUfjz8gigS5fQ5ZQYnLdREQH_bjqEcLHLcw7-8GrVsR9TfP-8T0ar5-QNM_RdxeiVHdBSP3bd6NfQlDow0A-jaufxCk3yFTXtGwLTM3T0vBeI0UocWvFP9SSGf1tGJGwCatDhxCUmh2P1HpoAVDdeuSXTJbjtOIoqf_aevgTxOfSSCbqCUgl9YZ72rzJhfH9lAmT8gTp1ndQ">
+</div>
+</div>
+<!-- Component 2: Android Studio Plugin (Automation) -->
+<div class="glass-card rounded-xl p-md flex flex-col items-center text-center transition-all hover:scale-[1.02] glow-primary">
+<div class="w-16 h-16 rounded-full bg-secondary-container/20 flex items-center justify-center mb-md">
+<span class="material-symbols-outlined text-secondary text-4xl">terminal</span>
+</div>
+<h3 class="font-headline-md text-headline-md mb-base">Plugin Studio</h3>
+<span class="font-label-sm text-label-sm bg-secondary/10 text-secondary px-3 py-1 rounded-full mb-md">AUTOMATION</span>
+<p class="text-on-surface-variant mb-lg">
+                    Audit automatizzati integrati nella pipeline di sviluppo per bloccare regressioni di accessibilità.
+                </p>
+<div class="mt-auto w-full aspect-video rounded-lg overflow-hidden bg-surface-container flex items-center justify-center relative">
+<div class="absolute inset-0 bg-gradient-to-br from-secondary/5 to-primary/5"></div>
+<img class="object-cover w-full h-full" data-alt="A professional view of an integrated development environment plugin interface. The screen displays code snippets with red and orange underlining indicating accessibility errors. A side panel shows a summary of audit findings with technical charts and a clean, high-contrast light-mode aesthetic. The visual style is surgical and precise, emphasizing professional software engineering tools." src="https://lh3.googleusercontent.com/aida-public/AB6AXuAcKUYFIn4roQhzPfoh-DlbmpEXrnqfPMSuwAN6mYCO1a31iz1qyNKc8cg6M1KHMAXFv9uiCU6OPDGN5ku1FdNDZYEEtEorkby0hnj2kTCVX_iVX2C_PBw95z7FdskR7hxtyOG4jn3EkgeVtjgbv9PoWnDWOPbHgrXdDdsV1RGPo6cHfRPGDiB8axORZm0CdvnXp5jqq96RWSXqbkgZvT3Usez_6-dCpYibTRk9Q4Ij138QddFf-kwE_A">
+</div>
+</div>
+<!-- Component 3: VS Code / Cursor (Remediation) -->
+<div class="glass-card rounded-xl p-md flex flex-col items-center text-center transition-all hover:scale-[1.02] glow-primary">
+<div class="w-16 h-16 rounded-full bg-tertiary-container/20 flex items-center justify-center mb-md">
+<span class="material-symbols-outlined text-tertiary text-4xl">auto_fix_high</span>
+</div>
+<h3 class="font-headline-md text-headline-md mb-base">VS Code / Cursor</h3>
+<span class="font-label-sm text-label-sm bg-tertiary/10 text-tertiary px-3 py-1 rounded-full mb-md">REMEDIATION</span>
+<p class="text-on-surface-variant mb-lg">
+                    Estensione per l'editor che suggerisce fix immediati e genera codice accessibile via IA.
+                </p>
+<div class="mt-auto w-full aspect-video rounded-lg overflow-hidden bg-surface-container flex items-center justify-center relative">
+<img class="object-cover w-full h-full" data-alt="A minimalist visual representation of an AI-powered code remediation tool. A sleek text editor interface is shown with an AI prompt window overlaying the code. The prompt suggests a fix for a missing content description. The lighting is soft and modern, featuring a white and light grey color scheme with subtle glowing accents in electric teal and deep purple. The mood is sophisticated and assistive." src="https://lh3.googleusercontent.com/aida-public/AB6AXuDILI6bTLxfSX_w3Xy7QPFbiGmvnoIPiIQ5L7KGVKPouJlO9aZ-DR1dQ07FzcG4LEuZFu10M17CpXvF2Ao6RDsSq4iEIMUckgEdhmsJjLcyTM3vJJJO-mXdOezLJHmMWtjCt1JQcXwGfBy_Waap1fN4Jnd4gbJLWYTYyWgXGag1D3qBh-3fmHsY1FHs5Nuoxxp3OFmt1O8XTXXY6kEOZ7QngNJbUAK8z0N_F7diaKhSJ_wsS_qg7OWc8Q">
+</div>
+</div>
+</div>
+<!-- AI Prompt Section -->
+<section class="mt-xl glass-card rounded-2xl p-lg relative overflow-hidden">
+<div class="absolute top-0 right-0 -mr-16 -mt-16 w-64 h-64 bg-primary/10 rounded-full blur-3xl"></div>
+<div class="flex flex-col md:flex-row items-center gap-lg">
+<div class="flex-1">
+<div class="flex items-center gap-2 mb-sm">
+<span class="material-symbols-outlined text-primary">psychology</span>
+<span class="font-label-md text-label-md text-primary uppercase">Potenziato da IA</span>
+</div>
+<h2 class="font-headline-lg text-headline-lg mb-md text-on-background">Fix intelligenti con un click</h2>
+<p class="text-on-surface-variant font-body-lg mb-md">
+                        Il nostro sistema non si limita a trovare gli errori. Analizza il contesto del tuo codice e genera il prompt perfetto per la tua IA preferita o applica direttamente la correzione.
+                    </p>
+<div class="bg-surface-container-highest p-md rounded-lg font-label-sm text-label-sm text-on-surface-variant border border-outline-variant flex items-center gap-3">
+<span class="material-symbols-outlined text-primary">chat_bubble</span>
+<span>"Fix accessibility issues in HomeFragment.xml using high-contrast patterns..."</span>
+</div>
+</div>
+<div class="w-full md:w-1/3 flex justify-center">
+<div class="relative w-48 h-48">
+<div class="absolute inset-0 bg-primary/20 rounded-full animate-pulse blur-xl"></div>
+<div class="relative z-10 w-full h-full flex items-center justify-center">
+<span class="material-symbols-outlined text-primary" style="font-size: 80px; font-variation-settings: 'FILL' 1;">auto_awesome</span>
+</div>
+</div>
+</div>
+</div>
+</section>
+<!-- Final CTA -->
+<div class="mt-xl flex flex-col items-center gap-md">
+<button class="bg-primary text-on-primary px-xl py-md rounded-full font-headline-md text-headline-md hover:bg-on-primary-fixed-variant transition-colors shadow-lg hover:shadow-primary/20 flex items-center gap-sm">
+                Vai alla Dashboard
+                <span class="material-symbols-outlined">arrow_forward</span>
+</button>
+<p class="font-label-sm text-label-sm text-outline">Oppure scopri di più sulla <a class="underline hover:text-primary" href="#">documentazione</a></p>
+</div><div class="flex justify-center items-center gap-2 mt-lg">
+<div class="w-2 h-2 rounded-full bg-outline-variant"></div>
+<div class="w-2 h-2 rounded-full bg-outline-variant"></div>
+<div class="w-3 h-3 rounded-full bg-primary shadow-[0_0_8px_#00daf3]"></div>
+<div class="w-2 h-2 rounded-full bg-outline-variant"></div>
+<div class="w-2 h-2 rounded-full bg-outline-variant"></div>
+<div class="w-2 h-2 rounded-full bg-outline-variant"></div>
+</div>
+</main>
+<!-- Bottom Navigation Shell -->
+<script>
+        // Optional micro-interactions
+        document.querySelectorAll('.glass-card').forEach(card => {
+            card.addEventListener('mouseenter', () => {
+                card.querySelector('.material-symbols-outlined').style.transform = 'scale(1.1)';
+                card.querySelector('.material-symbols-outlined').style.transition = 'transform 0.3s ease';
+            });
+            card.addEventListener('mouseleave', () => {
+                card.querySelector('.material-symbols-outlined').style.transform = 'scale(1)';
+            });
+        });
+    </script>
+</body></html>

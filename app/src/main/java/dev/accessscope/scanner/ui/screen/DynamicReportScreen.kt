@@ -4,10 +4,12 @@
 package dev.accessscope.scanner.ui.screen
 
 import android.graphics.Bitmap
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -30,16 +32,23 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.accessscope.scanner.data.AccessibilityViolation
 import dev.accessscope.scanner.data.ViolationSeverity
 import dev.accessscope.scanner.report.DynamicReportHelper
+import dev.accessscope.scanner.report.ReportHelper
 import dev.accessscope.scanner.ui.components.AccessScopeTopBar
 import dev.accessscope.scanner.ui.components.ScreenFilmstrip
 import dev.accessscope.scanner.ui.components.ScreenIssueCanvas
 import dev.accessscope.scanner.ui.components.ScreenIssueList
+import dev.accessscope.scanner.ui.theme.CardShape
+import dev.accessscope.scanner.ui.theme.HankenGroteskFamily
+import dev.accessscope.scanner.ui.theme.JetBrainsMonoFamily
 import dev.accessscope.scanner.ui.theme.contentSecondary
 import dev.accessscope.scanner.ui.theme.severityColor
 import dev.accessscope.scanner.ui.viewmodel.ScanViewModel
@@ -58,6 +67,9 @@ fun DynamicReportScreen(
     val scan = uiState.scanState
     val frames = remember(sessionId, uiState.scanState) {
         viewModel.buildDynamicReport(sessionId)
+    }
+    val reportScore = remember(scan.violations, scan.uniqueScreens) {
+        ReportHelper.computeScore(ReportHelper.filterViolations(scan.violations), scan.uniqueScreens)
     }
 
     var selectedIndex by rememberSaveable { mutableIntStateOf(0) }
@@ -127,6 +139,12 @@ fun DynamicReportScreen(
                 .verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
+            DynamicReportScoreCard(
+                score = reportScore,
+                violationCount = ReportHelper.filterViolations(scan.violations).size,
+                screensCount = frames.size,
+            )
+
             ScreenFilmstrip(
                 frames = frames,
                 selectedIndex = safeIndex,
@@ -171,6 +189,65 @@ fun DynamicReportScreen(
             }
 
             Spacer(Modifier.height(16.dp))
+        }
+    }
+}
+
+/**
+ * Card riepilogo punteggio del report dinamico (tint secondary, stile mockup).
+ */
+@Composable
+private fun DynamicReportScoreCard(
+    score: Int,
+    violationCount: Int,
+    screensCount: Int,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp)
+            .clip(CardShape)
+            .background(MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.20f))
+            .padding(20.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column {
+            Text(
+                "PUNTEGGIO SESSIONE",
+                style = MaterialTheme.typography.labelSmall,
+                fontFamily = JetBrainsMonoFamily,
+                color = contentSecondary(),
+            )
+            Row(verticalAlignment = Alignment.Bottom) {
+                Text(
+                    "$score",
+                    fontFamily = HankenGroteskFamily,
+                    style = MaterialTheme.typography.displayMedium,
+                    color = MaterialTheme.colorScheme.secondary,
+                )
+                Text(
+                    "/100",
+                    style = MaterialTheme.typography.titleMedium,
+                    color = contentSecondary(),
+                    modifier = Modifier.padding(bottom = 8.dp),
+                )
+            }
+        }
+        Column(horizontalAlignment = Alignment.End) {
+            Text(
+                "$violationCount PROBLEMI",
+                style = MaterialTheme.typography.labelSmall,
+                fontFamily = JetBrainsMonoFamily,
+                color = MaterialTheme.colorScheme.error,
+            )
+            Spacer(Modifier.height(4.dp))
+            Text(
+                "$screensCount SCHERMATE",
+                style = MaterialTheme.typography.labelSmall,
+                fontFamily = JetBrainsMonoFamily,
+                color = contentSecondary(),
+            )
         }
     }
 }

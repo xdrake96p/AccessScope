@@ -1,11 +1,10 @@
 /**
- * Schermata impostazioni per auto-launch e configurazione degli ambiti di scansione.
- *
- * Permette di attivare preset (completa, solo TalkBack, solo etichette, solo contrasto)
- * o personalizzare singoli ambiti tramite switch.
+ * Schermata impostazioni "Scanner & HUD": sezioni accordion e danger zone.
  */
 package dev.accessscope.scanner.ui.screen
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
@@ -16,21 +15,33 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.AccessibilityNew
+import androidx.compose.material.icons.outlined.Chat
+import androidx.compose.material.icons.outlined.DeleteForever
+import androidx.compose.material.icons.outlined.FactCheck
 import androidx.compose.material.icons.outlined.Feedback
+import androidx.compose.material.icons.outlined.Layers
+import androidx.compose.material.icons.outlined.Policy
+import androidx.compose.material.icons.outlined.Security
+import androidx.compose.material.icons.outlined.SettingsSuggest
 import androidx.compose.material.icons.outlined.Terminal
+import androidx.compose.material.icons.outlined.ViewQuilt
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -38,24 +49,23 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import android.widget.Toast
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.accessscope.scanner.data.ViolationArea
-import dev.accessscope.scanner.ui.components.AccessScopeCard
 import dev.accessscope.scanner.ui.components.AccessScopeTopBar
+import dev.accessscope.scanner.ui.components.SettingsAccordion
 import dev.accessscope.scanner.ui.components.ThemeModeSelector
-import dev.accessscope.scanner.ui.theme.BrandPrimary
+import dev.accessscope.scanner.ui.theme.CardShape
+import dev.accessscope.scanner.ui.theme.JetBrainsMonoFamily
 import dev.accessscope.scanner.ui.theme.contentSecondary
 import dev.accessscope.scanner.ui.viewmodel.ScanViewModel
 
 /**
- * Schermata delle impostazioni di scansione e ambiti di analisi.
- *
- * @param viewModel ViewModel con stato auto-launch e ambiti di scansione.
- * @param onBack Callback per tornare alla schermata precedente.
+ * Schermata delle impostazioni (tab zona principale) con sezioni espandibili.
  */
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
@@ -69,6 +79,31 @@ fun SettingsScreen(
     val scope = uiState.scanScope
     val context = LocalContext.current
     var exportingLogs by remember { mutableStateOf(false) }
+    var showClearHistoryDialog by remember { mutableStateOf(false) }
+
+    if (showClearHistoryDialog) {
+        AlertDialog(
+            onDismissRequest = { showClearHistoryDialog = false },
+            title = { Text("Eliminare la cronologia?") },
+            text = { Text("Tutte le sessioni archiviate e i confronti tra scansioni verranno eliminati definitivamente.") },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        viewModel.clearScanHistory()
+                        showClearHistoryDialog = false
+                        Toast.makeText(context, "Cronologia eliminata", Toast.LENGTH_SHORT).show()
+                    },
+                ) {
+                    Text("Elimina", color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showClearHistoryDialog = false }) {
+                    Text("Annulla")
+                }
+            },
+        )
+    }
 
     Scaffold(
         topBar = {
@@ -81,142 +116,41 @@ fun SettingsScreen(
                 .padding(padding)
                 .verticalScroll(rememberScrollState())
                 .padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            AccessScopeCard(modifier = Modifier.fillMaxWidth()) {
-                Text("Preferenze di visualizzazione", fontWeight = FontWeight.SemiBold)
-                Text(
-                    "Scegli come visualizzare l'interfaccia. La preferenza viene salvata sul dispositivo.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = contentSecondary(),
+            // —— Permessi richiesti ——
+            val grantedCount = listOf(uiState.accessibilityGranted, uiState.overlayGranted).count { it }
+            SettingsAccordion(
+                title = "Permessi Richiesti",
+                icon = Icons.Outlined.Security,
+                badge = "$grantedCount/2",
+            ) {
+                PermissionRow(
+                    icon = Icons.Outlined.AccessibilityNew,
+                    title = "Servizio di accessibilità",
+                    subtitle = if (uiState.accessibilityConnected) "Attivo e connesso" else "Da abilitare nelle impostazioni di sistema",
+                    granted = uiState.accessibilityGranted,
                 )
-                ThemeModeSelector(
-                    selected = uiState.themeMode,
-                    onSelect = viewModel::setThemeMode,
-                )
-            }
-
-            AccessScopeCard(modifier = Modifier.fillMaxWidth()) {
-                Text("Scansione", fontWeight = FontWeight.SemiBold)
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Column(Modifier.weight(1f)) {
-                        Text("Apri app automaticamente")
-                        Text(
-                            "All'avvio apre automaticamente l'app selezionata. Puoi monitorare solo ${ScanViewModel.MAX_APPS_WITH_AUTO_LAUNCH} app.",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = contentSecondary(),
-                        )
-                    }
-                    Switch(
-                        checked = uiState.autoLaunchEnabled,
-                        onCheckedChange = { viewModel.toggleAutoLaunch() },
-                    )
-                }
-            }
-
-            AccessScopeCard(modifier = Modifier.fillMaxWidth()) {
-                Text("Debug interno", fontWeight = FontWeight.SemiBold)
-                Text(
-                    "Strumenti per sviluppo e benchmark anti-allucinazione. I report non sono pensati per l'utente finale.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = contentSecondary(),
-                )
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Column(Modifier.weight(1f)) {
-                        Text("Report affidabilità (Markdown)")
-                        Text(
-                            "A fine scansione salva in Download un file AccessScope_Reliability_*.md con violazioni, confidenza, pattern sospetti e confronto benchmark Nexi.",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = contentSecondary(),
-                        )
-                    }
-                    Switch(
-                        checked = uiState.reliabilityReportEnabled,
-                        onCheckedChange = { viewModel.toggleReliabilityReport() },
-                    )
-                }
-            }
-
-            AccessScopeCard(modifier = Modifier.fillMaxWidth()) {
-                Text("Suggerimenti e segnalazioni", fontWeight = FontWeight.SemiBold)
-                Text(
-                    "Segnala bug, scansioni imprecise o idee di miglioramento. Si apre GitHub Issues " +
-                        "con i campi precompilati.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = contentSecondary(),
+                PermissionRow(
+                    icon = Icons.Outlined.Layers,
+                    title = "Mostra sopra altre app",
+                    subtitle = "Overlay STOP disponibile durante la scansione",
+                    granted = uiState.overlayGranted,
                 )
                 OutlinedButton(
-                    onClick = onOpenFeedback,
+                    onClick = viewModel::refreshPermissions,
                     modifier = Modifier.fillMaxWidth(),
                 ) {
-                    Icon(Icons.Outlined.Feedback, contentDescription = null)
-                    Text("Invia feedback su GitHub", modifier = Modifier.padding(start = 8.dp))
+                    Text("Aggiorna stato permessi")
                 }
             }
 
-            AccessScopeCard(modifier = Modifier.fillMaxWidth()) {
-                Text("Diagnostica", fontWeight = FontWeight.SemiBold)
-                Text(
-                    "Scarica i log dell'app per analizzare crash o comportamenti anomali durante le scansioni.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = contentSecondary(),
-                )
-                OutlinedButton(
-                    onClick = onOpenLogChecker,
-                    modifier = Modifier.fillMaxWidth(),
-                ) {
-                    Icon(Icons.Outlined.Terminal, contentDescription = null)
-                    Text("Apri log checker (tempo reale)", modifier = Modifier.padding(start = 8.dp))
-                }
-                Button(
-                    onClick = {
-                        if (exportingLogs) return@Button
-                        exportingLogs = true
-                        viewModel.exportDiagnosticLogs { result ->
-                            exportingLogs = false
-                            result.fold(
-                                onSuccess = { path ->
-                                    Toast.makeText(
-                                        context,
-                                        "Log salvati in $path",
-                                        Toast.LENGTH_LONG,
-                                    ).show()
-                                    dev.accessscope.scanner.export.DiagnosticLogExporter.shareExportedFile(context, path)
-                                },
-                                onFailure = { error ->
-                                    Toast.makeText(
-                                        context,
-                                        error.message ?: "Impossibile esportare i log",
-                                        Toast.LENGTH_LONG,
-                                    ).show()
-                                },
-                            )
-                        }
-                    },
-                    enabled = !exportingLogs,
-                    modifier = Modifier.fillMaxWidth(),
-                ) {
-                    Text(if (exportingLogs) "Esportazione…" else "Scarica log diagnostici")
-                }
-            }
-
-            AccessScopeCard(modifier = Modifier.fillMaxWidth()) {
-                Text("Ambiti di scansione", fontWeight = FontWeight.SemiBold)
-                if (!scope.isFullScan) {
-                    Text(
-                        "La prossima scansione analizzerà solo gli ambiti selezionati.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = BrandPrimary,
-                    )
-                }
+            // —— Ambiti di scansione ——
+            SettingsAccordion(
+                title = "Ambiti di Scansione",
+                icon = Icons.Outlined.ViewQuilt,
+                initiallyExpanded = false,
+            ) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
@@ -252,7 +186,21 @@ fun SettingsScreen(
                         label = { Text("Solo contrasto") },
                     )
                 }
-                HorizontalDivider()
+                if (!scope.isFullScan) {
+                    Text(
+                        "La prossima scansione analizzerà solo gli ambiti selezionati.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.primary,
+                    )
+                }
+            }
+
+            // —— Categorie di controllo ——
+            SettingsAccordion(
+                title = "Categorie di Controllo",
+                icon = Icons.Outlined.FactCheck,
+                initiallyExpanded = false,
+            ) {
                 ViolationArea.entries.forEach { area ->
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -272,9 +220,213 @@ fun SettingsScreen(
                             onCheckedChange = { viewModel.toggleScanArea(area) },
                         )
                     }
-                    Spacer(Modifier.height(4.dp))
+                    Spacer(Modifier.height(2.dp))
                 }
             }
+
+            // —— Preferenze app ——
+            SettingsAccordion(
+                title = "Preferenze App",
+                icon = Icons.Outlined.SettingsSuggest,
+                initiallyExpanded = false,
+            ) {
+                Text(
+                    "VISUALIZZAZIONE",
+                    style = MaterialTheme.typography.labelSmall,
+                    fontFamily = JetBrainsMonoFamily,
+                    color = contentSecondary(),
+                )
+                ThemeModeSelector(
+                    selected = uiState.themeMode,
+                    onSelect = viewModel::setThemeMode,
+                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Apri app automaticamente")
+                        Text(
+                            "All'avvio apre l'app selezionata (max ${ScanViewModel.MAX_APPS_WITH_AUTO_LAUNCH}).",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = contentSecondary(),
+                        )
+                    }
+                    Switch(
+                        checked = uiState.autoLaunchEnabled,
+                        onCheckedChange = { viewModel.toggleAutoLaunch() },
+                    )
+                }
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Report affidabilità (MD)")
+                        Text(
+                            "Salva benchmark anti-allucinazione a fine scansione.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = contentSecondary(),
+                        )
+                    }
+                    Switch(
+                        checked = uiState.reliabilityReportEnabled,
+                        onCheckedChange = { viewModel.toggleReliabilityReport() },
+                    )
+                }
+            }
+
+            // —— Diagnostica ——
+            SettingsAccordion(
+                title = "Diagnostica",
+                icon = Icons.Outlined.Terminal,
+                initiallyExpanded = false,
+            ) {
+                Text(
+                    "Scarica i log dell'app per analizzare crash o comportamenti anomali durante le scansioni.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = contentSecondary(),
+                )
+                Button(
+                    onClick = onOpenLogChecker,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Icon(Icons.Outlined.Terminal, contentDescription = null)
+                    Text("Apri log checker (tempo reale)", modifier = Modifier.padding(start = 8.dp))
+                }
+                OutlinedButton(
+                    onClick = {
+                        if (exportingLogs) return@OutlinedButton
+                        exportingLogs = true
+                        viewModel.exportDiagnosticLogs { result ->
+                            exportingLogs = false
+                            result.fold(
+                                onSuccess = { path ->
+                                    Toast.makeText(context, "Log salvati in $path", Toast.LENGTH_LONG).show()
+                                    dev.accessscope.scanner.export.DiagnosticLogExporter.shareExportedFile(context, path)
+                                },
+                                onFailure = { error ->
+                                    Toast.makeText(context, error.message ?: "Impossibile esportare i log", Toast.LENGTH_LONG).show()
+                                },
+                            )
+                        }
+                    },
+                    enabled = !exportingLogs,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text(if (exportingLogs) "Esportazione…" else "Scarica log diagnostici")
+                }
+            }
+
+            // —— Informazioni legali ——
+            SettingsAccordion(
+                title = "Informazioni Legali",
+                icon = Icons.Outlined.Policy,
+                initiallyExpanded = false,
+            ) {
+                Text(
+                    "AccessScope analizza le app localmente sul dispositivo: nessun dato lascia il device senza azione esplicita dell'utente (esport PDF, feedback o log).",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = contentSecondary(),
+                )
+                Text(
+                    "Repository e documentazione: github.com/xdrake96p/AccessScope",
+                    style = MaterialTheme.typography.bodySmall,
+                    fontFamily = JetBrainsMonoFamily,
+                    color = MaterialTheme.colorScheme.primary,
+                )
+            }
+
+            // —— Suggerimenti e segnalazioni ——
+            SettingsAccordion(
+                title = "Suggerimenti e segnalazioni",
+                icon = Icons.Outlined.Chat,
+                initiallyExpanded = false,
+            ) {
+                Text(
+                    "Segnala bug, scansioni imprecise o idee di miglioramento. Si apre GitHub Issues con i campi precompilati.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = contentSecondary(),
+                )
+                Button(
+                    onClick = onOpenFeedback,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Icon(Icons.Outlined.Feedback, contentDescription = null)
+                    Text("Invia feedback su GitHub", modifier = Modifier.padding(start = 8.dp))
+                }
+            }
+
+            // —— Danger zone ——
+            Spacer(Modifier.height(8.dp))
+            Text(
+                "DANGER ZONE",
+                style = MaterialTheme.typography.labelSmall,
+                fontFamily = JetBrainsMonoFamily,
+                color = contentSecondary(),
+                modifier = Modifier.padding(start = 4.dp),
+            )
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(CardShape)
+                    .background(MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.15f))
+                    .clickable { showClearHistoryDialog = true }
+                    .padding(16.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Icon(
+                    Icons.Outlined.DeleteForever,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.error,
+                )
+                Spacer(Modifier.width(12.dp))
+                Text(
+                    "Elimina Cronologia Scansioni",
+                    style = MaterialTheme.typography.titleSmall,
+                    color = MaterialTheme.colorScheme.error,
+                    fontWeight = FontWeight.Medium,
+                )
+            }
+            Spacer(Modifier.height(24.dp))
         }
+    }
+}
+
+/** Riga di stato permesso con icona e check. */
+@Composable
+private fun PermissionRow(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    title: String,
+    subtitle: String,
+    granted: Boolean,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(CardShape)
+            .background(MaterialTheme.colorScheme.surfaceContainer)
+            .padding(12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(
+            icon,
+            contentDescription = null,
+            tint = if (granted) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
+        )
+        Spacer(Modifier.width(12.dp))
+        Column(Modifier.weight(1f)) {
+            Text(title, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Medium)
+            Text(subtitle, style = MaterialTheme.typography.bodySmall, color = contentSecondary())
+        }
+        Text(
+            if (granted) "OK" else "MANCANTE",
+            style = MaterialTheme.typography.labelSmall,
+            fontFamily = JetBrainsMonoFamily,
+            fontWeight = FontWeight.Bold,
+            color = if (granted) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
+        )
     }
 }

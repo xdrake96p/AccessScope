@@ -49,6 +49,14 @@ class ScanHistoryStore(context: Context) {
     }
 
     /**
+     * Elimina tutta la cronologia scansioni (sessioni archiviate e indici per package).
+     */
+    fun clearAll() {
+        sessionsDir.listFiles()?.forEach { it.delete() }
+        byPackageDir.listFiles()?.forEach { it.delete() }
+    }
+
+    /**
      * Aggiorna il percorso PDF di una sessione già archiviata.
      *
      * @param sessionId ID della sessione.

@@ -74,6 +74,8 @@ Non serve essere esperti di accessibilità per **avviare** una scansione; il rep
 
 ## 4. L'app AccessScope (sul telefono)
 
+> **Novità UI "Scanner & HUD" (restyle luglio 2026):** splash animata e tutorial al primo avvio, bottom bar a due zone — **Home/Preferiti/Settings** (zona principale, con drawer laterale ☰) e **Scansione/Dettagli/Report/Storico** (zona sessione, si entra da "VEDI DETTAGLI" sulla card Ultima sessione). Preferiti ora in una schermata dedicata (tab centrale).
+
 ### Cosa fa
 
 1. Chiede quali app analizzare (es. la tua app Nexi in debug/release).

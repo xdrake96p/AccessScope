@@ -1,0 +1,431 @@
+<!DOCTYPE html><html class="light" lang="it" style=""><head>
+<meta charset="utf-8">
+<meta content="width=device-width, initial-scale=1.0" name="viewport">
+<title>AccessScope - Settings</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;600;700;800&amp;family=Inter:wght@400;500&amp;family=JetBrains+Mono:wght@500&amp;family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet">
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "inverse-on-surface": "#f3f0ef",
+                        "surface-container-low": "#f6f3f2",
+                        "surface-dim": "#dcd9d9",
+                        "surface-bright": "#fcf9f8",
+                        "primary-fixed": "#9cf0ff",
+                        "primary-container": "#00e5ff",
+                        "background": "#fcf9f8",
+                        "secondary-fixed": "#e8ddff",
+                        "on-secondary": "#ffffff",
+                        "inverse-primary": "#00daf3",
+                        "secondary": "#5b00df",
+                        "on-tertiary-fixed-variant": "#594400",
+                        "on-tertiary-container": "#6f5500",
+                        "tertiary-container": "#fec931",
+                        "surface-container-highest": "#e5e2e1",
+                        "surface-tint": "#006875",
+                        "on-secondary-fixed": "#22005d",
+                        "on-surface": "#1c1b1b",
+                        "on-primary-fixed": "#001f24",
+                        "surface-container-lowest": "#ffffff",
+                        "error": "#ba1a1a",
+                        "outline-variant": "#bac9cc",
+                        "outline": "#6b7a7d",
+                        "on-tertiary": "#ffffff",
+                        "tertiary-fixed-dim": "#f3bf26",
+                        "tertiary-fixed": "#ffdf96",
+                        "on-error-container": "#93000a",
+                        "secondary-fixed-dim": "#cfbdff",
+                        "on-background": "#1c1b1b",
+                        "primary-fixed-dim": "#00daf3",
+                        "surface-container": "#f0edec",
+                        "primary": "#006875",
+                        "on-tertiary-fixed": "#251a00",
+                        "on-secondary-container": "#eadfff",
+                        "on-error": "#ffffff",
+                        "tertiary": "#765a00",
+                        "on-surface-variant": "#3b494c",
+                        "on-primary-container": "#00626e",
+                        "on-secondary-fixed-variant": "#5300cd",
+                        "surface-container-high": "#ebe7e7",
+                        "secondary-container": "#7531ff",
+                        "on-primary": "#ffffff",
+                        "surface-variant": "#e5e2e1"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0.25rem",
+                        "lg": "0.5rem",
+                        "xl": "0.75rem",
+                        "full": "9999px"
+                    },
+                    "spacing": {
+                        "margin-mobile": "20px",
+                        "gutter": "16px",
+                        "xl": "64px",
+                        "base": "8px",
+                        "md": "24px",
+                        "margin-desktop": "32px",
+                        "sm": "12px",
+                        "lg": "40px",
+                        "xs": "4px"
+                    },
+                    "fontFamily": {
+                        "label-md": ["JetBrains Mono"],
+                        "headline-lg-mobile": ["Hanken Grotesk"],
+                        "display-lg": ["Hanken Grotesk"],
+                        "body-md": ["Inter"],
+                        "headline-md": ["Hanken Grotesk"],
+                        "label-sm": ["JetBrains Mono"],
+                        "headline-lg": ["Hanken Grotesk"],
+                        "body-lg": ["Inter"]
+                    },
+                    "fontSize": {
+                        "label-md": ["14px", {"lineHeight": "20px", "letterSpacing": "0.05em", "fontWeight": "500"}],
+                        "headline-lg-mobile": ["28px", {"lineHeight": "36px", "fontWeight": "700"}],
+                        "display-lg": ["40px", {"lineHeight": "48px", "letterSpacing": "-0.02em", "fontWeight": "800"}],
+                        "body-md": ["16px", {"lineHeight": "24px", "fontWeight": "400"}],
+                        "headline-md": ["24px", {"lineHeight": "32px", "fontWeight": "600"}],
+                        "label-sm": ["12px", {"lineHeight": "16px", "letterSpacing": "0.08em", "fontWeight": "500"}],
+                        "headline-lg": ["32px", {"lineHeight": "40px", "fontWeight": "700"}],
+                        "body-lg": ["18px", {"lineHeight": "28px", "fontWeight": "400"}]
+                    }
+                },
+            },
+        }
+    </script>
+<style>
+        body { -webkit-tap-highlight-color: transparent; }
+        .material-symbols-outlined { font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24; }
+        .accordion-content { max-height: 0; overflow: hidden; transition: max-height 0.4s cubic-bezier(0.4, 0, 0.2, 1); }
+        .accordion-active .accordion-content { max-height: 2000px; }
+        .accordion-active .chevron-icon { transform: rotate(180deg); }
+        .glass-panel { backdrop-filter: blur(20px); border: 1px solid rgba(255, 255, 255, 0.1); }
+    </style>
+</head>
+<body class="bg-background text-on-surface font-body-md min-h-screen pb-32">
+<!-- Top App Bar -->
+<header class="bg-surface sticky top-0 z-50 flex justify-between items-center w-full px-margin-mobile h-16 border-b border-outline-variant">
+<div class="flex items-center gap-4">
+<button class="material-symbols-outlined text-primary hover:bg-surface-container transition-colors p-2 rounded-full scale-95 active:opacity-80">arrow_back</button>
+<h1 class="font-headline-md text-headline-md font-bold text-primary">Settings</h1>
+</div>
+
+</header>
+<main class="px-margin-mobile pt-sm space-y-gutter">
+<!-- Profile Section -->
+
+<!-- Main Accordion Groups -->
+<div class="space-y-sm">
+<!-- Permessi (Permissions) -->
+<div class="accordion-item bg-surface-container-lowest border border-outline-variant rounded-xl overflow-hidden shadow-sm transition-all accordion-active" id="permessi-accordion">
+<button class="w-full flex items-center justify-between p-md hover:bg-surface-container-low transition-colors" onclick="toggleAccordion('permessi-accordion')">
+<div class="flex items-center gap-sm">
+<span class="material-symbols-outlined text-primary">security</span>
+<span class="font-headline-md text-headline-md text-on-surface">Permessi Richiesti</span>
+</div>
+<div class="flex items-center gap-sm">
+<span class="bg-primary/10 text-primary font-label-sm text-label-sm px-2 py-0.5 rounded-full border border-primary/20">2/2</span>
+<span class="material-symbols-outlined chevron-icon transition-transform">expand_more</span>
+</div>
+</button>
+<div class="accordion-content px-md">
+<div class="pb-md space-y-sm">
+<div class="flex items-center justify-between p-sm bg-surface-container rounded-lg border border-outline-variant">
+<div class="flex items-center gap-sm">
+<div class="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center">
+<span class="material-symbols-outlined text-primary text-[20px]">accessibility_new</span>
+</div>
+<div>
+<h4 class="font-label-md text-label-md text-on-surface">Servizio di accessibilità</h4>
+<p class="text-xs text-on-surface-variant">Attivo e connesso</p>
+</div>
+</div>
+<span class="material-symbols-outlined text-primary" style="font-variation-settings: 'FILL' 1;">check_circle</span>
+</div>
+<div class="flex items-center justify-between p-sm bg-surface-container rounded-lg border border-outline-variant">
+<div class="flex items-center gap-sm">
+<div class="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center">
+<span class="material-symbols-outlined text-primary text-[20px]">layers</span>
+</div>
+<div>
+<h4 class="font-label-md text-label-md text-on-surface">Mostra sopra altre app</h4>
+<p class="text-xs text-on-surface-variant">Overlay STOP disponibile</p>
+</div>
+</div>
+<span class="material-symbols-outlined text-primary" style="font-variation-settings: 'FILL' 1;">check_circle</span>
+</div>
+<button class="w-full flex items-center justify-center gap-2 p-3 border border-primary text-primary font-label-md text-label-md rounded-lg hover:bg-primary/5 active:scale-[0.98] transition-all mt-2">
+<span class="material-symbols-outlined text-sm">refresh</span>
+                        Aggiorna stato permessi
+                    </button>
+</div>
+</div>
+</div>
+<!-- Ambiti di Scansione (Scan Scopes) -->
+<div class="accordion-item bg-surface-container-lowest border border-outline-variant rounded-xl overflow-hidden shadow-sm transition-all accordion-active" id="scope-accordion">
+<button class="w-full flex items-center justify-between p-md hover:bg-surface-container-low transition-colors" onclick="toggleAccordion('scope-accordion')">
+<div class="flex items-center gap-sm">
+<span class="material-symbols-outlined text-primary">view_quilt</span>
+<span class="font-headline-md text-headline-md text-on-surface">Ambiti di Scansione</span>
+</div>
+<span class="material-symbols-outlined chevron-icon transition-transform">expand_more</span>
+</button>
+<div class="accordion-content px-md">
+<div class="pb-md space-y-md">
+<div class="flex items-center justify-between">
+<span class="font-label-md text-on-surface">Analizza tutto</span>
+<label class="relative inline-flex items-center cursor-pointer">
+<input checked="" class="sr-only peer" type="checkbox">
+<div class="w-11 h-6 bg-surface-container-highest rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[4px] after:left-[4px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-primary"></div>
+</label>
+</div>
+<div class="flex flex-wrap gap-2">
+<button class="px-3 py-1.5 rounded-full text-xs font-label-md border bg-secondary-container text-on-secondary border-secondary">Completa</button>
+<button class="px-3 py-1.5 rounded-full text-xs font-label-md border border-outline-variant text-on-surface-variant bg-surface hover:bg-surface-container-low">Solo TalkBack</button>
+<button class="px-3 py-1.5 rounded-full text-xs font-label-md border border-outline-variant text-on-surface-variant bg-surface hover:bg-surface-container-low">Solo etichette</button>
+<button class="px-3 py-1.5 rounded-full text-xs font-label-md border border-outline-variant text-on-surface-variant bg-surface hover:bg-surface-container-low">Solo contrasto</button>
+</div>
+</div>
+</div>
+</div>
+<!-- Categorie di Controllo (Check Categories) -->
+<div class="accordion-item bg-surface-container-lowest border border-outline-variant rounded-xl overflow-hidden shadow-sm transition-all accordion-active" id="categories-accordion">
+<button class="w-full flex items-center justify-between p-md hover:bg-surface-container-low transition-colors" onclick="toggleAccordion('categories-accordion')">
+<div class="flex items-center gap-sm">
+<span class="material-symbols-outlined text-primary">fact_check</span>
+<span class="font-headline-md text-headline-md text-on-surface">Categorie di Controllo</span>
+</div>
+<span class="material-symbols-outlined chevron-icon transition-transform">expand_more</span>
+</button>
+<div class="accordion-content px-md">
+<div class="pb-md space-y-4">
+<!-- Item 1 -->
+<div class="flex items-center justify-between">
+<div class="flex items-center gap-sm">
+<span class="text-xl">🏷️</span>
+<div>
+<h4 class="font-label-md text-on-surface">Etichette e nomi</h4>
+<p class="text-[10px] text-on-surface-variant">Ogni pulsante deve dire cosa fa</p>
+</div>
+</div>
+<label class="relative inline-flex items-center cursor-pointer">
+<input checked="" class="sr-only peer" type="checkbox">
+<div class="w-10 h-5 bg-surface-container-highest rounded-full peer peer-checked:after:translate-x-5 after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-primary"></div>
+</label>
+</div>
+<!-- Item 2 -->
+<div class="flex items-center justify-between">
+<div class="flex items-center gap-sm">
+<span class="text-xl">👆</span>
+<div>
+<h4 class="font-label-md text-on-surface">Tocco e dimensioni</h4>
+<p class="text-[10px] text-on-surface-variant">Pulsanti abbastanza grandi</p>
+</div>
+</div>
+<label class="relative inline-flex items-center cursor-pointer">
+<input checked="" class="sr-only peer" type="checkbox">
+<div class="w-10 h-5 bg-surface-container-highest rounded-full peer peer-checked:after:translate-x-5 after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-primary"></div>
+</label>
+</div>
+<!-- Item 3 -->
+<div class="flex items-center justify-between">
+<div class="flex items-center gap-sm">
+<span class="text-xl">🎨</span>
+<div>
+<h4 class="font-label-md text-on-surface">Colori e contrasto</h4>
+<p class="text-[10px] text-on-surface-variant">Testo leggibile sullo sfondo</p>
+</div>
+</div>
+<label class="relative inline-flex items-center cursor-pointer">
+<input checked="" class="sr-only peer" type="checkbox">
+<div class="w-10 h-5 bg-surface-container-highest rounded-full peer peer-checked:after:translate-x-5 after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-primary"></div>
+</label>
+</div>
+<!-- Item 4 -->
+<div class="flex items-center justify-between">
+<div class="flex items-center gap-sm">
+<span class="text-xl">🔤</span>
+<div>
+<h4 class="font-label-md text-on-surface">Testo e tipografia</h4>
+<p class="text-[10px] text-on-surface-variant">Caratteri non troppo piccoli</p>
+</div>
+</div>
+<label class="relative inline-flex items-center cursor-pointer">
+<input checked="" class="sr-only peer" type="checkbox">
+<div class="w-10 h-5 bg-surface-container-highest rounded-full peer peer-checked:after:translate-x-5 after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-primary"></div>
+</label>
+</div>
+<!-- Item 5 -->
+<div class="flex items-center justify-between">
+<div class="flex items-center gap-sm">
+<span class="text-xl">📝</span>
+<div>
+<h4 class="font-label-md text-on-surface">Moduli e campi</h4>
+<p class="text-[10px] text-on-surface-variant">Input con etichette ed errori</p>
+</div>
+</div>
+<label class="relative inline-flex items-center cursor-pointer">
+<input checked="" class="sr-only peer" type="checkbox">
+<div class="w-10 h-5 bg-surface-container-highest rounded-full peer peer-checked:after:translate-x-5 after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-primary"></div>
+</label>
+</div>
+</div>
+</div>
+</div>
+<!-- Preferenze App (App Preferences) -->
+<div class="accordion-item bg-surface-container-lowest border border-outline-variant rounded-xl overflow-hidden shadow-sm transition-all accordion-active" id="preferenze-accordion">
+<button class="w-full flex items-center justify-between p-md hover:bg-surface-container-low transition-colors" onclick="toggleAccordion('preferenze-accordion')">
+<div class="flex items-center gap-sm">
+<span class="material-symbols-outlined text-primary">settings_suggest</span>
+<span class="font-headline-md text-headline-md text-on-surface">Preferenze App</span>
+</div>
+<span class="material-symbols-outlined chevron-icon transition-transform">expand_more</span>
+</button>
+<div class="accordion-content px-md">
+<div class="pb-md space-y-gutter">
+<!-- Theme Selector -->
+<div class="space-y-sm">
+<p class="font-label-sm text-on-surface-variant uppercase tracking-wider">Visualizzazione</p>
+<div class="grid grid-cols-3 gap-2">
+<button class="flex flex-col items-center justify-center p-3 rounded-xl border border-outline-variant bg-surface gap-1">
+<span class="material-symbols-outlined text-amber-500">light_mode</span>
+<span class="text-[10px] font-label-md">Chiaro</span>
+</button>
+<button class="flex flex-col items-center justify-center p-3 rounded-xl border border-outline-variant bg-surface gap-1">
+<span class="material-symbols-outlined text-primary">dark_mode</span>
+<span class="text-[10px] font-label-md">Scuro</span>
+</button>
+<button class="flex flex-col items-center justify-center p-3 rounded-xl border-2 border-primary bg-primary-container/20 gap-1">
+<span class="material-symbols-outlined text-primary">settings_brightness</span>
+<span class="text-[10px] font-label-md">Auto</span>
+</button>
+</div>
+</div>
+<!-- Internal Debug / Diagnostics -->
+<div class="space-y-sm border-t border-outline-variant pt-md">
+<div class="flex items-center justify-between">
+<div class="flex-1">
+<h4 class="font-label-md text-on-surface">Report affidabilità (MD)</h4>
+<p class="text-[10px] text-on-surface-variant">Salva benchmark anti-allucinazione</p>
+</div>
+<label class="relative inline-flex items-center cursor-pointer">
+<input checked="" class="sr-only peer" type="checkbox">
+<div class="w-11 h-6 bg-surface-container-highest rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[4px] after:left-[4px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-primary"></div>
+</label>
+</div>
+<div class="flex items-center justify-between">
+<div class="flex-1">
+<h4 class="font-label-md text-on-surface">Analisi Silenziosa</h4>
+<p class="text-[10px] text-on-surface-variant">Riduci notifiche durante scansione</p>
+</div>
+<label class="relative inline-flex items-center cursor-pointer">
+<input class="sr-only peer" type="checkbox">
+<div class="w-11 h-6 bg-surface-container-highest rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[4px] after:left-[4px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-primary"></div>
+</label>
+</div>
+<div class="flex gap-2 mt-2">
+<button class="flex-1 flex items-center justify-center gap-2 p-3 bg-primary text-on-primary font-label-md text-xs rounded-lg active:scale-95 transition-transform">
+<span class="material-symbols-outlined text-sm">terminal</span> Log checker
+                            </button>
+<button class="flex-1 flex items-center justify-center gap-2 p-3 border border-primary text-primary font-label-md text-xs rounded-lg active:scale-95 transition-transform">
+<span class="material-symbols-outlined text-sm">download</span> Scarica log
+                            </button>
+</div>
+</div>
+</div>
+</div>
+</div>
+<!-- Informazioni Legali -->
+<div class="accordion-item bg-surface-container-lowest border border-outline-variant rounded-xl overflow-hidden shadow-sm transition-all accordion-active" id="diagnostica-accordion"><button class="w-full flex items-center justify-between p-md hover:bg-surface-container-low transition-colors" onclick="toggleAccordion('diagnostica-accordion')"><div class="flex items-center gap-sm"><span class="material-symbols-outlined text-primary">terminal</span><span class="font-headline-md text-headline-md text-on-surface">Diagnostica</span></div><span class="material-symbols-outlined chevron-icon transition-transform">expand_more</span></button><div class="accordion-content px-md"><div class="pb-md space-y-md"><p class="text-xs text-on-surface-variant">Scarica i log dell'app per analizzare crash o comportamenti anomali durante le scansioni.</p><div class="flex flex-col gap-2"><button class="w-full flex items-center justify-center gap-2 p-3 bg-primary text-on-primary font-label-md text-xs rounded-lg active:scale-95 transition-transform"><span class="material-symbols-outlined text-sm">terminal</span> Apri log checker (tempo reale)</button><button class="w-full flex items-center justify-center gap-2 p-3 border border-primary text-primary font-label-md text-xs rounded-lg active:scale-95 transition-transform"><span class="material-symbols-outlined text-sm">download</span> Scarica log diagnostici</button></div></div></div></div><div class="accordion-item bg-surface-container-lowest border border-outline-variant rounded-xl overflow-hidden shadow-sm transition-all accordion-active" id="legal-accordion">
+<button class="w-full flex items-center justify-between p-md hover:bg-surface-container-low transition-colors" onclick="toggleAccordion('legal-accordion')">
+<div class="flex items-center gap-sm">
+<span class="material-symbols-outlined text-primary">policy</span>
+<span class="font-headline-md text-headline-md text-on-surface">Informazioni Legali</span>
+</div>
+<span class="material-symbols-outlined chevron-icon transition-transform">expand_more</span>
+</button>
+<div class="accordion-content px-md">
+<div class="pb-md space-y-xs">
+<a class="flex items-center justify-between p-sm hover:bg-surface-container rounded-lg transition-colors group" href="#">
+<span class="font-label-md text-label-md text-on-surface">Termini di Servizio</span>
+<span class="material-symbols-outlined text-on-surface-variant group-hover:translate-x-1 transition-transform">chevron_right</span>
+</a>
+<a class="flex items-center justify-between p-sm hover:bg-surface-container rounded-lg transition-colors group" href="#">
+<span class="font-label-md text-label-md text-on-surface">Privacy Policy</span>
+<span class="material-symbols-outlined text-on-surface-variant group-hover:translate-x-1 transition-transform">chevron_right</span>
+</a>
+</div>
+</div>
+</div><div class="accordion-item bg-surface-container-lowest border border-outline-variant rounded-xl overflow-hidden shadow-sm transition-all accordion-active" id="feedback-accordion"><button class="w-full flex items-center justify-between p-md hover:bg-surface-container-low transition-colors" onclick="toggleAccordion('feedback-accordion')"><div class="flex items-center gap-sm"><span class="material-symbols-outlined text-primary">chat</span><span class="font-headline-md text-headline-md text-on-surface">Suggerimenti e segnalazioni</span></div><span class="material-symbols-outlined chevron-icon transition-transform">expand_more</span></button><div class="accordion-content px-md"><div class="pb-md space-y-md"><p class="text-xs text-on-surface-variant">Segnala bug, scansioni imprecise o idee di miglioramento. Si apre GitHub Issues con i campi precompilati.</p><button class="w-full flex items-center justify-center gap-2 p-3 bg-primary text-on-primary font-label-md text-xs rounded-lg active:scale-95 transition-transform"><span class="material-symbols-outlined text-sm">open_in_new</span> Invia feedback su GitHub</button></div></div></div>
+</div>
+<!-- Danger Zone -->
+<section class="pt-lg">
+<h3 class="font-label-sm text-label-sm uppercase tracking-widest text-on-surface-variant mb-sm px-1">Danger Zone</h3>
+<div class="bg-error-container/10 border border-error/20 rounded-xl overflow-hidden">
+<button class="w-full flex items-center justify-between p-md hover:bg-error-container/20 transition-colors">
+<div class="flex items-center gap-sm text-error">
+<span class="material-symbols-outlined">delete_forever</span>
+<span class="font-label-md">Elimina Cronologia Scansioni</span>
+</div>
+</button>
+
+</div>
+</section>
+</main>
+<!-- Bottom Navigation Bar -->
+<nav class="fixed bottom-0 left-0 w-full z-50 flex justify-around items-center px-4 py-2 pb-safe bg-surface border-t border-outline-variant shadow-md">
+<a class="flex flex-col items-center justify-center text-on-surface-variant hover:bg-surface-container-low transition-transform active:scale-90 duration-200" href="#">
+<span class="material-symbols-outlined">home</span>
+<span class="font-label-sm text-[10px] tracking-tight">Home</span>
+</a>
+<a class="flex flex-col items-center justify-center text-on-surface-variant hover:bg-surface-container-low transition-transform active:scale-90 duration-200" href="#">
+<span class="material-symbols-outlined">star</span>
+<span class="font-label-sm text-[10px] tracking-tight">Favorites</span>
+</a>
+<a class="flex flex-col items-center justify-center text-primary font-bold active:scale-90 transition-transform duration-200 relative" href="#">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 1;">settings</span>
+<span class="font-label-sm text-[10px] tracking-tight">Settings</span>
+<div class="absolute -bottom-1 w-1 h-1 bg-primary rounded-full"></div>
+</a>
+</nav>
+<script>
+    function toggleAccordion(id) {
+        const el = document.getElementById(id);
+        const isActive = el.classList.contains('accordion-active');
+        
+        // Optionally close others
+        /*
+        document.querySelectorAll('.accordion-item').forEach(item => {
+            item.classList.remove('accordion-active');
+        });
+        */
+
+        if (!isActive) {
+            el.classList.add('accordion-active');
+        } else {
+            el.classList.remove('accordion-active');
+        }
+    }
+
+    // Haptic feedback simulation
+    document.querySelectorAll('button, a').forEach(el => {
+        el.addEventListener('click', () => {
+            if (window.navigator.vibrate) {
+                window.navigator.vibrate(5);
+            }
+        });
+    });
+</script>
+
+
+
+
+
+
+
+
+
+
+</body></html>

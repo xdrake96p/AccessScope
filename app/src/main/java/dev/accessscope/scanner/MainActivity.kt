@@ -1,8 +1,8 @@
 /**
  * Activity principale dell'applicazione AccessScope.
  *
- * Configura l'interfaccia Compose con navigazione tra home, impostazioni e report,
- * e aggiorna lo stato dei permessi al ritorno in primo piano.
+ * Configura tema Compose, navigation drawer e bottom bar contestuali a due zone
+ * (principale / sessione) attorno al grafo di navigazione.
  */
 package dev.accessscope.scanner
 
@@ -16,16 +16,36 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.DrawerValue
+import androidx.compose.material3.ModalDrawerSheet
+import androidx.compose.material3.ModalNavigationDrawer
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.navigation.NavHostController
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
+import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
+import dev.accessscope.scanner.ui.components.AccessScopeDrawerContent
+import dev.accessscope.scanner.ui.components.BottomZone
+import dev.accessscope.scanner.ui.components.MainBottomBar
+import dev.accessscope.scanner.ui.components.SessionBottomBar
+import dev.accessscope.scanner.ui.components.SessionTab
+import dev.accessscope.scanner.ui.components.zoneForRoute
 import dev.accessscope.scanner.ui.screen.DynamicReportScreen
+import dev.accessscope.scanner.ui.screen.FavoritesScreen
 import dev.accessscope.scanner.ui.screen.FeedbackScreen
 import dev.accessscope.scanner.ui.screen.HomeScreen
 import dev.accessscope.scanner.ui.screen.LogCheckerScreen
@@ -33,33 +53,32 @@ import dev.accessscope.scanner.ui.screen.ReportScreen
 import dev.accessscope.scanner.ui.screen.ScanHistoryScreen
 import dev.accessscope.scanner.ui.screen.SettingsScreen
 import dev.accessscope.scanner.ui.screen.ViolationDetailScreen
+import dev.accessscope.scanner.ui.screen.onboarding.OnboardingScreen
+import dev.accessscope.scanner.ui.screen.onboarding.SplashScreen
 import dev.accessscope.scanner.ui.theme.AccessScopeMotion
 import dev.accessscope.scanner.ui.theme.AccessScopeTheme
 import dev.accessscope.scanner.ui.viewmodel.ScanViewModel
+import dev.accessscope.scanner.util.OnboardingStore
 import dev.accessscope.scanner.util.PdfHelper
+import kotlinx.coroutines.launch
 
 /**
  * Activity host dell'interfaccia utente AccessScope.
  *
- * Avvia il tema Compose, il [ScanViewModel] e il grafo di navigazione tra le schermate
- * principali dell'app.
+ * Avvia il tema Compose, il [ScanViewModel] e la shell di navigazione con
+ * drawer e bottom bar a due zone.
  */
 class MainActivity : ComponentActivity() {
 
     private val scanViewModel: ScanViewModel by viewModels()
 
-    /**
-     * Configura l'edge-to-edge e imposta il contenuto Compose con tema e navigazione.
-     *
-     * @param savedInstanceState Stato salvato dell'activity, se presente.
-     */
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         setContent {
             val uiState by scanViewModel.uiState.collectAsStateWithLifecycle()
             AccessScopeTheme(themeMode = uiState.themeMode) {
-                AccessScopeNavHost(viewModel = scanViewModel)
+                AccessScopeAppRoot(viewModel = scanViewModel)
             }
         }
     }
@@ -74,16 +93,109 @@ class MainActivity : ComponentActivity() {
 }
 
 /**
- * Grafo di navigazione Compose per le schermate principali di AccessScope.
+ * Shell di navigazione con splash, onboarding, drawer e bottom bar contestuali.
  *
- * Definisce le rotte `home`, `settings` e `report` con transizioni animate
- * coerenti con il design system dell'app.
+ * Zona principale (tab Home/Preferiti/Settings) e zona sessione
+ * (tab Scansione/Dettagli/Report/Storico) mostrate in base alla route corrente.
  *
  * @param viewModel ViewModel condiviso che gestisce lo stato della scansione e del report.
  */
 @Composable
-private fun AccessScopeNavHost(viewModel: ScanViewModel) {
+private fun AccessScopeAppRoot(viewModel: ScanViewModel) {
     val navController = rememberNavController()
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val drawerState = rememberDrawerState(DrawerValue.Closed)
+    val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val backStackEntry by navController.currentBackStackEntryAsState()
+    val currentRoute = backStackEntry?.destination?.route
+    val zone = zoneForRoute(currentRoute)
+
+    var lastDetailRoute by remember { mutableStateOf<String?>(null) }
+
+    val sessionPackage = uiState.historyPackageName
+        ?: uiState.scanState.selectedPackages.firstOrNull()
+        ?: uiState.latestArchivedSession?.targetPackages?.firstOrNull()
+
+    fun navigateTab(route: String) {
+        navController.navigate(route) {
+            popUpTo("home") { saveState = true }
+            launchSingleTop = true
+            restoreState = true
+        }
+    }
+
+    ModalNavigationDrawer(
+        drawerState = drawerState,
+        gesturesEnabled = zone == BottomZone.MAIN,
+        drawerContent = {
+            ModalDrawerSheet {
+                AccessScopeDrawerContent(
+                    versionName = BuildConfig.VERSION_NAME,
+                    historyEnabled = sessionPackage != null,
+                    onCronologia = {
+                        scope.launch { drawerState.close() }
+                        sessionPackage?.let { pkg -> navigateTab("history/$pkg") }
+                    },
+                    onUltimaSessione = {
+                        scope.launch { drawerState.close() }
+                        navigateTab("report")
+                    },
+                    onFeedback = {
+                        scope.launch { drawerState.close() }
+                        navController.navigate("feedback")
+                    },
+                )
+            }
+        },
+    ) {
+        Scaffold(
+            bottomBar = {
+                when (zone) {
+                    BottomZone.MAIN -> MainBottomBar(
+                        currentRoute = currentRoute,
+                        onSelect = ::navigateTab,
+                    )
+                    BottomZone.SESSION -> SessionBottomBar(
+                        currentRoute = currentRoute,
+                        storicoEnabled = sessionPackage != null,
+                        onSelect = { tab ->
+                            when (tab) {
+                                SessionTab.SCANSIONE -> navigateTab("report")
+                                SessionTab.DETTAGLI -> navigateTab(lastDetailRoute ?: "report")
+                                SessionTab.REPORT -> navigateTab("dynamic_report")
+                                SessionTab.STORICO -> sessionPackage?.let { pkg -> navigateTab("history/$pkg") }
+                            }
+                        },
+                    )
+                    BottomZone.NONE -> Unit
+                }
+            },
+        ) { padding ->
+            AccessScopeNavHost(
+                viewModel = viewModel,
+                navController = navController,
+                modifier = Modifier.padding(padding),
+                onOpenDrawer = { scope.launch { drawerState.open() } },
+                onViolationDetailOpened = { route -> lastDetailRoute = route },
+            )
+        }
+    }
+}
+
+/**
+ * Grafo di navigazione Compose per le schermate di AccessScope.
+ *
+ * @param onViolationDetailOpened Notifica la route del dettaglio aperto (tab Dettagli).
+ */
+@Composable
+private fun AccessScopeNavHost(
+    viewModel: ScanViewModel,
+    navController: NavHostController,
+    modifier: Modifier = Modifier,
+    onOpenDrawer: () -> Unit = {},
+    onViolationDetailOpened: (String) -> Unit = {},
+) {
     val context = LocalContext.current
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val fadeInSpec = fadeIn(animationSpec = AccessScopeMotion.screenEnterTween)
@@ -93,17 +205,53 @@ private fun AccessScopeNavHost(viewModel: ScanViewModel) {
     val popEnter = slideInHorizontally(animationSpec = AccessScopeMotion.navSpring) { -it } + fadeInSpec
     val popExit = slideOutHorizontally(animationSpec = AccessScopeMotion.navSpring) { -it } + fadeOutSpec
 
-    NavHost(navController = navController, startDestination = "home") {
+    fun openViolationDetail(dedupeKey: String) {
+        val encoded = Base64.encodeToString(
+            dedupeKey.toByteArray(Charsets.UTF_8),
+            Base64.URL_SAFE or Base64.NO_WRAP,
+        )
+        val route = "violation_detail/$encoded"
+        onViolationDetailOpened(route)
+        navController.navigate(route)
+    }
+
+    NavHost(
+        navController = navController,
+        startDestination = "splash",
+        modifier = modifier,
+    ) {
+        composable("splash") {
+            SplashScreen(
+                onFinished = {
+                    val store = OnboardingStore(context)
+                    val destination = if (store.isOnboardingCompleted()) "home" else "onboarding"
+                    navController.navigate(destination) {
+                        popUpTo("splash") { inclusive = true }
+                    }
+                },
+            )
+        }
+        composable("onboarding") {
+            OnboardingScreen(
+                onFinish = { dontShowAgain ->
+                    OnboardingStore(context).setOnboardingCompleted(dontShowAgain)
+                    navController.navigate("home") {
+                        popUpTo("onboarding") { inclusive = true }
+                    }
+                },
+            )
+        }
         composable("home") {
             HomeScreen(
                 viewModel = viewModel,
                 onOpenReport = { navController.navigate("report") },
                 onOpenDynamicReport = { navController.navigate("dynamic_report") },
-                onOpenSettings = { navController.navigate("settings") },
-                onOpenHistory = { packageName ->
-                    navController.navigate("history/$packageName")
-                },
+                onOpenHistory = { packageName -> navController.navigate("history/$packageName") },
+                onOpenDrawer = onOpenDrawer,
             )
+        }
+        composable("favorites") {
+            FavoritesScreen(viewModel = viewModel)
         }
         composable(
             route = "settings",
@@ -153,13 +301,7 @@ private fun AccessScopeNavHost(viewModel: ScanViewModel) {
             DynamicReportScreen(
                 viewModel = viewModel,
                 onBack = { navController.popBackStack() },
-                onOpenViolationDetail = { dedupeKey ->
-                    val encoded = Base64.encodeToString(
-                        dedupeKey.toByteArray(Charsets.UTF_8),
-                        Base64.URL_SAFE or Base64.NO_WRAP,
-                    )
-                    navController.navigate("violation_detail/$encoded")
-                },
+                onOpenViolationDetail = ::openViolationDetail,
             )
         }
         composable(
@@ -173,13 +315,7 @@ private fun AccessScopeNavHost(viewModel: ScanViewModel) {
                 viewModel = viewModel,
                 onBack = { navController.popBackStack() },
                 onOpenPdf = { path -> PdfHelper.openPdf(context, path) },
-                onOpenViolationDetail = { dedupeKey ->
-                    val encoded = Base64.encodeToString(
-                        dedupeKey.toByteArray(Charsets.UTF_8),
-                        Base64.URL_SAFE or Base64.NO_WRAP,
-                    )
-                    navController.navigate("violation_detail/$encoded")
-                },
+                onOpenViolationDetail = ::openViolationDetail,
             )
         }
         composable(

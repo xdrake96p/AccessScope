@@ -3,13 +3,19 @@
  */
 package dev.accessscope.scanner.ui.components
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
 import androidx.compose.material.icons.outlined.RecordVoiceOver
@@ -22,12 +28,14 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import dev.accessscope.scanner.data.AccessibilityViolation
 import dev.accessscope.scanner.data.ScreenReaderFinding
 import dev.accessscope.scanner.report.DynamicScreenFrame
 import dev.accessscope.scanner.ui.theme.CardShape
+import dev.accessscope.scanner.ui.theme.JetBrainsMonoFamily
 import dev.accessscope.scanner.ui.theme.Success
 import dev.accessscope.scanner.ui.theme.contentSecondary
 import dev.accessscope.scanner.ui.theme.severityColor
@@ -77,66 +85,72 @@ fun ScreenIssueList(
 
         violations.forEachIndexed { index, violation ->
             val isSelected = violation.dedupeKey == selectedDedupeKey
-            Card(
+            Row(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 16.dp)
+                    .height(IntrinsicSize.Min)
+                    .clip(CardShape)
+                    .background(
+                        if (isSelected) {
+                            severityColor(violation.type.severity).copy(alpha = 0.12f)
+                        } else {
+                            MaterialTheme.colorScheme.surfaceContainerLow
+                        },
+                    )
                     .clickable {
                         onViolationClick(violation, index)
                         onOpenViolationDetail(violation)
                     },
-                shape = CardShape,
-                colors = CardDefaults.cardColors(
-                    containerColor = if (isSelected) {
-                        severityColor(violation.type.severity).copy(alpha = 0.12f)
-                    } else {
-                        MaterialTheme.colorScheme.surface
-                    },
-                ),
-                elevation = CardDefaults.cardElevation(
-                    defaultElevation = if (isSelected) 2.dp else 1.dp,
-                ),
             ) {
-                Row(
+                // Barra laterale di gravità
+                Box(
                     modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(14.dp),
-                    verticalAlignment = Alignment.CenterVertically,
+                        .width(4.dp)
+                        .fillMaxHeight()
+                        .background(severityColor(violation.type.severity)),
+                )
+                Column(
+                    modifier = Modifier
+                        .weight(1f)
+                        .padding(12.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
                 ) {
-                    Text(
-                        "${index + 1}",
-                        style = MaterialTheme.typography.labelLarge,
-                        fontWeight = FontWeight.Bold,
-                        color = severityColor(violation.type.severity),
-                        modifier = Modifier.padding(end = 12.dp),
-                    )
-                    Column(modifier = Modifier.weight(1f)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
                         Text(
                             violation.type.displayName,
-                            style = MaterialTheme.typography.bodyLarge,
-                            fontWeight = FontWeight.Medium,
-                            color = severityColor(violation.type.severity),
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.SemiBold,
+                            modifier = Modifier.weight(1f),
                         )
+                        Icon(
+                            Icons.AutoMirrored.Outlined.KeyboardArrowRight,
+                            contentDescription = "Vedi dettaglio",
+                            tint = contentSecondary(),
+                            modifier = Modifier.size(20.dp),
+                        )
+                    }
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+                        SeverityChip(severity = violation.type.severity)
                         Text(
                             violation.type.wcagRef,
                             style = MaterialTheme.typography.labelSmall,
-                            color = contentSecondary(),
+                            fontFamily = JetBrainsMonoFamily,
+                            color = MaterialTheme.colorScheme.primary,
                         )
-                        violation.details.takeIf { it.isNotBlank() }?.let {
-                            Text(
-                                it,
-                                style = MaterialTheme.typography.bodySmall,
-                                color = contentSecondary(),
-                                maxLines = 2,
-                            )
-                        }
                     }
-                    Icon(
-                        Icons.AutoMirrored.Outlined.KeyboardArrowRight,
-                        contentDescription = null,
-                        tint = contentSecondary(),
-                        modifier = Modifier.size(20.dp),
-                    )
+                    violation.details.takeIf { it.isNotBlank() }?.let {
+                        Text(
+                            it,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = contentSecondary(),
+                            maxLines = 2,
+                        )
+                    }
                 }
             }
         }

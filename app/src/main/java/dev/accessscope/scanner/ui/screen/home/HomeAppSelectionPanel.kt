@@ -1,15 +1,11 @@
+/**
+ * Pannello Home per ricerca e opzioni di selezione app (senza elenco completo).
+ */
 package dev.accessscope.scanner.ui.screen.home
 
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.SelectAll
-import androidx.compose.material3.Icon
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -26,6 +22,15 @@ import dev.accessscope.scanner.ui.theme.contentSecondary
 import dev.accessscope.scanner.ui.viewmodel.AppListUiState
 import dev.accessscope.scanner.ui.viewmodel.ScanViewModel
 
+/**
+ * Card con ricerca app, banner auto-launch, toggle sistema e clear selezione.
+ *
+ * @param query Testo corrente della ricerca.
+ * @param onQueryChange Aggiorna la query (i risultati restano in [HomeScreen]).
+ * @param appListState Stato elenco/selezione dal ViewModel.
+ * @param viewModel Azioni selezione e filtri.
+ * @param isScanning Disabilita i controlli durante lo scan.
+ */
 @Composable
 internal fun AppSelectionPanel(
     query: String,
@@ -37,7 +42,7 @@ internal fun AppSelectionPanel(
 ) {
     AccessScopeCard(modifier = modifier.fillMaxWidth()) {
         Text(
-            "Seleziona app da analizzare",
+            "Cerca app da analizzare",
             style = androidx.compose.material3.MaterialTheme.typography.titleMedium,
             fontWeight = FontWeight.SemiBold,
             color = androidx.compose.material3.MaterialTheme.colorScheme.primary,
@@ -48,7 +53,8 @@ internal fun AppSelectionPanel(
             autoLaunchEnabled = appListState.autoLaunchEnabled,
         )
         Text(
-            "La stella aggiunge ai preferiti e attiva subito il monitoraggio (una sola app per sessione).",
+            "Cerca per nome o package, poi attiva lo switch. La stella aggiunge ai preferiti " +
+                "(una sola app per sessione).",
             style = androidx.compose.material3.MaterialTheme.typography.bodySmall,
             color = contentSecondary(),
         )
@@ -57,21 +63,19 @@ internal fun AppSelectionPanel(
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Text("Mostra app di sistema", style = androidx.compose.material3.MaterialTheme.typography.bodyMedium)
+            Text("Includi app di sistema", style = androidx.compose.material3.MaterialTheme.typography.bodyMedium)
             Switch(
                 checked = appListState.includeSystemApps,
                 onCheckedChange = { viewModel.toggleIncludeSystemApps() },
                 enabled = !isScanning,
             )
         }
-        Row {
-            TextButton(onClick = viewModel::selectAllVisible, enabled = !isScanning) {
-                Icon(Icons.Outlined.SelectAll, contentDescription = null, modifier = Modifier.size(18.dp))
-                Spacer(Modifier.width(4.dp))
-                Text("Prima visibile")
-            }
-            TextButton(onClick = viewModel::clearSelection, enabled = !isScanning) {
-                Text("Nessuna")
+        if (appListState.selectedPackages.isNotEmpty()) {
+            TextButton(
+                onClick = viewModel::clearSelection,
+                enabled = !isScanning,
+            ) {
+                Text("Deseleziona")
             }
         }
     }

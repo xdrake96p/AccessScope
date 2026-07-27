@@ -6,7 +6,7 @@
 **Package:** `dev.accessscope.scanner`  
 **Branch principale sviluppo:** `develop`  
 **Branch release stabile:** `main`  
-**Ultimo aggiornamento:** 10 luglio 2026 (v1.3.1 app · precisione anti-FP touch/titoli/report)
+**Ultimo aggiornamento:** 27 luglio 2026 (restyle Home: ricerca app senza elenco completo)
 
 **Manuale utente e tecnico:** [`docs/MANUALE_UTENTE.md`](MANUALE_UTENTE.md) — installazione, uso plugin AS/VS Code, troubleshooting.
 
@@ -95,6 +95,55 @@ Utente → HomeScreen (selezione app) → Avvia scan
 ---
 
 ## Cronologia sviluppo
+
+### Home search-only (27 luglio 2026, branch `restyle`)
+
+- Home non mostra più l’elenco completo delle app installate: solo campo ricerca + risultati mentre digiti
+- A riposo resta visibile al più l’app già selezionata (per deselezionare) e l’hint «digita nome/package»
+- Rimosso «Prima visibile» dal pannello selezione; preferiti restano nel tab dedicato
+- **Preferiti:** solo app con stella (rimossa sezione «Altre App»); ricerca filtra tra i preferiti; aggiunta nuove preferite dalla stella in Home
+- **A11y dogfooding:** `FavoriteAccent` adattivo (ambra scura in light ≥5:1); CTA «Avvia scansione» disabled con surface/onSurfaceVariant (≥4.5:1, prima ~1.5:1)
+
+### Restyle "Scanner & HUD" — F1–F6 completato (23 luglio 2026, branch `restyle`)
+
+Completato il restyle UI dai materiali Stitch (`docs/restyle/`, piano in `PIANO_RESTYLE.md`). Zero modifiche ad analyzer/service/data/bridge: **134 test JVM verdi**.
+
+**F1 — Splash + Onboarding (nuove):**
+- `onboarding/SplashScreen.kt`: gradiente teal animato, scanline HUD, corner accents, entrance logo, versione da `BuildConfig` (abilitato `buildConfig` nel gradle)
+- `onboarding/OnboardingScreen.kt`: `HorizontalPager` 6 pagine (Benvenuto, Problema, Ecosistema, Come funziona, 8 aree WCAG, Risultati benchmark) con dots, "Salta tutto", checkbox "non mostrare più"
+- `util/OnboardingStore.kt` (SharedPreferences); startDestination `splash` → onboarding solo al primo avvio
+- Copy corretto rispetto ai mockup: navigazione **manuale** (non bot), **on-device** (non cloud), GitHub (non GitLab), 40 tipi di violazione
+
+**F2 — Navigazione a due zone + Home:**
+- Bottom bar contestuali (`AccessScopeBottomBar.kt`): zona principale `Home/Preferiti/Settings`, zona sessione `Scansione/Dettagli/Report/Storico` (switch su route)
+- `ModalNavigationDrawer` (`AccessScopeDrawer.kt`): brand + Cronologia/Ultima sessione/Suggerimenti
+- Home riscritta: `HomeHeroCard` (griglia HUD + CTA pill), `HomeLastSessionCard` (donut + PROBLEMI/CONTROLLI OK), CTA "Vedi report dinamico"
+- `FavoritesScreen` nuova (tab): card preferiti + altre app con stelle; pensionati `HeroHeader`, `HomeScanActionBar`, `ScanHistoryEntryButton`
+
+**F3 — Report:** donut `ReportDonutOverview` (score + TOTALE/OK/KO) al posto di `ReportSummaryCard`; `ViolationCard`/`ScreenIssueList` con barra laterale gravità + `SeverityChip`; score card in `DynamicReportScreen`; `ViolationDetailScreen` riscritto (hero + chip + ID, before/after contrasto, azioni correttive numerate, Pro Tip, bento tecnico, bottom bar "Condividi report")
+
+**F4 — Storico:** righe sessione con icona app, data mono, trend arrow ±N da `scoreDelta`, chip `NN/100` (soglia 70)
+
+**F5 — Settings + Feedback:** sezioni `SettingsAccordion` (Permessi 2/2, Ambiti, Categorie, Preferenze, Diagnostica, Legali, Suggerimenti) + **Danger Zone** "Elimina cronologia" (nuovo `ScanHistoryStore.clearAll()` + passthrough controller/VM); Feedback con segmented control tipo e CTA pill "INVIA SU GITHUB"
+
+**F6 — Polish:** overlay STOP con nuovi token (`#0D1518`/`#BA1A1A`); **dogfooding WCAG** sulla palette (script contrasto): tutto AA PASS tranne `outline` light (4.26:1) → `severityColor(MINOR)` spostato su `onSurfaceVariant`
+
+Nota build: Gradle richiede JDK ≤ 21 (JBR Android Studio) — il JDK 25 di sistema non è supportato da Gradle 8.9.
+
+### Restyle "Scanner & HUD" — F0 design tokens (23 luglio 2026, branch `restyle`)
+
+Avvio restyle UI dai materiali Stitch (`docs/restyle/`, piano in `PIANO_RESTYLE.md`). **F0 — solo token, zero cambi comportamentali:**
+
+- **Palette:** nuovo schema Electric Teal (light: primary `#006875`, container `#00E5FF`; dark: surface `#0D1518`, primary `#C3F5FF`) con tier `surfaceContainer*` completi in `Theme.kt`
+- **Compat layer in `Color.kt`:** i nomi storici (`BrandPrimary`, `Danger`, `Success`, `Warning`, `BrandDark`…) restano come getter `@Composable` delegati allo `colorScheme` → nessuna modifica ai componenti
+- **severityColor()** ora `@Composable`: CRITICAL/SERIOUS → error, MODERATE → ambra (`tertiary` light / `tertiaryFixedDim` dark), MINOR → outline
+- **Tipografia tri-font:** Hanken Grotesk (display), Inter (body), JetBrains Mono (label) via downloadable fonts Google (`ui-text-google-fonts` + `res/values/font_certs.xml`), fallback font di sistema
+- **Shape:** aggiunta `PillShape` (CTA); **XML:** `colors.xml`/`themes.xml` allineati ai nuovi token
+- Successo semantico: verde → teal `primary` (come da DESIGN.md Stitch)
+
+Nota build: Gradle richiede JDK ≤ 21 (JBR Android Studio) — il JDK 25 di sistema non è supportato da Gradle 8.9.
+
+Verifica: `./gradlew :app:testDebugUnitTest :app:assembleDebug` (**134** test JVM verdi).
 
 ### Precisione anti-FP (touch, titoli, report) — 10 luglio 2026
 

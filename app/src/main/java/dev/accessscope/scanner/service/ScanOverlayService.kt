@@ -74,7 +74,8 @@ class ScanOverlayService : Service() {
         val pad = (10 * density).toInt()
 
         val cardBg = GradientDrawable().apply {
-            setColor(0x990B0F19.toInt())
+            // Deep space del nuovo design system (surface dark #0D1518, 60% opaco)
+            setColor(0x990D1518.toInt())
             setStroke((1 * density).toInt(), 0x55FFFFFF)
             cornerRadius = 16 * density
         }
@@ -103,7 +104,8 @@ class ScanOverlayService : Service() {
         buttonRow.addView(
             createPillButton(
                 label = "STOP",
-                bgColor = 0xFFDC2626.toInt(),
+                // Error del nuovo design system (#BA1A1A)
+                bgColor = 0xFFBA1A1A.toInt(),
                 onClick = { stopScanNow("button") },
             ),
         )

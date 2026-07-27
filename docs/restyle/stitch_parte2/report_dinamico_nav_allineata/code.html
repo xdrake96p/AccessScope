@@ -1,0 +1,228 @@
+<!DOCTYPE html><html class="light" lang="it"><head><meta charset="utf-8"><meta content="width=device-width, initial-scale=1.0, viewport-fit=cover" name="viewport"><link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;500;600;700;800&amp;family=Inter:wght@400;500;600&amp;family=JetBrains+Mono:wght@500&amp;display=swap" rel="stylesheet"><link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=block" rel="stylesheet"><script id="tailwind-config">try{
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            "colors": {
+                    "on-secondary-container": "#eadfff",
+                    "on-primary-fixed": "#001f24",
+                    "secondary-fixed": "#e8ddff",
+                    "on-primary": "#ffffff",
+                    "on-error": "#ffffff",
+                    "outline": "#6b7a7d",
+                    "on-surface": "#1c1b1b",
+                    "surface-tint": "#006875",
+                    "surface-container-high": "#ebe7e7",
+                    "on-tertiary-fixed-variant": "#594400",
+                    "surface-bright": "#fcf9f8",
+                    "on-background": "#1c1b1b",
+                    "surface-container": "#f0edec",
+                    "inverse-surface": "#313030",
+                    "error": "#ba1a1a",
+                    "error-container": "#ffdad6",
+                    "on-error-container": "#93000a",
+                    "surface-container-lowest": "#ffffff",
+                    "surface-variant": "#e5e2e1",
+                    "on-tertiary": "#ffffff",
+                    "surface-container-low": "#f6f3f2",
+                    "primary-fixed": "#9cf0ff",
+                    "on-tertiary-container": "#6f5500",
+                    "outline-variant": "#bac9cc",
+                    "tertiary": "#765a00",
+                    "surface-dim": "#dcd9d9",
+                    "on-primary-fixed-variant": "#004f58",
+                    "tertiary-container": "#fec931",
+                    "secondary": "#5b00df",
+                    "inverse-on-surface": "#f3f0ef",
+                    "surface-container-highest": "#e5e2e1",
+                    "surface": "#fcf9f8",
+                    "primary": "#006875",
+                    "on-secondary-fixed": "#22005d",
+                    "on-primary-container": "#00626e",
+                    "secondary-fixed-dim": "#cfbdff",
+                    "on-secondary": "#ffffff",
+                    "tertiary-fixed": "#ffdf96",
+                    "inverse-primary": "#00daf3",
+                    "on-surface-variant": "#3b494c",
+                    "background": "#fcf9f8",
+                    "primary-container": "#00e5ff",
+                    "tertiary-fixed-dim": "#f3bf26",
+                    "secondary-container": "#7531ff",
+                    "on-tertiary-fixed": "#251a00",
+                    "primary-fixed-dim": "#00daf3",
+                    "on-secondary-fixed-variant": "#5300cd"
+            },
+            "borderRadius": {
+                    "DEFAULT": "0.25rem",
+                    "lg": "0.5rem",
+                    "xl": "0.75rem",
+                    "full": "9999px"
+            },
+            "spacing": {
+                    "xs": "4px",
+                    "sm": "12px",
+                    "xl": "64px",
+                    "margin-mobile": "20px",
+                    "margin-desktop": "32px",
+                    "base": "8px",
+                    "lg": "40px",
+                    "gutter": "16px",
+                    "md": "24px"
+            },
+            "fontFamily": {
+                    "headline-lg-mobile": ["Hanken Grotesk"],
+                    "display-lg": ["Hanken Grotesk"],
+                    "body-lg": ["Inter"],
+                    "label-sm": ["JetBrains Mono"],
+                    "label-md": ["JetBrains Mono"],
+                    "body-md": ["Inter"],
+                    "headline-md": ["Hanken Grotesk"],
+                    "headline-lg": ["Hanken Grotesk"]
+            },
+            "fontSize": {
+                    "headline-lg-mobile": ["28px", {"lineHeight": "36px", "fontWeight": "700"}],
+                    "display-lg": ["40px", {"lineHeight": "48px", "letterSpacing": "-0.02em", "fontWeight": "800"}],
+                    "body-lg": ["18px", {"lineHeight": "28px", "fontWeight": "400"}],
+                    "label-sm": ["12px", {"lineHeight": "16px", "letterSpacing": "0.08em", "fontWeight": "500"}],
+                    "label-md": ["14px", {"lineHeight": "20px", "letterSpacing": "0.05em", "fontWeight": "500"}],
+                    "body-md": ["16px", {"lineHeight": "24px", "fontWeight": "400"}],
+                    "headline-md": ["24px", {"lineHeight": "32px", "fontWeight": "600"}],
+                    "headline-lg": ["32px", {"lineHeight": "40px", "fontWeight": "700"}]
+            }
+          },
+        },
+      }
+    }catch(_e){}</script><script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script></head><body class="bg-surface text-on-surface min-h-screen font-body-md overflow-x-hidden">
+<!-- TopAppBar -->
+<header class="fixed top-0 left-0 w-full z-50 flex justify-between items-center px-margin-mobile h-16 bg-surface/90 backdrop-blur-xl border-b border-outline-variant/30">
+<div class="flex items-center gap-4">
+<button class="material-symbols-outlined text-on-surface text-2xl" data-original-icon="arrow_back">circle</button>
+<h1 class="font-headline-lg-mobile text-[22px] font-bold tracking-tight text-on-surface">Report dinamico</h1>
+</div>
+<div class="flex items-center gap-2">
+<button class="w-10 h-10 flex items-center justify-center hover:bg-surface-container-high rounded-full transition-colors active:scale-95 duration-150">
+<span class="material-symbols-outlined text-on-surface-variant">settings</span>
+</button>
+</div>
+</header>
+<main class="pt-20 pb-32">
+<!-- Summary Card -->
+<div class="px-margin-mobile mt-2 mb-8">
+<div class="bg-secondary-container/10 border border-secondary/20 rounded-2xl p-5 relative overflow-hidden shadow-[0_0_20px_rgba(91,0,223,0.08)]">
+<div class="absolute -right-10 -top-10 w-32 h-32 bg-secondary/20 rounded-full blur-3xl"></div>
+<div class="absolute -left-10 -bottom-10 w-32 h-32 bg-primary-container/30 rounded-full blur-3xl"></div>
+<div class="relative z-10 flex justify-between items-center">
+<div>
+<p class="font-label-sm text-on-surface-variant uppercase tracking-wider mb-1">Punteggio stimato</p>
+<div class="flex items-end gap-1">
+<h2 class="font-display-lg text-secondary drop-shadow-[0_0_12px_rgba(91,0,223,0.25)] leading-none">53</h2>
+<span class="font-headline-md text-on-surface-variant/70 mb-1">/100</span>
+</div>
+</div>
+<div class="text-right">
+<p class="font-label-sm text-on-surface-variant uppercase tracking-wider mb-1">Data Scansione</p>
+<p class="font-body-md text-on-surface font-medium">23 Luglio 2026</p>
+</div>
+</div>
+</div>
+</div>
+<!-- Gravity Chips -->
+<div class="flex overflow-x-auto px-margin-mobile gap-3 no-scrollbar mb-8">
+<button class="px-5 py-2.5 bg-secondary-fixed text-on-secondary-fixed rounded-full font-label-md text-label-md border border-secondary/20 shadow-sm transition-all active:scale-95 whitespace-nowrap">Tutti (25)</button>
+<button class="px-5 py-2.5 bg-surface text-on-surface-variant rounded-full font-label-md text-label-md border border-outline-variant/50 hover:bg-surface-container-high transition-colors whitespace-nowrap">Critico (5)</button>
+<button class="px-5 py-2.5 bg-surface text-on-surface-variant rounded-full font-label-md text-label-md border border-outline-variant/50 hover:bg-surface-container-high transition-colors whitespace-nowrap">Grave (12)</button>
+<button class="px-5 py-2.5 bg-surface text-on-surface-variant rounded-full font-label-md text-label-md border border-outline-variant/50 hover:bg-surface-container-high transition-colors whitespace-nowrap">Medio (8)</button>
+</div>
+<!-- Main Content Area -->
+<div class="px-margin-mobile">
+<h3 class="font-headline-md text-[20px] text-on-surface mb-5 font-semibold">Schermate analizzate</h3>
+<div class="flex flex-col gap-10">
+<!-- Analysis Item 1 -->
+<div class="flex flex-col gap-5">
+<!-- Screenshot Container -->
+<div class="relative w-full aspect-[9/16] bg-surface-container-lowest rounded-2xl overflow-hidden shadow-[0_8px_30px_rgba(0,0,0,0.08)] border border-outline-variant/30"><img alt="App interface screenshot" class="w-full h-full object-cover" src="https://lh3.googleusercontent.com/aida-public/AB6AXuCoOYOZxskkWGLck7foyE5yStBaa9OpuXliRFwnVUNl223IXuAWNLVmhN2Zre0pRoDbVq4-e2CGa1IqBkEpZVHADDW74QVGH_NBvyqIvTz5-w-NiXUQvu3gG_Eb18_U__KCjADiB1DSWtPx5p1keZM3qWcl2KT2oM-0gtl5gws1bCqjAyn7KyhaHWJsxQE0XJ90ukJHYNfGDHKkmuR_UX1kvi1aCpPgIojG8N5HMwvZgZRsb6gLmBKC_iWpvK_gB-npLdU">
+<div class="absolute top-[18%] left-[10%] w-[65%] h-[12%] border-[3px] border-tertiary-container rounded-lg shadow-[0_0_15px_rgba(254,201,49,0.4)] pointer-events-none">
+<div class="absolute -top-3 -left-3 w-7 h-7 bg-tertiary-container text-on-tertiary-container rounded-full flex items-center justify-center font-label-sm font-bold shadow-md">1</div>
+</div>
+<div class="absolute top-[58%] left-[8%] w-[84%] h-[10%] border-[3px] border-tertiary-container rounded-lg shadow-[0_0_15px_rgba(254,201,49,0.4)] pointer-events-none">
+<div class="absolute -top-3 -left-3 w-7 h-7 bg-tertiary-container text-on-tertiary-container rounded-full flex items-center justify-center font-label-sm font-bold shadow-md">5</div>
+</div>
+<div class="absolute bottom-5 right-5 z-10">
+<div class="bg-[#2d2d2d] text-white px-3 py-1.5 rounded-md flex flex-col items-center gap-1 shadow-lg">
+<span class="text-[8px] font-bold uppercase tracking-tighter opacity-80">:: Trascina</span>
+<div class="bg-[#e92c2c] px-4 py-1 rounded font-bold text-sm">STOP</div>
+</div>
+</div></div>
+<!-- Detail Cards Container -->
+<div class="flex flex-col gap-3">
+<!-- Error Card 1 -->
+<div class="bg-surface-container-low p-4 rounded-xl border border-outline-variant/30 relative overflow-hidden shadow-sm hover:shadow-md transition-shadow">
+<div class="absolute left-0 top-0 bottom-0 w-1.5 bg-error"></div>
+<div class="flex items-start gap-4 pl-3">
+<div class="mt-0.5 w-10 h-10 rounded-full bg-error/10 flex items-center justify-center flex-shrink-0">
+<span class="material-symbols-outlined text-error text-[20px]">warning</span>
+</div>
+<div>
+<h4 class="font-headline-md text-[18px] text-on-surface mb-1.5 leading-snug">Area di tocco insufficiente</h4>
+<p class="font-body-md text-on-surface-variant text-[15px] leading-relaxed mb-3">L'elemento "Cognome" ha un'area interattiva di 32x32px. Il requisito minimo è di 48x48px per garantire l'usabilità.</p>
+<div class="flex gap-2 flex-wrap">
+<span class="px-2.5 py-1 bg-error/10 text-error rounded-md font-label-sm text-[11px] tracking-widest font-bold">GRAVE</span>
+<span class="px-2.5 py-1 bg-primary-container/40 text-on-primary-container rounded-md font-label-sm text-[11px] font-bold">WCAG 2.1 - 2.5.5</span>
+</div>
+</div>
+</div>
+</div>
+<!-- Error Card 2 (example) -->
+<div class="bg-surface-container-low p-4 rounded-xl border border-outline-variant/30 relative overflow-hidden shadow-sm hover:shadow-md transition-shadow">
+<div class="absolute left-0 top-0 bottom-0 w-1.5 bg-tertiary"></div>
+<div class="flex items-start gap-4 pl-3">
+<div class="mt-0.5 w-10 h-10 rounded-full bg-tertiary/10 flex items-center justify-center flex-shrink-0">
+<span class="material-symbols-outlined text-tertiary text-[20px]">error</span>
+</div>
+<div>
+<h4 class="font-headline-md text-[18px] text-on-surface mb-1.5 leading-snug">Contrasto testo non sufficiente</h4>
+<p class="font-body-md text-on-surface-variant text-[15px] leading-relaxed mb-3">Il titolo "Informazioni di contatto" ha un rapporto di contrasto di 3.2:1. Richiesto 4.5:1.</p>
+<div class="flex gap-2 flex-wrap">
+<span class="px-2.5 py-1 bg-tertiary/10 text-tertiary rounded-md font-label-sm text-[11px] tracking-widest font-bold">MEDIO</span>
+<span class="px-2.5 py-1 bg-primary-container/40 text-on-primary-container rounded-md font-label-sm text-[11px] font-bold">WCAG 2.1 - 1.4.3</span>
+</div>
+</div>
+</div>
+</div>
+</div>
+</div>
+</div>
+</div>
+</main>
+<!-- BottomNavBar -->
+<nav class="fixed bottom-0 left-0 w-full z-50 flex justify-around items-center px-4 py-3 pb-safe bg-surface/90 backdrop-blur-xl rounded-t-2xl border-t border-outline-variant/30 shadow-[0_-8px_30px_rgba(0,0,0,0.05)]"><a class="flex flex-col items-center justify-center text-on-surface-variant hover:text-primary transition-colors" href="#">
+<span class="material-symbols-outlined mb-1">radar</span>
+<span class="font-label-sm text-label-sm">Scansione</span>
+</a>
+<a class="flex flex-col items-center justify-center text-on-surface-variant hover:text-primary transition-colors" href="#">
+<span class="material-symbols-outlined mb-1" data-original-icon="description">description</span>
+<span class="font-label-sm text-label-sm">Dettagli</span>
+</a>
+<a class="flex flex-col items-center justify-center text-secondary relative after:content-[''] after:absolute after:-bottom-1 after:w-1 after:h-1 after:bg-secondary after:rounded-full after:shadow-[0_0_8px_#5b00df] scale-110 transition-all duration-200 ease-out" href="#">
+<span class="material-symbols-outlined mb-1" style="font-variation-settings: 'FILL' 1;">analytics</span>
+<span class="font-label-sm text-label-sm font-bold">Report</span>
+</a>
+<a class="flex flex-col items-center justify-center text-on-surface-variant hover:text-primary transition-colors" href="#">
+<span class="material-symbols-outlined mb-1">history</span>
+<span class="font-label-sm text-label-sm">Storico</span>
+</a></nav>
+<script class="">
+        // Micro-interaction for filter chips
+        const chips = document.querySelectorAll('.flex.overflow-x-auto button');
+        chips.forEach(chip => {
+            chip.addEventListener('click', () => {
+                chips.forEach(c => {
+                    c.classList.remove('bg-secondary-fixed', 'text-on-secondary-fixed', 'border-secondary/20');
+                    c.classList.add('bg-surface', 'text-on-surface-variant', 'border-outline-variant/50');
+                });
+                chip.classList.remove('bg-surface', 'text-on-surface-variant', 'border-outline-variant/50');
+                chip.classList.add('bg-secondary-fixed', 'text-on-secondary-fixed', 'border-secondary/20');
+            });
+        });
+    </script>
+</body></html>

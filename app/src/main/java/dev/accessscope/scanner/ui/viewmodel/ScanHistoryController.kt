@@ -57,6 +57,23 @@ internal class ScanHistoryController(
         }
     }
 
+    /**
+     * Elimina tutta la cronologia scansioni e azzera lo stato UI collegato.
+     */
+    fun clearHistory() {
+        scope.launch(Dispatchers.IO) {
+            scanHistoryStore.clearAll()
+            withContext(Dispatchers.Main) {
+                uiState.update {
+                    it.copy(
+                        latestArchivedSession = null,
+                        sessionComparison = null,
+                    )
+                }
+            }
+        }
+    }
+
     fun getScanHistory(packageName: String): List<ArchivedScanSession> =
         scanHistoryStore.getHistory(packageName)
 

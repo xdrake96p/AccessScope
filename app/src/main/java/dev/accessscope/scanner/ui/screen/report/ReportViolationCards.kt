@@ -4,11 +4,16 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
@@ -25,8 +30,9 @@ import androidx.compose.ui.unit.dp
 import dev.accessscope.scanner.data.AccessibilityViolation
 import dev.accessscope.scanner.data.ScreenReaderFinding
 import dev.accessscope.scanner.report.ReportHelper
+import dev.accessscope.scanner.ui.components.SeverityChip
 import dev.accessscope.scanner.ui.components.ViolationDetailLine
-import dev.accessscope.scanner.ui.theme.BrandPrimary
+import dev.accessscope.scanner.ui.theme.JetBrainsMonoFamily
 import dev.accessscope.scanner.ui.theme.accessScopeFocusRing
 import dev.accessscope.scanner.ui.theme.contentSecondary
 import dev.accessscope.scanner.ui.theme.severityColor
@@ -43,46 +49,66 @@ internal fun ViolationCard(
     val interactionSource = remember { MutableInteractionSource() }
     val cardShape = RoundedCornerShape(12.dp)
 
-    Column(
+    Row(
         modifier = Modifier
             .fillMaxWidth()
+            .height(IntrinsicSize.Min)
             .clip(cardShape)
-            .background(severityColor(type.severity).copy(alpha = 0.10f))
+            .background(MaterialTheme.colorScheme.surfaceContainerLow)
             .accessScopeFocusRing(shape = cardShape, interactionSource = interactionSource)
             .clickable(
                 interactionSource = interactionSource,
                 indication = null,
                 onClick = onOpen,
-            )
-            .padding(12.dp),
-        verticalArrangement = Arrangement.spacedBy(4.dp),
+            ),
     ) {
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-            Text(type.displayName, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    "${(violation.confidence * 100).roundToInt()}%",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = contentSecondary(),
-                )
+        // Barra laterale di gravità
+        Box(
+            modifier = Modifier
+                .width(4.dp)
+                .fillMaxHeight()
+                .background(severityColor(type.severity)),
+        )
+        Column(
+            modifier = Modifier
+                .weight(1f)
+                .padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                Text(type.displayName, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
                 Icon(
                     Icons.AutoMirrored.Outlined.KeyboardArrowRight,
-                    contentDescription = "Vedi evidenza",
+                    contentDescription = "Vedi dettaglio",
                     tint = contentSecondary(),
                     modifier = Modifier.size(20.dp),
                 )
             }
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+                SeverityChip(severity = type.severity)
+                Text(
+                    type.wcagRef,
+                    style = MaterialTheme.typography.labelSmall,
+                    fontFamily = JetBrainsMonoFamily,
+                    color = MaterialTheme.colorScheme.primary,
+                )
+                Text(
+                    "${(violation.confidence * 100).roundToInt()}%",
+                    style = MaterialTheme.typography.labelSmall,
+                    fontFamily = JetBrainsMonoFamily,
+                    color = contentSecondary(),
+                )
+            }
+            Text(violation.simpleExplanation, style = MaterialTheme.typography.bodySmall)
+            ReportHelper.violationDetailLines(violation).forEach { line ->
+                ViolationDetailLine(
+                    line = line,
+                    violation = violation,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+            Text("App: $appLabel", style = MaterialTheme.typography.labelSmall, color = contentSecondary())
         }
-        Text(type.wcagRef, style = MaterialTheme.typography.labelSmall, color = BrandPrimary)
-        Text(violation.simpleExplanation, style = MaterialTheme.typography.bodySmall)
-        ReportHelper.violationDetailLines(violation).forEach { line ->
-            ViolationDetailLine(
-                line = line,
-                violation = violation,
-                modifier = Modifier.fillMaxWidth(),
-            )
-        }
-        Text("App: $appLabel", style = MaterialTheme.typography.labelSmall, color = contentSecondary())
     }
 }
 

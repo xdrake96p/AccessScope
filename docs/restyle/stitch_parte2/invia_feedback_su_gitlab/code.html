@@ -1,0 +1,200 @@
+<!DOCTYPE html><html class="light" lang="it"><head>
+<meta charset="utf-8">
+<meta content="width=device-width, initial-scale=1.0" name="viewport">
+<title>Invia Feedback su GitLab</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;600;700;800&amp;family=Inter:wght@400;500;600&amp;family=JetBrains+Mono:wght@400;500&amp;display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet">
+<style>
+        .material-symbols-outlined {
+            font-variation-settings:
+            'FILL' 0,
+            'wght' 400,
+            'GRAD' 0,
+            'opsz' 24;
+        }
+    </style>
+<script id="tailwind-config">
+        tailwind.config = {
+          darkMode: "class",
+          theme: {
+            extend: {
+              "colors": {
+                      "error": "#ba1a1a",
+                      "primary-fixed": "#9cf0ff",
+                      "on-secondary-container": "#eadfff",
+                      "primary": "#006875",
+                      "surface-tint": "#006875",
+                      "outline-variant": "#bac9cc",
+                      "on-secondary": "#ffffff",
+                      "surface-container-high": "#ebe7e7",
+                      "on-background": "#1c1b1b",
+                      "on-primary-container": "#00626e",
+                      "tertiary-fixed": "#ffdf96",
+                      "surface-container-lowest": "#ffffff",
+                      "secondary": "#5b00df",
+                      "on-tertiary": "#ffffff",
+                      "on-tertiary-fixed-variant": "#594400",
+                      "on-primary-fixed": "#001f24",
+                      "secondary-fixed": "#e8ddff",
+                      "on-surface": "#1c1b1b",
+                      "inverse-primary": "#00daf3",
+                      "inverse-surface": "#313030",
+                      "surface-container-highest": "#e5e2e1",
+                      "surface-container": "#f0edec",
+                      "on-secondary-fixed": "#22005d",
+                      "on-surface-variant": "#3b494c",
+                      "on-primary": "#ffffff",
+                      "tertiary-container": "#fec931",
+                      "primary-container": "#00e5ff",
+                      "surface": "#fcf9f8",
+                      "on-error-container": "#93000a",
+                      "surface-dim": "#dcd9d9",
+                      "background": "#fcf9f8",
+                      "inverse-on-surface": "#f3f0ef",
+                      "outline": "#6b7a7d",
+                      "on-secondary-fixed-variant": "#5300cd",
+                      "on-tertiary-fixed": "#251a00",
+                      "on-tertiary-container": "#6f5500",
+                      "tertiary": "#765a00",
+                      "surface-bright": "#fcf9f8",
+                      "primary-fixed-dim": "#00daf3",
+                      "error-container": "#ffdad6",
+                      "tertiary-fixed-dim": "#f3bf26",
+                      "surface-variant": "#e5e2e1",
+                      "secondary-fixed-dim": "#cfbdff",
+                      "secondary-container": "#7531ff",
+                      "on-error": "#ffffff",
+                      "surface-container-low": "#f6f3f2",
+                      "on-primary-fixed-variant": "#004f58"
+              },
+              "borderRadius": {
+                      "DEFAULT": "0.25rem",
+                      "lg": "0.5rem",
+                      "xl": "0.75rem",
+                      "full": "9999px"
+              },
+              "spacing": {
+                      "xl": "64px",
+                      "margin-mobile": "20px",
+                      "sm": "12px",
+                      "base": "8px",
+                      "xs": "4px",
+                      "md": "24px",
+                      "gutter": "16px",
+                      "lg": "40px",
+                      "margin-desktop": "32px"
+              },
+              "fontFamily": {
+                      "display-lg": ["Hanken Grotesk"],
+                      "label-md": ["JetBrains Mono"],
+                      "headline-lg-mobile": ["Hanken Grotesk"],
+                      "headline-lg": ["Hanken Grotesk"],
+                      "body-md": ["Inter"],
+                      "body-lg": ["Inter"],
+                      "headline-md": ["Hanken Grotesk"],
+                      "label-sm": ["JetBrains Mono"]
+              },
+              "fontSize": {
+                      "display-lg": ["40px", { "lineHeight": "48px", "letterSpacing": "-0.02em", "fontWeight": "800" }],
+                      "label-md": ["14px", { "lineHeight": "20px", "letterSpacing": "0.05em", "fontWeight": "500" }],
+                      "headline-lg-mobile": ["28px", { "lineHeight": "36px", "fontWeight": "700" }],
+                      "headline-lg": ["32px", { "lineHeight": "40px", "fontWeight": "700" }],
+                      "body-md": ["16px", { "lineHeight": "24px", "fontWeight": "400" }],
+                      "body-lg": ["18px", { "lineHeight": "28px", "fontWeight": "400" }],
+                      "headline-md": ["24px", { "lineHeight": "32px", "fontWeight": "600" }],
+                      "label-sm": ["12px", { "lineHeight": "16px", "letterSpacing": "0.08em", "fontWeight": "500" }]
+              }
+      },
+          },
+        }
+      </script>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head>
+<body class="bg-background text-on-background font-body-md text-body-md antialiased min-h-screen pb-24">
+<!-- TopAppBar -->
+<header class="fixed top-0 w-full bg-surface/80 backdrop-blur-xl border-b border-outline-variant/10 z-50">
+<div class="flex justify-between items-center px-margin-mobile h-16 w-full">
+<button class="text-primary hover:bg-primary-container/20 transition-colors active:scale-95 duration-200 p-2 rounded-full flex items-center justify-center">
+<span class="material-symbols-outlined" data-icon="arrow_back">arrow_back</span>
+</button>
+<h1 class="font-headline-lg-mobile text-headline-lg-mobile text-primary tracking-tighter">Feedback &amp; Bug</h1>
+<button class="text-on-surface-variant hover:bg-primary-container/20 transition-colors active:scale-95 duration-200 p-2 rounded-full flex items-center justify-center">
+<span class="material-symbols-outlined" data-icon="more_vert">more_vert</span>
+</button>
+</div>
+</header>
+<!-- Main Content Canvas -->
+<main class="pt-[88px] px-margin-mobile max-w-2xl mx-auto space-y-md">
+<!-- Context Card -->
+<div class="bg-surface-container-lowest border border-outline-variant/20 rounded-xl p-md shadow-sm">
+<div class="flex items-start gap-4">
+<div class="bg-primary-container/20 p-3 rounded-full text-primary">
+<span class="material-symbols-outlined" data-icon="bug_report">bug_report</span>
+</div>
+<div>
+<h2 class="font-headline-md text-headline-md text-on-surface mb-xs">Invia Segnalazione</h2>
+<p class="text-on-surface-variant text-sm">Il tuo feedback aiuta a migliorare AccessScope. Le segnalazioni verranno inviate direttamente al nostro repository GitLab.</p>
+</div>
+</div>
+</div>
+<!-- Form Layout -->
+<form class="space-y-md">
+<!-- Type Selector (Segmented Control) -->
+<div class="space-y-sm">
+<label class="font-label-md text-label-md text-on-surface-variant block">Tipo di Feedback</label>
+<div class="flex bg-surface-container-high rounded-lg p-1">
+<button class="flex-1 py-2 px-4 rounded-md bg-primary-container text-on-primary-container font-label-md text-label-md shadow-sm transition-all duration-200 flex items-center justify-center gap-2" type="button">
+<span class="material-symbols-outlined text-sm" data-icon="pest_control">pest_control</span> Bug
+                    </button>
+<button class="flex-1 py-2 px-4 rounded-md text-on-surface-variant hover:bg-surface-container-highest font-label-md text-label-md transition-all duration-200 flex items-center justify-center gap-2" type="button">
+<span class="material-symbols-outlined text-sm" data-icon="lightbulb">lightbulb</span> Suggerimento
+                    </button>
+<button class="flex-1 py-2 px-4 rounded-md text-on-surface-variant hover:bg-surface-container-highest font-label-md text-label-md transition-all duration-200 flex items-center justify-center gap-2" type="button">
+<span class="material-symbols-outlined text-sm" data-icon="chat_bubble">chat_bubble</span> Altro
+                    </button>
+</div>
+</div>
+<!-- Title Input -->
+<div class="space-y-xs relative group">
+<label class="font-label-md text-label-md text-on-surface-variant block transition-colors group-focus-within:text-primary" for="title">Titolo</label>
+<input class="w-full bg-surface-container-lowest border-b border-outline-variant focus:border-primary focus:ring-0 px-0 py-2 text-on-surface font-body-md placeholder:text-outline transition-all bg-transparent" id="title" placeholder="Es. Errore caricamento report PDF" type="text">
+<div class="absolute bottom-0 left-0 h-0.5 bg-primary w-0 group-focus-within:w-full transition-all duration-300"></div>
+</div>
+<!-- Description Textarea -->
+<div class="space-y-xs relative group pt-2">
+<label class="font-label-md text-label-md text-on-surface-variant block transition-colors group-focus-within:text-primary" for="description">Descrizione Dettagliata</label>
+<textarea class="w-full bg-surface-container-lowest border border-outline-variant/30 focus:border-primary focus:ring-1 focus:ring-primary rounded-lg p-3 text-on-surface font-body-md placeholder:text-outline transition-all resize-y" id="description" placeholder="Descrivi i passaggi per riprodurre il problema o i dettagli del tuo suggerimento..." rows="5"></textarea>
+</div>
+<!-- Screenshot Upload Section -->
+<div class="space-y-sm pt-2">
+<label class="font-label-md text-label-md text-on-surface-variant flex items-center justify-between">
+<span>Allega Screenshot</span>
+<span class="text-xs text-outline">(Opzionale)</span>
+</label>
+<div class="border-2 border-dashed border-outline-variant/50 hover:border-primary/50 bg-surface-container-lowest rounded-xl p-md flex flex-col items-center justify-center gap-sm transition-colors cursor-pointer group">
+<div class="bg-surface-container-high group-hover:bg-primary-container/20 p-4 rounded-full text-on-surface-variant group-hover:text-primary transition-colors">
+<span class="material-symbols-outlined text-3xl" data-icon="add_photo_alternate">add_photo_alternate</span>
+</div>
+<div class="text-center">
+<p class="font-body-md text-body-md text-on-surface">Trascina un'immagine qui</p>
+<p class="font-label-sm text-label-sm text-outline">o clicca per sfogliare</p>
+</div>
+</div>
+</div>
+<!-- Submit Button Area (Sticky Bottom on Mobile) -->
+<div class="fixed bottom-0 left-0 w-full p-margin-mobile bg-surface/90 backdrop-blur-md border-t border-outline-variant/20 z-40 md:relative md:bg-transparent md:border-none md:p-0 md:pt-md">
+<button class="w-full bg-primary text-on-primary py-3 px-6 rounded-xl font-label-md text-label-md flex items-center justify-center gap-2 hover:bg-primary/90 active:scale-95 transition-all shadow-[0_8px_20px_rgb(0,104,117,0.2)]" type="button">
+<span class="material-symbols-outlined" data-icon="send">send</span>
+                    INVIA SU GITLAB
+                </button>
+</div>
+</form>
+</main>
+<!-- Navigation suppressed as this is a transactional form focusing on user input -->
+</body></html>

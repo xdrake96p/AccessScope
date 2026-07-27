@@ -3,8 +3,10 @@
  */
 package dev.accessscope.scanner.ui.screen
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -20,9 +22,11 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
+import androidx.compose.material.icons.automirrored.outlined.TrendingDown
+import androidx.compose.material.icons.automirrored.outlined.TrendingFlat
+import androidx.compose.material.icons.automirrored.outlined.TrendingUp
 import androidx.compose.material.icons.outlined.PictureAsPdf
 import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -39,14 +43,19 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import dev.accessscope.scanner.data.ArchivedScanSession
 import dev.accessscope.scanner.data.ViolationSeverity
 import dev.accessscope.scanner.report.SessionComparisonHelper
 import dev.accessscope.scanner.ui.components.AccessScopeCard
+import dev.accessscope.scanner.ui.components.AppIconAsync
 import dev.accessscope.scanner.ui.components.SessionComparisonCard
 import dev.accessscope.scanner.ui.theme.BrandPrimary
+import dev.accessscope.scanner.ui.theme.JetBrainsMonoFamily
+import dev.accessscope.scanner.ui.theme.PillShape
 import dev.accessscope.scanner.ui.theme.contentSecondary
 import dev.accessscope.scanner.ui.viewmodel.ScanViewModel
 import java.text.SimpleDateFormat
@@ -132,9 +141,15 @@ fun ScanHistoryScreen(
                         )
                     }
                 } else {
-                    items(sessions.reversed(), key = { it.id }) { session ->
+                    val reversed = sessions.reversed()
+                    items(reversed.size, key = { reversed[it].id }) { index ->
+                        val session = reversed[index]
+                        // Sessione cronologicamente precedente (per il delta di punteggio)
+                        val previousScore = reversed.getOrNull(index + 1)?.score
                         HistorySessionRow(
                             session = session,
+                            appLabel = appLabel,
+                            previousScore = previousScore,
                             dateFormat = dateFormat,
                             onClick = { selectedSession = session },
                         )
@@ -145,42 +160,97 @@ fun ScanHistoryScreen(
     }
 }
 
+/**
+ * Riga sessione stile mockup: icona app, titolo, data mono, trend delta e chip punteggio.
+ */
 @Composable
 private fun HistorySessionRow(
     session: ArchivedScanSession,
+    appLabel: String,
+    previousScore: Int?,
     dateFormat: SimpleDateFormat,
     onClick: () -> Unit,
 ) {
-    Card(
+    val context = LocalContext.current
+    val packageManager = remember(context) { context.packageManager }
+    val delta = previousScore?.let { session.score - it }
+    val scoreOk = session.score >= 70
+
+    Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable(onClick = onClick),
-        shape = RoundedCornerShape(12.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)),
+            .clip(RoundedCornerShape(12.dp))
+            .background(MaterialTheme.colorScheme.surfaceContainerLow)
+            .clickable(onClick = onClick)
+            .padding(14.dp),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(14.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Column(Modifier.weight(1f)) {
-                Text(
-                    dateFormat.format(Date(session.completedAtMs)),
-                    fontWeight = FontWeight.SemiBold,
+        session.targetPackages.firstOrNull()?.let { pkg ->
+            AppIconAsync(
+                packageName = pkg,
+                label = appLabel,
+                packageManager = packageManager,
+            )
+            Spacer(Modifier.width(12.dp))
+        }
+        Column(Modifier.weight(1f)) {
+            Text(
+                appLabel,
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 1,
+            )
+            Text(
+                dateFormat.format(Date(session.completedAtMs)),
+                style = MaterialTheme.typography.labelSmall,
+                fontFamily = JetBrainsMonoFamily,
+                color = contentSecondary(),
+            )
+            Text(
+                "${session.violations.size} problemi · ${session.uniqueScreens} schermate",
+                style = MaterialTheme.typography.labelSmall,
+                color = contentSecondary(),
+            )
+        }
+        if (delta != null) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.padding(end = 8.dp),
+            ) {
+                val (trendIcon, trendColor) = when {
+                    delta > 0 -> Icons.AutoMirrored.Outlined.TrendingUp to MaterialTheme.colorScheme.primary
+                    delta < 0 -> Icons.AutoMirrored.Outlined.TrendingDown to MaterialTheme.colorScheme.error
+                    else -> Icons.AutoMirrored.Outlined.TrendingFlat to contentSecondary()
+                }
+                Icon(
+                    trendIcon,
+                    contentDescription = if (delta > 0) "Migliorato" else if (delta < 0) "Peggiorato" else "Invariato",
+                    tint = trendColor,
+                    modifier = Modifier.size(18.dp),
                 )
                 Text(
-                    "${session.violations.size} violazioni · ${session.uniqueScreens} schermate · ${session.scanScopeLabel}",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = contentSecondary(),
+                    if (delta > 0) "+$delta" else "$delta",
+                    style = MaterialTheme.typography.labelMedium,
+                    fontFamily = JetBrainsMonoFamily,
+                    color = trendColor,
                 )
             }
+        }
+        Box(
+            modifier = Modifier
+                .clip(PillShape)
+                .background(
+                    if (scoreOk) MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)
+                    else MaterialTheme.colorScheme.error.copy(alpha = 0.12f),
+                )
+                .padding(horizontal = 10.dp, vertical = 5.dp),
+        ) {
             Text(
-                "${session.score}",
-                style = MaterialTheme.typography.titleLarge,
+                "${session.score}/100",
+                style = MaterialTheme.typography.labelSmall,
+                fontFamily = JetBrainsMonoFamily,
                 fontWeight = FontWeight.Bold,
-                color = BrandPrimary,
+                color = if (scoreOk) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
             )
         }
     }

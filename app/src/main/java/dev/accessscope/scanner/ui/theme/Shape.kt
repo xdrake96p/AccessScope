@@ -19,6 +19,9 @@ val ControlShape = RoundedCornerShape(14.dp)
 /** Raggio chip e badge compatti (20dp). */
 val ChipShape = RoundedCornerShape(20.dp)
 
+/** Pill piena (50%) per CTA primarie e status chip — firma del nuovo design. */
+val PillShape = RoundedCornerShape(percent = 50)
+
 /** Raggio elementi compatti interni (12dp). */
 val CompactShape = RoundedCornerShape(12.dp)
 

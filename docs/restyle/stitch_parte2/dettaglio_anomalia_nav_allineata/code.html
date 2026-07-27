@@ -1,0 +1,312 @@
+<!DOCTYPE html><html lang="it"><head>
+<meta charset="utf-8">
+<meta content="width=device-width, initial-scale=1.0" name="viewport">
+<title>AccessScope - Dettaglio Anomalia</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;600;700;800&amp;family=Inter:wght@400;500&amp;family=JetBrains+Mono:wght@500&amp;family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@100..900&amp;family=Inter:wght@100..900&amp;family=JetBrains+Mono:wght@100..900&amp;display=swap" rel="stylesheet">
+<style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+        .glass-effect {
+            backdrop-filter: blur(20px);
+            background: rgba(252, 249, 248, 0.8);
+            border: 1px solid rgba(0, 104, 117, 0.1);
+        }
+        .glow-shadow-primary {
+            box-shadow: 0 10px 30px -5px rgba(0, 104, 117, 0.12);
+        }
+        @keyframes pulse-subtle {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.8; }
+        }
+        .animate-pulse-subtle {
+            animation: pulse-subtle 3s ease-in-out infinite;
+        }
+    </style>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "outline-variant": "#bac9cc",
+                        "secondary": "#5b00df",
+                        "on-background": "#1c1b1b",
+                        "secondary-container": "#7531ff",
+                        "inverse-primary": "#00daf3",
+                        "secondary-fixed-dim": "#cfbdff",
+                        "surface-container-highest": "#e5e2e1",
+                        "on-secondary-fixed": "#22005d",
+                        "surface-bright": "#fcf9f8",
+                        "on-surface": "#1c1b1b",
+                        "on-tertiary-fixed": "#251a00",
+                        "surface-tint": "#006875",
+                        "background": "#fcf9f8",
+                        "on-primary-fixed-variant": "#004f58",
+                        "primary-fixed-dim": "#00daf3",
+                        "error-container": "#ffdad6",
+                        "on-secondary-container": "#eadfff",
+                        "on-tertiary": "#ffffff",
+                        "outline": "#6b7a7d",
+                        "on-tertiary-fixed-variant": "#594400",
+                        "on-secondary-fixed-variant": "#5300cd",
+                        "on-secondary": "#ffffff",
+                        "on-primary-container": "#00626e",
+                        "on-surface-variant": "#3b494c",
+                        "surface-container": "#f0edec",
+                        "tertiary-fixed-dim": "#f3bf26",
+                        "surface-dim": "#dcd9d9",
+                        "primary-fixed": "#9cf0ff",
+                        "surface": "#fcf9f8",
+                        "tertiary": "#765a00",
+                        "on-error-container": "#93000a",
+                        "tertiary-fixed": "#ffdf96",
+                        "surface-container-low": "#f6f3f2",
+                        "inverse-surface": "#313030",
+                        "surface-variant": "#e5e2e1",
+                        "primary-container": "#00e5ff",
+                        "on-error": "#ffffff",
+                        "secondary-fixed": "#e8ddff",
+                        "surface-container-high": "#ebe7e7",
+                        "inverse-on-surface": "#f3f0ef",
+                        "error": "#ba1a1a",
+                        "tertiary-container": "#fec931",
+                        "primary": "#006875",
+                        "surface-container-lowest": "#ffffff",
+                        "on-primary-fixed": "#001f24",
+                        "on-primary": "#ffffff",
+                        "on-tertiary-container": "#6f5500"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0.25rem",
+                        "lg": "0.5rem",
+                        "xl": "0.75rem",
+                        "full": "9999px"
+                    },
+                    "spacing": {
+                        "xs": "4px",
+                        "margin-mobile": "20px",
+                        "xl": "64px",
+                        "lg": "40px",
+                        "gutter": "16px",
+                        "margin-desktop": "32px",
+                        "md": "24px",
+                        "base": "8px",
+                        "sm": "12px"
+                    },
+                    "fontFamily": {
+                        "label-md": ["JetBrains Mono"],
+                        "headline-lg-mobile": ["Hanken Grotesk"],
+                        "body-lg": ["Inter"],
+                        "headline-lg": ["Hanken Grotesk"],
+                        "body-md": ["Inter"],
+                        "headline-md": ["Hanken Grotesk"],
+                        "display-lg": ["Hanken Grotesk"],
+                        "label-sm": ["JetBrains Mono"]
+                    },
+                    "fontSize": {
+                        "label-md": ["14px", {"lineHeight": "20px", "letterSpacing": "0.05em", "fontWeight": "500"}],
+                        "headline-lg-mobile": ["28px", {"lineHeight": "36px", "fontWeight": "700"}],
+                        "body-lg": ["18px", {"lineHeight": "28px", "fontWeight": "400"}],
+                        "headline-lg": ["32px", {"lineHeight": "40px", "fontWeight": "700"}],
+                        "body-md": ["16px", {"lineHeight": "24px", "fontWeight": "400"}],
+                        "headline-md": ["24px", {"lineHeight": "32px", "fontWeight": "600"}],
+                        "display-lg": ["40px", {"lineHeight": "48px", "letterSpacing": "-0.02em", "fontWeight": "800"}],
+                        "label-sm": ["12px", {"lineHeight": "16px", "letterSpacing": "0.08em", "fontWeight": "500"}]
+                    }
+                },
+            },
+        }
+    </script>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+</head>
+<body class="bg-background text-on-background min-h-screen font-body-md flex flex-col">
+<!-- TopAppBar -->
+<header class="bg-surface docked full-width top-0 border-b border-outline-variant flex justify-between items-center w-full px-margin-mobile h-16 z-50 sticky">
+<div class="flex items-center gap-sm">
+<button class="material-symbols-outlined text-primary hover:bg-surface-container transition-colors p-2 rounded-full" data-icon="arrow_back">arrow_back</button>
+<h1 class="font-headline-md text-headline-md font-bold text-primary">AccessScope</h1>
+</div>
+
+</header>
+<main class="flex-grow w-full max-w-screen-xl mx-auto px-margin-mobile py-lg pb-32">
+<!-- Hero Section: Header & Severity -->
+<div class="mb-lg space-y-sm">
+<div class="flex flex-wrap items-center gap-sm">
+<span class="bg-error text-on-error font-label-sm text-label-sm px-3 py-1 rounded-full uppercase tracking-wider flex items-center gap-1">
+<span class="material-symbols-outlined text-[16px]" data-icon="warning">warning</span>
+                    Critico
+                </span>
+<span class="text-on-surface-variant font-label-md text-label-md">ID: AS-2024-081</span>
+</div>
+<h2 class="font-display-lg text-display-lg text-on-surface leading-tight">Contrasto Colore Insufficiente</h2>
+<p class="font-body-lg text-body-lg text-on-surface-variant max-w-2xl">
+                Il testo dell'elemento non soddisfa i requisiti minimi di contrasto delle WCAG 2.1 Level AA. Questo rende il contenuto difficile o impossibile da leggere per utenti con disabilità visive.
+            </p>
+</div>
+<!-- Main Content Grid -->
+<div class="grid grid-cols-1 lg:grid-cols-12 gap-gutter">
+<!-- Visual Preview: The "Before vs After" Card -->
+<div class="lg:col-span-7">
+<div class="bg-surface-container-low border border-outline-variant rounded-xl overflow-hidden glow-shadow-primary h-full">
+<div class="p-md border-b border-outline-variant flex justify-between items-center bg-surface-bright">
+<h3 class="font-headline-md text-headline-md text-on-surface">Anteprima Visiva</h3>
+<span class="material-symbols-outlined text-primary" data-icon="visibility">visibility</span>
+</div>
+<div class="p-lg grid grid-cols-1 md:grid-cols-2 gap-lg h-full min-h-[300px]">
+<!-- Failing State -->
+<div class="flex flex-col gap-sm">
+<span class="font-label-sm text-label-sm text-on-surface-variant">STATO ATTUALE (1.8:1)</span>
+<div class="flex-grow flex flex-col items-center justify-center p-md rounded-lg border-2 border-dashed border-error/30 bg-white">
+<div class="bg-[#F0F0F0] text-[#A0A0A0] p-md rounded text-center w-full">
+<p class="font-body-md font-bold mb-2">Pulsante Azione</p>
+<span class="text-[10px] uppercase font-label-sm">Inaccessibile</span>
+</div>
+</div>
+</div>
+<!-- Suggested Fix -->
+<div class="flex flex-col gap-sm">
+<span class="font-label-sm text-label-sm text-on-surface-variant">CORREZIONE SUGGERITA (4.6:1)</span>
+<div class="flex-grow flex flex-col items-center justify-center p-md rounded-lg border-2 border-primary/20 bg-white shadow-sm">
+<div class="bg-primary text-on-primary p-md rounded text-center w-full">
+<p class="font-body-md font-bold mb-2">Pulsante Azione</p>
+<span class="text-[10px] uppercase font-label-sm">Conforme AA</span>
+</div>
+</div>
+</div>
+</div>
+</div>
+</div>
+<!-- Resolution Steps -->
+<div class="lg:col-span-5 space-y-gutter">
+<div class="bg-surface-container rounded-xl border border-outline-variant p-md">
+<div class="flex items-center gap-sm mb-md text-primary">
+<span class="material-symbols-outlined" data-icon="architecture">architecture</span>
+<h3 class="font-headline-md text-headline-md">Azioni Correttive</h3>
+</div>
+<div class="space-y-sm">
+<!-- Action Card 1 -->
+<div class="bg-surface-container-lowest p-md rounded-lg border border-outline-variant/50 hover:border-primary transition-all group cursor-pointer">
+<div class="flex items-start gap-sm">
+<div class="bg-primary-container text-on-primary-container w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 font-label-md">1</div>
+<div>
+<p class="font-body-md font-bold text-on-surface">Aumenta il rapporto di contrasto</p>
+<p class="text-label-sm text-on-surface-variant mt-1">Regola il colore del testo a <span class="bg-surface-container px-1 font-label-md">#006875</span> per raggiungere un rapporto di 4.5:1.</p>
+</div>
+</div>
+</div>
+<!-- Action Card 2 -->
+<div class="bg-surface-container-lowest p-md rounded-lg border border-outline-variant/50 hover:border-primary transition-all group cursor-pointer">
+<div class="flex items-start gap-sm">
+<div class="bg-primary-container text-on-primary-container w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 font-label-md">2</div>
+<div>
+<p class="font-body-md font-bold text-on-surface">Verifica la dimensione del font</p>
+<p class="text-label-sm text-on-surface-variant mt-1">Se il testo è inferiore a 18pt (24px), il rapporto deve essere superiore a 4.5:1.</p>
+</div>
+</div>
+</div>
+<!-- Action Card 3 -->
+<div class="bg-surface-container-lowest p-md rounded-lg border border-outline-variant/50 hover:border-primary transition-all group cursor-pointer">
+<div class="flex items-start gap-sm">
+<div class="bg-primary-container text-on-primary-container w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 font-label-md">3</div>
+<div>
+<p class="font-body-md font-bold text-on-surface">Sostituisci lo sfondo</p>
+<p class="text-label-sm text-on-surface-variant mt-1">Utilizza una superficie solida invece di gradienti complessi per migliorare la leggibilità.</p>
+</div>
+</div>
+</div>
+</div>
+</div>
+<!-- Info Box -->
+<div class="bg-secondary-container/10 border border-secondary/20 p-md rounded-xl flex gap-sm">
+<span class="material-symbols-outlined text-secondary" data-icon="lightbulb">lightbulb</span>
+<div>
+<h4 class="font-label-md text-label-md text-secondary font-bold">Pro Tip</h4>
+<p class="text-label-sm text-on-surface-variant">L'uso di font più pesanti (bold) può compensare leggermente un contrasto marginale, ma non sostituisce la conformità WCAG.</p>
+</div>
+</div>
+</div>
+</div>
+<!-- Technical Details Section (Bento Style) -->
+<div class="mt-lg grid grid-cols-1 md:grid-cols-3 gap-gutter">
+<div class="bg-surface-container-low border border-outline-variant p-md rounded-xl">
+<span class="material-symbols-outlined text-on-surface-variant mb-sm" data-icon="code">code</span>
+<h4 class="font-label-md text-label-md font-bold text-on-surface mb-xs">Elemento Target</h4>
+<p class="font-label-sm text-label-sm bg-inverse-surface text-inverse-on-surface p-sm rounded mt-sm overflow-x-auto">
+<code><button class="btn-primary"></button></code>
+</p>
+</div>
+<div class="bg-surface-container-low border border-outline-variant p-md rounded-xl">
+<span class="material-symbols-outlined text-on-surface-variant mb-sm" data-icon="css">css</span>
+<h4 class="font-label-md text-label-md font-bold text-on-surface mb-xs">Stili Calcolati</h4>
+<ul class="text-label-sm text-on-surface-variant mt-sm space-y-1">
+<li class="flex justify-between"><span class="">Color:</span> <span class="font-label-md">#A0A0A0</span></li>
+<li class="flex justify-between"><span class="">Background:</span> <span class="font-label-md">#F0F0F0</span></li>
+<li class="flex justify-between"><span class="">Opacity:</span> <span class="font-label-md">1.0</span></li>
+</ul>
+</div>
+<div class="bg-surface-container-low border border-outline-variant p-md rounded-xl">
+<span class="material-symbols-outlined text-on-surface-variant mb-sm" data-icon="history">history</span>
+<h4 class="font-label-md text-label-md font-bold text-on-surface mb-xs">Rilevamento</h4>
+<p class="text-label-sm text-on-surface-variant mt-sm">
+                    Rilevato per la prima volta nella sessione "Audit Mobile" 12 ore fa. Stato: <span class="text-error font-bold italic">Non Risolto</span>.
+                </p>
+</div>
+</div>
+</main>
+<!-- Bottom Action Bar (Fixed on Mobile, subtle on Desktop) -->
+<div class="sticky bottom-0 w-full bg-surface-bright border-t border-outline-variant p-md flex justify-between items-center gap-md z-40 px-margin-mobile" style="bottom: 56px;">
+<button class="flex-1 py-3 px-lg bg-surface border border-outline-variant rounded-full font-label-md text-label-md text-on-surface hover:bg-surface-container transition-all active:scale-95 flex items-center justify-center gap-base">
+<span class="material-symbols-outlined" data-icon="share">share</span>
+            Condividi Report
+        </button>
+<button class="flex-1 py-3 px-lg bg-primary text-on-primary rounded-full font-label-md text-label-md font-bold hover:opacity-90 shadow-lg shadow-primary/20 transition-all active:scale-95 flex items-center justify-center gap-base">
+<span class="material-symbols-outlined" data-icon="check_circle">check_circle</span>
+            Segna come Risolto
+        </button>
+</div>
+<!-- Background Decoration (Subtle Atmospheric HUD) -->
+<div class="fixed inset-0 pointer-events-none opacity-5 z-[-1] overflow-hidden">
+<div class="absolute top-0 right-0 w-96 h-96 bg-primary rounded-full blur-[100px] -mr-48 -mt-48"></div>
+<div class="absolute bottom-0 left-0 w-96 h-96 bg-secondary rounded-full blur-[100px] -ml-48 -mb-48"></div>
+</div>
+<script>
+        // Simple micro-interaction for action cards
+        document.querySelectorAll('.bg-surface-container-lowest').forEach(card => {
+            card.addEventListener('mouseenter', () => {
+                card.style.transform = 'translateX(4px)';
+            });
+            card.addEventListener('mouseleave', () => {
+                card.style.transform = 'translateX(0)';
+            });
+        });
+    </script>
+<nav class="fixed bottom-0 left-0 right-0 bg-surface-bright border-t border-outline-variant px-margin-mobile py-2 flex justify-around items-center z-50 shadow-lg">
+<a class="flex flex-col items-center gap-xs text-on-surface-variant hover:text-primary transition-colors" href="#">
+<span class="material-symbols-outlined" data-icon="radar">radar</span>
+<span class="text-[10px] font-label-sm uppercase">Scansione</span>
+</a>
+<a class="flex flex-col items-center gap-xs text-primary" href="#">
+<span class="material-symbols-outlined" data-icon="description">description</span>
+<span class="text-[10px] font-label-sm uppercase font-bold">Dettagli</span>
+</a>
+<a class="flex flex-col items-center gap-xs text-on-surface-variant hover:text-primary transition-colors" href="#">
+<span class="material-symbols-outlined" data-icon="analytics">analytics</span>
+<span class="text-[10px] font-label-sm uppercase">Report</span>
+</a>
+<a class="flex flex-col items-center gap-xs text-on-surface-variant hover:text-primary transition-colors" href="#">
+<span class="material-symbols-outlined" data-icon="history">history</span>
+<span class="text-[10px] font-label-sm uppercase">Storico</span>
+</a>
+</nav>
+
+
+
+</body></html>

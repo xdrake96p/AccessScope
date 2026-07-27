@@ -205,6 +205,8 @@ class ScanViewModel(application: Application) : AndroidViewModel(application) {
     fun refreshScanHistory(packages: Set<String> = _uiState.value.selectedPackages) =
         historyController.refreshScanHistory(packages)
 
+    fun clearScanHistory() = historyController.clearHistory()
+
     fun getScanHistory(packageName: String): List<ArchivedScanSession> =
         historyController.getScanHistory(packageName)
 

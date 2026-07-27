@@ -1,0 +1,346 @@
+<!DOCTYPE html><html class="light" lang="it"><head>
+<meta charset="utf-8">
+<meta content="width=device-width, initial-scale=1.0" name="viewport">
+<title>AccessScope - Cosa Controlliamo</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;600;700;800&amp;family=Inter:wght@400;500&amp;family=JetBrains+Mono:wght@500&amp;display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet">
+<script id="tailwind-config">
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            "colors": {
+                    "outline": "#6b7a7d",
+                    "on-background": "#1c1b1b",
+                    "on-surface": "#1c1b1b",
+                    "primary-fixed-dim": "#00daf3",
+                    "error": "#ba1a1a",
+                    "surface-container": "#f0edec",
+                    "inverse-on-surface": "#f3f0ef",
+                    "tertiary-fixed": "#ffdf96",
+                    "surface-bright": "#fcf9f8",
+                    "on-error": "#ffffff",
+                    "primary-fixed": "#9cf0ff",
+                    "on-error-container": "#93000a",
+                    "secondary": "#5b00df",
+                    "on-tertiary": "#ffffff",
+                    "on-secondary-fixed": "#22005d",
+                    "secondary-fixed-dim": "#cfbdff",
+                    "on-tertiary-fixed-variant": "#594400",
+                    "primary-container": "#00e5ff",
+                    "inverse-surface": "#313030",
+                    "surface": "#fcf9f8",
+                    "on-surface-variant": "#3b494c",
+                    "background": "#fcf9f8",
+                    "surface-container-low": "#f6f3f2",
+                    "surface-dim": "#dcd9d9",
+                    "on-primary": "#ffffff",
+                    "primary": "#006875",
+                    "on-primary-fixed": "#001f24",
+                    "surface-container-high": "#ebe7e7",
+                    "surface-container-highest": "#e5e2e1",
+                    "on-primary-fixed-variant": "#004f58",
+                    "surface-variant": "#e5e2e1",
+                    "tertiary-fixed-dim": "#f3bf26",
+                    "surface-tint": "#006875",
+                    "on-secondary": "#ffffff",
+                    "error-container": "#ffdad6",
+                    "secondary-fixed": "#e8ddff",
+                    "outline-variant": "#bac9cc",
+                    "inverse-primary": "#00daf3",
+                    "secondary-container": "#7531ff",
+                    "on-secondary-fixed-variant": "#5300cd",
+                    "tertiary-container": "#fec931",
+                    "on-tertiary-fixed": "#251a00",
+                    "on-tertiary-container": "#6f5500",
+                    "on-secondary-container": "#eadfff",
+                    "on-primary-container": "#00626e",
+                    "tertiary": "#765a00",
+                    "surface-container-lowest": "#ffffff"
+            },
+            "borderRadius": {
+                    "DEFAULT": "0.25rem",
+                    "lg": "0.5rem",
+                    "xl": "0.75rem",
+                    "full": "9999px"
+            },
+            "spacing": {
+                    "margin-desktop": "32px",
+                    "xs": "4px",
+                    "margin-mobile": "20px",
+                    "base": "8px",
+                    "md": "24px",
+                    "gutter": "16px",
+                    "lg": "40px",
+                    "xl": "64px",
+                    "sm": "12px"
+            },
+            "fontFamily": {
+                    "headline-lg": ["Hanken Grotesk"],
+                    "body-lg": ["Inter"],
+                    "display-lg": ["Hanken Grotesk"],
+                    "label-sm": ["JetBrains Mono"],
+                    "headline-lg-mobile": ["Hanken Grotesk"],
+                    "body-md": ["Inter"],
+                    "label-md": ["JetBrains Mono"],
+                    "headline-md": ["Hanken Grotesk"]
+            },
+            "fontSize": {
+                    "headline-lg": ["32px", {"lineHeight": "40px", "fontWeight": "700"}],
+                    "body-lg": ["18px", {"lineHeight": "28px", "fontWeight": "400"}],
+                    "display-lg": ["40px", {"lineHeight": "48px", "letterSpacing": "-0.02em", "fontWeight": "800"}],
+                    "label-sm": ["12px", {"lineHeight": "16px", "letterSpacing": "0.08em", "fontWeight": "500"}],
+                    "headline-lg-mobile": ["28px", {"lineHeight": "36px", "fontWeight": "700"}],
+                    "body-md": ["16px", {"lineHeight": "24px", "fontWeight": "400"}],
+                    "label-md": ["14px", {"lineHeight": "20px", "letterSpacing": "0.05em", "fontWeight": "500"}],
+                    "headline-md": ["24px", {"lineHeight": "32px", "fontWeight": "600"}]
+            }
+          },
+        },
+      }
+    </script>
+<style>
+        body {
+            background-color: #fcf9f8;
+            color: #1c1b1b;
+            font-family: 'Inter', sans-serif;
+            overflow-x: hidden;
+        }
+        .glass-card {
+            background: rgba(255, 255, 255, 0.4);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.6);
+            transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+        .glass-card:hover {
+            transform: translateY(-4px);
+            border-color: #00daf3;
+            box-shadow: 0 20px 40px -15px rgba(0, 104, 117, 0.1);
+        }
+        .icon-glow {
+            filter: drop-shadow(0 0 8px rgba(0, 218, 243, 0.4));
+        }
+        .active-indicator::after {
+            content: '';
+            position: absolute;
+            bottom: -4px;
+            width: 4px;
+            height: 4px;
+            background: #006875;
+            border-radius: 50%;
+            box-shadow: 0 0 8px #00daf3;
+        }
+        .mesh-bg {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: -1;
+            background: radial-gradient(circle at 0% 0%, #9cf0ff22 0%, transparent 40%),
+                        radial-gradient(circle at 100% 100%, #cfbdff22 0%, transparent 40%),
+                        radial-gradient(circle at 50% 50%, #fcf9f8 0%, #f0edec 100%);
+        }
+    </style>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+</head>
+<body class="flex flex-col min-h-screen">
+<div class="mesh-bg"></div>
+<!-- TopAppBar -->
+<header class="fixed top-0 w-full z-50 bg-background/80 backdrop-blur-md">
+<nav class="flex items-center justify-between px-margin-mobile md:px-margin-desktop h-16 w-full">
+<div class="flex items-center gap-3 transition-opacity duration-300 hover:opacity-80 cursor-pointer">
+<span class="material-symbols-outlined text-primary text-3xl" style="font-variation-settings: 'FILL' 1;">radar</span>
+<span class="font-headline-md text-headline-md text-primary tracking-tight">AccessScope</span>
+</div>
+<div class="hidden md:flex gap-8 items-center">
+<a class="font-label-md text-label-md text-primary relative active-indicator" href="#">Dashboard</a>
+<a class="font-label-md text-label-md text-on-surface-variant hover:opacity-80 transition-opacity" href="#">Audit</a>
+<a class="font-label-md text-label-md text-on-surface-variant hover:opacity-80 transition-opacity" href="#">Docs</a>
+</div>
+<div class="flex items-center gap-4">
+<button class="material-symbols-outlined text-on-surface-variant p-2 hover:bg-surface-container rounded-full transition-colors">search</button>
+
+</div>
+</nav>
+</header>
+<main class="flex-grow pt-24 pb-32 px-margin-mobile md:px-margin-desktop">
+<!-- Hero Section -->
+<div class="max-w-6xl mx-auto mb-12 text-center md:text-left">
+<span class="font-label-md text-label-md text-primary uppercase tracking-[0.2em] mb-4 block">Audit System 1.0</span>
+<h1 class="font-display-lg text-display-lg text-on-background mb-4">Cosa controlliamo</h1>
+<p class="font-body-lg text-body-lg text-on-surface-variant max-w-2xl">
+                La nostra scansione approfondita analizza ogni pixel della tua interfaccia attraverso i pilastri dell'accessibilità WCAG per garantire un'esperienza digitale universale.
+            </p>
+</div>
+<!-- 2x4 Bento Grid -->
+<div class="max-w-6xl mx-auto grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-gutter">
+<!-- Area 1: Etichette -->
+<div class="glass-card p-6 rounded-xl flex flex-col gap-4" style="--mouse-x: 39px; --mouse-y: 144.00894165039062px;">
+<div class="w-16 h-16 flex items-center justify-center rounded-lg bg-primary-fixed/30 relative overflow-hidden">
+<div class="absolute inset-0 bg-cover bg-center" data-alt="A futuristic 3D glass icon of a label tag with a digital cursor hovering over it. The icon has vibrant cyan and purple gradients, featuring translucent glass textures and glowing edges against a clean, clinical white background." style="background-image: url('https://lh3.googleusercontent.com/aida-public/AB6AXuDPV0B9h-GqWvHhnFqxxjAC4mV14AiGKzEosv7qunh98JGWCIGjtdzAQ04jByQQblwJnDaPfzMJS6hubMLRIMK-PQiJCr9o7VYEOQ0NQk5sRH1e4bZB7lJlKKpW1tFJ5RongjfDYAHdpxaMC2lWCZd_9zwwGe0HyjkWPaZ9Y5YFt6UWbnbukuzvpcgl-pLpdv6XIyyKosMiqRdsEl-QXQwSz_f-M7Lh7K1PmobYPNQz0Fqnu4l0P3bkZg')"></div>
+</div>
+<div>
+<h3 class="font-headline-md text-headline-md text-on-surface mb-2">Etichette</h3>
+<p class="font-body-md text-body-md text-outline">Verifica della chiarezza semantica dei nomi e delle descrizioni per elementi interattivi.</p>
+</div>
+<div class="mt-auto pt-4 border-t border-outline-variant/30 flex items-center gap-2">
+<span class="font-label-sm text-label-sm text-primary">SC 3.3.2</span>
+<div class="h-1 w-1 bg-outline-variant rounded-full"></div>
+<span class="font-label-sm text-label-sm text-on-surface-variant">Labels</span>
+</div>
+</div>
+<!-- Area 2: Tocco -->
+<div class="glass-card p-6 rounded-xl flex flex-col gap-4" style="--mouse-x: 315px; --mouse-y: 25.98455810546875px;">
+<div class="w-16 h-16 flex items-center justify-center rounded-lg bg-primary-fixed/30 relative overflow-hidden">
+<div class="absolute inset-0 bg-cover bg-center" data-alt="A detailed 3D render of a glass fingerprint scanner icon floating in a minimalist tech environment. The icon is illuminated with neon cyan light lines, highlighting the ridges of the fingerprint. The style is high-tech, futuristic, and uses soft translucent glass effects." style="background-image: url('https://lh3.googleusercontent.com/aida-public/AB6AXuCzlDumYwQu8zq7XNPulfW9GlNK1XnuP3JsWg02pJFbL27feTTn42aBVrk8bxRHVeafSumxR-bAzwMH-Q3bXWVXpVIpQeyJdL0CVZXpkeOSKQDlsw_4OfYqUOHHo6Ns3QFkaAKMk0dKVr8tHXJct4GrEDmB4XcrG0FGhaEiAd-Hr_pcH5kc-HkmeOHSlJr771nmg7GFTvteSno8YEEOI4KTKvSZl6s5c7KqyEToiuePYJ3ho_ApGvPD2Q')"></div>
+</div>
+<div>
+<h3 class="font-headline-md text-headline-md text-on-surface mb-2">Tocco</h3>
+<p class="font-body-md text-body-md text-outline">Analisi delle dimensioni dei target (min 44px) e spaziatura per prevenire errori accidentali.</p>
+</div>
+<div class="mt-auto pt-4 border-t border-outline-variant/30 flex items-center gap-2">
+<span class="font-label-sm text-label-sm text-primary">SC 2.5.5</span>
+<div class="h-1 w-1 bg-outline-variant rounded-full"></div>
+<span class="font-label-sm text-label-sm text-on-surface-variant">Touch Targets</span>
+</div>
+</div>
+<!-- Area 3: Colori -->
+<div class="glass-card p-6 rounded-xl flex flex-col gap-4">
+<div class="w-16 h-16 flex items-center justify-center rounded-lg bg-primary-fixed/30 relative overflow-hidden">
+<div class="absolute inset-0 bg-cover bg-center" data-alt="A professional 3D visual of a color palette and eye-dropper tool crafted from frosted glass. The icon displays a spectrum of vibrant colors from teal to deep violet with glossy highlights. The aesthetic matches a clean, modern accessibility tool dashboard." style="background-image: url('https://lh3.googleusercontent.com/aida-public/AB6AXuD1LjJgRD8epJ4pj9dsL21fvA1L_JRdQ0N5yF9etG2-DBHNfM_BicscUVii8gGjVI1swxUALzd5JFTyaZbOFbSOUsfKcqZBulG1c58GAcvNlS6XlaA0gJXsU01O_4S1sGnwPUdosvLrMQwPuwid33UHf3eelh1noPbcuaXZBxJC2_x3YK1aJYZaYUqOCwMSH2jgMzross95GOGCih4YUXMOAhhm_euwJrRAHRUY39r3YdMgn9m1_NzRkg')"></div>
+</div>
+<div>
+<h3 class="font-headline-md text-headline-md text-on-surface mb-2">Colori</h3>
+<p class="font-body-md text-body-md text-outline">Monitoraggio automatico del rapporto di contrasto tra testo e sfondo secondo standard AA/AAA.</p>
+</div>
+<div class="mt-auto pt-4 border-t border-outline-variant/30 flex items-center gap-2">
+<span class="font-label-sm text-label-sm text-primary">SC 1.4.3</span>
+<div class="h-1 w-1 bg-outline-variant rounded-full"></div>
+<span class="font-label-sm text-label-sm text-on-surface-variant">Contrast</span>
+</div>
+</div>
+<!-- Area 4: Testo -->
+<div class="glass-card p-6 rounded-xl flex flex-col gap-4">
+<div class="w-16 h-16 flex items-center justify-center rounded-lg bg-primary-fixed/30 relative overflow-hidden">
+<div class="absolute inset-0 bg-cover bg-center" data-alt="High-quality 3D typography icon showing two 'A' characters of different sizes with measurement indicators. The letters are made of glowing translucent glass with violet and azure gradients. The image embodies precision and digital measurement in a futuristic UI style." style="background-image: url('https://lh3.googleusercontent.com/aida-public/AB6AXuDvthj6aX_hTZsoTdf3eTnShGWx1NSkn9CP_YCBaVFTVEjs9CLRahUBVGKNlWirARwWkYxyJqmH55KxhpxXTlrXyIVOaE2ZGqqy-mexJLHOouN3UIb5X1brzFqCry6KOWwlxp12iR_P5rMU_dqPdCvPyey1rKQbetUrdj_xWw1BO6LrIaX5B-SNC-o6gY0EgdN9QRJTSTCwp5kWhB9zo6vwvnaWR45kJ2fkMvVYPjls6LrNzdWX8UdMsQ')"></div>
+</div>
+<div>
+<h3 class="font-headline-md text-headline-md text-on-surface mb-2">Testo</h3>
+<p class="font-body-md text-body-md text-outline">Gestione del ridimensionamento dinamico e leggibilità delle font in diverse condizioni.</p>
+</div>
+<div class="mt-auto pt-4 border-t border-outline-variant/30 flex items-center gap-2">
+<span class="font-label-sm text-label-sm text-primary">SC 1.4.4</span>
+<div class="h-1 w-1 bg-outline-variant rounded-full"></div>
+<span class="font-label-sm text-label-sm text-on-surface-variant">Resize Text</span>
+</div>
+</div>
+<!-- Area 5: Moduli -->
+<div class="glass-card p-6 rounded-xl flex flex-col gap-4">
+<div class="w-16 h-16 flex items-center justify-center rounded-lg bg-primary-fixed/30 relative overflow-hidden">
+<div class="absolute inset-0 bg-cover bg-center" data-alt="3D isometric glass icon representing a digital web form with input fields and a confirmation checkmark. The material is holographic and semi-transparent, with soft neon glows. The overall look is clean, high-tech, and clinical, emphasizing digital order." style="background-image: url('https://lh3.googleusercontent.com/aida-public/AB6AXuDViYxdJpdMa628uFHZkJNPl3N6nSL_ikbFfdnwSMWSwjIfOrmpTzwjPkZrBJvSTdF5rX4EtV85H69kxrpLIFkZ_zi11JpLE0755s0fsarG3nRi6jYnc1uA0AWg0SYqvYPdEs5DxCkGKvLrZwfkliNI81Ft02CFkiWkdjZcHrLmQr0LkBY1vWEsIi98u7-tycdPzmkYEIrl62aDV5PbsuRDBEV3qbvoYdnAaamwbDxASDjlWs_0eA_phw')"></div>
+</div>
+<div>
+<h3 class="font-headline-md text-headline-md text-on-surface mb-2">Moduli</h3>
+<p class="font-body-md text-body-md text-outline">Validazione degli stati di errore e assistenza nella compilazione per tutti gli utenti.</p>
+</div>
+<div class="mt-auto pt-4 border-t border-outline-variant/30 flex items-center gap-2">
+<span class="font-label-sm text-label-sm text-primary">SC 3.3.1</span>
+<div class="h-1 w-1 bg-outline-variant rounded-full"></div>
+<span class="font-label-sm text-label-sm text-on-surface-variant">Forms</span>
+</div>
+</div>
+<!-- Area 6: Struttura -->
+<div class="glass-card p-6 rounded-xl flex flex-col gap-4">
+<div class="w-16 h-16 flex items-center justify-center rounded-lg bg-primary-fixed/30 relative overflow-hidden">
+<div class="absolute inset-0 bg-cover bg-center" data-alt="A complex 3D sitemap or hierarchy structure icon made of interconnected glass cubes. Each node glows with a subtle blue or purple light, symbolizing logical data architecture. The design is minimalist, futuristic, and sits in a bright, high-key digital space." style="background-image: url('https://lh3.googleusercontent.com/aida-public/AB6AXuDirPw8-rYof0IrlBojwLsyIN0CGyCf_3zjlGBRidl_iRI3Rfte-n0x0yzKrbZEskeeXZlBwJORF2Z17E2jo2Md-qTbXArZHCHc4KQQuYNMZbwkREFtZVLBGrZxbANL54E59qqg_YZ-mWdH9C-IKaaciAlreZUEsHRq39dmLiInK9TzWYskIWsQeZt5oMGFUCU-8NbDXUEp6YR3CgPTSKl42sF9lTRgQYs7uTvrZkCPpOQsxYTiu9aNWA')"></div>
+</div>
+<div>
+<h3 class="font-headline-md text-headline-md text-on-surface mb-2">Struttura</h3>
+<p class="font-body-md text-body-md text-outline">Verifica dell'ordine logico di navigazione (DOM) e dell'uso corretto di intestazioni.</p>
+</div>
+<div class="mt-auto pt-4 border-t border-outline-variant/30 flex items-center gap-2">
+<span class="font-label-sm text-label-sm text-primary">SC 1.3.1</span>
+<div class="h-1 w-1 bg-outline-variant rounded-full"></div>
+<span class="font-label-sm text-label-sm text-on-surface-variant">Structure</span>
+</div>
+</div>
+<!-- Area 7: Screen Reader -->
+<div class="glass-card p-6 rounded-xl flex flex-col gap-4">
+<div class="w-16 h-16 flex items-center justify-center rounded-lg bg-primary-fixed/30 relative overflow-hidden">
+<div class="absolute inset-0 bg-cover bg-center" data-alt="A futuristic 3D icon of an ear and eye combined with sound waves, sculpted from translucent crystalline material. It features a cool-toned cyan and indigo palette with refractive light effects, representing assistive reading technology in a modern minimalist style." style="background-image: url('https://lh3.googleusercontent.com/aida-public/AB6AXuDDvzauzFnx81XCOftyH9E7HpcguuGMo1UM8cAysz46A52PjpDSdIvLQ_SrKTVHd50lrbHPA3ia1JJgursWVSKZqHqjmJp3Y2EmanT7CrVMMh09wAa6W7MYpc3EZAVda2btpm3kin7MtfeB3fPF2pBGaxnTizg6jpg8ltnPgeeMOlP9b-FZshfoYKlIf3FdtqccjgpQuLE8MRdieJm7nIa2Xfm4Hu68-bsEoMAYdQpw2Mvjjz771lo_gw')"></div>
+</div>
+<div>
+<h3 class="font-headline-md text-headline-md text-on-surface mb-2">Screen Reader</h3>
+<p class="font-body-md text-body-md text-outline">Controllo dei tag ARIA e testi alternativi per software di lettura dello schermo.</p>
+</div>
+<div class="mt-auto pt-4 border-t border-outline-variant/30 flex items-center gap-2">
+<span class="font-label-sm text-label-sm text-primary">SC 1.1.1</span>
+<div class="h-1 w-1 bg-outline-variant rounded-full"></div>
+<span class="font-label-sm text-label-sm text-on-surface-variant">Screen Readers</span>
+</div>
+</div>
+<!-- Area 8: Web -->
+<div class="glass-card p-6 rounded-xl flex flex-col gap-4">
+<div class="w-16 h-16 flex items-center justify-center rounded-lg bg-primary-fixed/30 relative overflow-hidden">
+<div class="absolute inset-0 bg-cover bg-center" data-alt="A stunning 3D glass globe icon surrounded by a glowing network of data nodes. The continents are etched into frosted glass, and the atmosphere around it pulses with soft light. The visual conveys global connectivity and web standards in a high-tech minimalist environment." style="background-image: url('https://lh3.googleusercontent.com/aida-public/AB6AXuDiwPYmvUxIIAOBsDwHmQT46xCgdUzWUpFYWREZDxCHGzyS8x5QJ8CU0ourGKzWq6s6UvgFaFpbTTfy4DQryZLBrVXliKpRMHOeFOeLCfJ90FKL3XTB-aD2VBvy6DPbVAY4KUvSTyqP1_bzY9nmOrgCeWjQAGimKkZlE2gJT_aEqyIkXxm_EcMxy6AXrHFka6-ic5SAAId2ANqmNrUM2MPJck56ajsiwbLTvMb6xFJfyg8JnHeQ8swYMA')"></div>
+</div>
+<div>
+<h3 class="font-headline-md text-headline-md text-on-surface mb-2">Web</h3>
+<p class="font-body-md text-body-md text-outline">Analisi dei tempi di risposta, compatibilità browser e standard di codifica globale.</p>
+</div>
+<div class="mt-auto pt-4 border-t border-outline-variant/30 flex items-center gap-2">
+<span class="font-label-sm text-label-sm text-primary">SC 4.1.1</span>
+<div class="h-1 w-1 bg-outline-variant rounded-full"></div>
+<span class="font-label-sm text-label-sm text-on-surface-variant">Parsing</span>
+</div>
+</div>
+</div>
+<!-- Call to action simple -->
+<div class="mt-16 text-center">
+<button class="bg-primary text-on-primary px-8 py-4 rounded-full font-label-md text-label-md hover:shadow-lg hover:shadow-primary/20 transition-all active:scale-95">
+                Avvia Nuova Scansione
+            </button>
+</div><div class="flex justify-center items-center gap-3 mt-8 mb-4">
+<div class="w-2 h-2 rounded-full bg-outline-variant/40"></div>
+<div class="w-2 h-2 rounded-full bg-outline-variant/40"></div>
+<div class="w-2 h-2 rounded-full bg-outline-variant/40"></div>
+<div class="w-2 h-2 rounded-full bg-outline-variant/40"></div>
+<div class="w-3 h-3 rounded-full bg-primary shadow-[0_0_8px_#00daf3]"></div>
+<div class="w-2 h-2 rounded-full bg-outline-variant/40"></div>
+</div>
+</main>
+<!-- BottomNavBar -->
+<script>
+        // Micro-interactions
+        document.querySelectorAll('.glass-card').forEach(card => {
+            card.addEventListener('mousemove', (e) => {
+                const rect = card.getBoundingClientRect();
+                const x = e.clientX - rect.left;
+                const y = e.clientY - rect.top;
+                
+                card.style.setProperty('--mouse-x', `${x}px`);
+                card.style.setProperty('--mouse-y', `${y}px`);
+            });
+        });
+
+        // Simple scroll appearance
+        window.addEventListener('scroll', () => {
+            const header = document.querySelector('header');
+            if (window.scrollY > 20) {
+                header.classList.add('shadow-sm');
+            } else {
+                header.classList.remove('shadow-sm');
+            }
+        });
+    </script>
+
+
+</body></html>
