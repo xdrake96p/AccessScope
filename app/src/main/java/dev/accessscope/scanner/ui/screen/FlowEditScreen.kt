@@ -51,6 +51,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import dev.accessscope.scanner.AccessScopeApp
 import dev.accessscope.scanner.recorder.RecordedAction
+import dev.accessscope.scanner.recorder.optimization.lint.FlowLintIssue
+import dev.accessscope.scanner.recorder.optimization.lint.FlowLinter
+import dev.accessscope.scanner.recorder.optimization.lint.LintSeverity
 import dev.accessscope.scanner.ui.components.AccessScopeCard
 import dev.accessscope.scanner.ui.theme.CodeTextStyle
 import dev.accessscope.scanner.ui.theme.PillShape
@@ -93,6 +96,10 @@ fun FlowEditScreen(
         flowName = flow.name
         selectedIndex = null
     }
+
+    // Lint statico del flusso (piano M1-A1): ricalcolato ad ogni modifica degli step.
+    val lintReport = remember(actions.toList()) { FlowLinter.lint(actions.toList()) }
+    val lintByStep = remember(lintReport) { lintReport.byStep() }
 
     fun insertAction(action: RecordedAction) {
         val sel = selectedIndex
@@ -263,6 +270,14 @@ fun FlowEditScreen(
                 style = CodeTextStyle,
                 color = contentSecondary(),
             )
+            if (lintReport.warningCount > 0) {
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    "⚠ ${lintReport.warningCount} avvisi robustezza (lint)",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.tertiary,
+                )
+            }
             Spacer(Modifier.height(12.dp))
             LazyColumn(
                 modifier = Modifier.weight(1f),
@@ -275,6 +290,7 @@ fun FlowEditScreen(
                     StepRow(
                         index = index,
                         summary = stepSummary(action),
+                        lintIssues = lintByStep[index].orEmpty(),
                         selected = selected,
                         canDelete = !isLaunch,
                         canDuplicate = !isLaunch,
@@ -370,6 +386,7 @@ fun FlowEditScreen(
 private fun StepRow(
     index: Int,
     summary: String,
+    lintIssues: List<FlowLintIssue>,
     selected: Boolean,
     canDelete: Boolean,
     canDuplicate: Boolean,
@@ -409,6 +426,18 @@ private fun StepRow(
                     style = MaterialTheme.typography.bodyMedium,
                     fontWeight = FontWeight.Medium,
                 )
+                lintIssues.forEach { issue ->
+                    val isWarning = issue.severity == LintSeverity.WARNING
+                    Text(
+                        (if (isWarning) "⚠ " else "ℹ ") + issue.message,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = if (isWarning) {
+                            MaterialTheme.colorScheme.tertiary
+                        } else {
+                            contentSecondary()
+                        },
+                    )
+                }
                 if (selected) {
                     Text(
                         "Selezionato · + inserisce sotto",

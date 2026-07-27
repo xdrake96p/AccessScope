@@ -95,6 +95,33 @@ class ScanReliabilityReportExporter(private val context: Context) {
     appendLine("| Check OK registrati | ${ReportHelper.totalPassedChecks(checkSummaries)} |")
     appendLine()
 
+    val gate = ReportHelper.confidenceGateStats(allViolations)
+    appendLine("## Confidence gate (demozioni)")
+    appendLine()
+    appendLine("> Contatori dei finding **esclusi** dal report quando il gate è attivo")
+    appendLine("> (default v1.3.0: solo findings sopra soglia). Utile per FP evitati vs FN.")
+    appendLine()
+    appendLine("| Metrica | Valore |")
+    appendLine("|---------|--------|")
+    appendLine("| Raw | ${gate.rawCount} |")
+    appendLine("| Esclusi dal report | ${gate.excludedCount} |")
+    appendLine("| Inclusi (dopo dedupe) | ${filtered.size} |")
+    appendLine()
+    if (gate.excludedCount > 0) {
+      appendLine("### Esclusi per tipo")
+      appendLine()
+      gate.byType.entries.sortedByDescending { it.value }.forEach { (type, count) ->
+        appendLine("- `${type.name}` (${type.severity}): $count")
+      }
+      appendLine()
+      appendLine("### Esclusi per severità")
+      appendLine()
+      gate.bySeverity.entries.sortedByDescending { it.value }.forEach { (sev, count) ->
+        appendLine("- $sev: $count")
+      }
+      appendLine()
+    }
+
     sessionComparison?.let { cmp ->
       appendLine("## Confronto sessione precedente")
       appendLine()

@@ -3,6 +3,8 @@
  */
 package dev.accessscope.scanner.recorder
 
+import dev.accessscope.scanner.recorder.model.StepExecutionMode
+
 /**
  * Risultato parse import YAML.
  */
@@ -56,7 +58,7 @@ object MaestroYamlImporter {
         val pkg = appId
         val actions = mutableListOf<RecordedAction>()
         try {
-            while (i < lines.size) {
+            parseLoop@ while (i < lines.size) {
                 val raw = lines[i]
                 val line = raw.trim()
                 if (line.isEmpty() || line.startsWith("#")) {
@@ -155,7 +157,27 @@ object MaestroYamlImporter {
                             val id = block["id"]?.let { unquote(it) }
                             val point = block["point"]?.let { unquote(it) }
                             val text = block["text"]?.let { unquote(it) }
+                            val optional = block["optional"]?.trim()?.equals("true", ignoreCase = true) == true
                             val (px, py) = parsePoint(point)
+
+                            // Round-trip exporter: `- tapOn: {id}` seguito da `- inputText:` è
+                            // la forma a due comandi di UNA sola InputText(viewId) → merge.
+                            if (kind == "tap" && !id.isNullOrBlank() && text == null && px == null) {
+                                var j = next
+                                while (j < lines.size && (lines[j].isBlank() || lines[j].trim().startsWith("#"))) j++
+                                if (j < lines.size && lines[j].trim().startsWith("- inputText:")) {
+                                    val value = unquote(lines[j].trim().removePrefix("- inputText:").trim())
+                                    actions += RecordedAction.InputText(
+                                        packageName = pkg,
+                                        text = value,
+                                        viewId = id,
+                                        isPassword = value == "****",
+                                    )
+                                    i = j + 1
+                                    continue@parseLoop
+                                }
+                            }
+
                             actions += when (kind) {
                                 "double" -> RecordedAction.DoubleTap(
                                     packageName = pkg,
@@ -177,6 +199,11 @@ object MaestroYamlImporter {
                                     text = text,
                                     pointPercentX = px,
                                     pointPercentY = py,
+                                    executionMode = if (optional) {
+                                        StepExecutionMode.Optional
+                                    } else {
+                                        StepExecutionMode.Required
+                                    },
                                 )
                             }
                             i = next

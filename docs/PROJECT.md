@@ -6,7 +6,7 @@
 **Package:** `dev.accessscope.scanner`  
 **Branch principale sviluppo:** `develop`  
 **Branch release stabile:** `main`  
-**Ultimo aggiornamento:** 27 luglio 2026 (Maestro editor UX: insert/duplica, overlay one-line, password vs PIN, pausa REC, Play clean)
+**Ultimo aggiornamento:** 27 luglio 2026 (M0/M1 piano Maestro+scan: lint, scroll coalesce, round-trip YAML, golden compare, gate stats)
 
 **Manuale utente e tecnico:** [`docs/MANUALE_UTENTE.md`](MANUALE_UTENTE.md) — installazione, uso plugin AS/VS Code, troubleshooting.
 
@@ -95,6 +95,17 @@ Utente → HomeScreen (selezione app) → Avvia scan
 ---
 
 ## Cronologia sviluppo
+
+### Piano Maestro + scansione M0/M1 (27 luglio 2026, branch `restyle`)
+
+Documento vivo: [`docs/PIANO_MAESTRO_E_SCANSIONE.md`](PIANO_MAESTRO_E_SCANSIONE.md). Compatibilità comandi: [`docs/MAESTRO_COMPAT.md`](MAESTRO_COMPAT.md).
+
+- **M0 anti-regressione:** `tools/compare_scan_outputs.py` (preferisce `dedupeKey`), `reports/golden/` + fixture sample, contract `SessionJsonSchemaContractTest` / `BridgeIds` / `BridgeJsonContractTest`
+- **M1-A1 lint:** `FlowLinter` (selettori deboli, submit senza wait) + badge in `FlowEditScreen`
+- **M1-A2:** `ScrollCoalescer` → `scrollUntilVisible` nella pipeline
+- **M1-A3:** round-trip export↔import (`MaestroYamlRoundTripTest`); merge tap+inputText in importer
+- **M1-A4:** `tools/verify_yaml_with_maestro_cli.sh`
+- **M1-B1:** `ReportHelper.confidenceGateStats` + sezione «Confidence gate» nel reliability MD
 
 ### Maestro (Beta) — recorder / Play / editor YAML (27 luglio 2026, branch `restyle`)
 

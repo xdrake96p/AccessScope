@@ -36,8 +36,13 @@ class MaestroYamlImporterTest {
         assertEquals("com.example.app", success.appId)
         assertEquals("Login", success.name)
         assertTrue(success.actions.any { it is RecordedAction.LaunchApp })
-        assertTrue(success.actions.any { it is RecordedAction.Tap && it.viewId == "username" })
-        assertTrue(success.actions.any { it is RecordedAction.InputText && it.text == "user" })
+        // Round-trip exporter: `- tapOn: {id}` + `- inputText:` è UNA InputText con viewId (M1-A3).
+        assertTrue(
+            success.actions.any {
+                it is RecordedAction.InputText && it.viewId == "username" && it.text == "user"
+            },
+        )
+        assertTrue(success.actions.none { it is RecordedAction.Tap && it.viewId == "username" })
         assertTrue(success.actions.any { it is RecordedAction.HideKeyboard })
         assertTrue(success.actions.any { it is RecordedAction.Tap && it.text == "CONTINUA" })
     }

@@ -1,0 +1,9 @@
+version=1.3.0
+package=com.axa.app.myaxa.it.develop
+session=c007eab4-8443-407d-8e06-2a0e8e086416
+score=9
+uniqueScreens=8
+scanAnalyses=68
+violations=66
+screenReaderFindings=54
+density=8.25

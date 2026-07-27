@@ -1,0 +1,19 @@
+{
+  "id": "00000000-0000-4000-8000-000000000001",
+  "score": 92,
+  "uniqueScreens": 1,
+  "scanAnalyses": 10,
+  "violations": [
+    {
+      "dedupeKey": "MISSING_LABEL|Home|com.example:id/icon",
+      "type": "MISSING_LABEL",
+      "severity": "SERIOUS",
+      "viewId": "com.example:id/icon",
+      "screenTitle": "Home"
+    }
+  ],
+  "screenReaderFindings": [],
+  "visitedScreens": [
+    { "fingerprint": "fp-home", "title": "Home" }
+  ]
+}

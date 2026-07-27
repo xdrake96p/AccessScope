@@ -32,6 +32,21 @@ data class ReportSectionGroup(
 }
 
 /**
+ * Contatori demozioni confidence gate per reliability MD / benchmark (M1-B1).
+ *
+ * @property rawCount Violazioni in ingresso.
+ * @property excludedCount Finding esclusi dal report (sotto soglia dopo demotion).
+ * @property byType Conteggio esclusi per [ViolationType].
+ * @property bySeverity Conteggio esclusi per [ViolationSeverity].
+ */
+data class ConfidenceGateStats(
+    val rawCount: Int,
+    val excludedCount: Int,
+    val byType: Map<ViolationType, Int>,
+    val bySeverity: Map<ViolationSeverity, Int>,
+)
+
+/**
  * Helper con funzioni pure per filtrare, aggregare e formattare i risultati
  * di una sessione di scansione AccessScope.
  */
@@ -97,6 +112,24 @@ object ReportHelper {
             demoted.filter { it.confidence >= confidenceThreshold(it.type) }
         }
         return filtered.distinctBy { it.dedupeKey }
+    }
+
+    /**
+     * Statistiche demozioni del confidence gate (piano M1-B1): cosa il report esclude
+     * rispetto al raw, per misurare FP evitati vs FN sul benchmark.
+     *
+     * @param violations Violazioni grezze di sessione.
+     * @return Contatori per tipo e severità dei finding sotto soglia dopo demotion.
+     */
+    fun confidenceGateStats(violations: List<AccessibilityViolation>): ConfidenceGateStats {
+        val demoted = violations.map { ViolationConfidencePolicy.demoteIfNoisy(it) }
+        val excluded = demoted.filter { it.confidence < confidenceThreshold(it.type) }
+        return ConfidenceGateStats(
+            rawCount = violations.size,
+            excludedCount = excluded.size,
+            byType = excluded.groupingBy { it.type }.eachCount(),
+            bySeverity = excluded.groupingBy { it.type.severity }.eachCount(),
+        )
     }
 
     /**

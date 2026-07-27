@@ -8,6 +8,7 @@ import dev.accessscope.scanner.recorder.RecordedAction
 import dev.accessscope.scanner.recorder.model.OptimizationContext
 import dev.accessscope.scanner.recorder.optimization.conditional.OptionalStepPolicy
 import dev.accessscope.scanner.recorder.optimization.noise.NoiseActionFilter
+import dev.accessscope.scanner.recorder.optimization.scroll.ScrollCoalescer
 import dev.accessscope.scanner.recorder.optimization.selector.SelectorNormalizer
 import dev.accessscope.scanner.recorder.optimization.timing.WaitPlanner
 import dev.accessscope.scanner.util.DebugSessionLog
@@ -37,13 +38,15 @@ object FlowOptimizationPipeline {
             NoiseActionFilter.dropNoiseWaits(
                 OptionalStepPolicy.apply(
                     WaitPlanner.enrich(
-                        NoiseActionFilter.dropFocusTapsBeforeInput(
-                            NoiseActionFilter.dropNoiseTaps(
-                                NoiseActionFilter.dropForeignUiActions(
-                                    NoiseActionFilter.dropNoiseScrolls(
-                                        dedupeTaps(coalesceInputText(actions)),
+                        ScrollCoalescer.coalesce(
+                            NoiseActionFilter.dropFocusTapsBeforeInput(
+                                NoiseActionFilter.dropNoiseTaps(
+                                    NoiseActionFilter.dropForeignUiActions(
+                                        NoiseActionFilter.dropNoiseScrolls(
+                                            dedupeTaps(coalesceInputText(actions)),
+                                        ),
+                                        appId,
                                     ),
-                                    appId,
                                 ),
                             ),
                         ),

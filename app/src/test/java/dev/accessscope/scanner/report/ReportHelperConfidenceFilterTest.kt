@@ -76,6 +76,32 @@ class ReportHelperConfidenceFilterTest {
     }
 
     @Test
+    fun confidenceGateStats_countsExcludedByType() {
+        val noisy = AccessibilityViolation(
+            type = ViolationType.OVERLAPPING_TOUCH_TARGETS,
+            viewClassName = "FrameLayout",
+            screenTitle = "Home",
+            packageName = "com.example",
+            details = "Sovrapposizione 250000px² con View.",
+            viewId = "com.example:id/content",
+            confidence = 0.88f,
+        )
+        val real = AccessibilityViolation(
+            type = ViolationType.MISSING_LABEL,
+            viewClassName = "ImageView",
+            screenTitle = "Home",
+            packageName = "com.example",
+            details = "No contentDescription",
+            viewId = "com.example:id/icon",
+            confidence = 0.90f,
+        )
+        val stats = ReportHelper.confidenceGateStats(listOf(noisy, real))
+        assertEquals(2, stats.rawCount)
+        assertEquals(1, stats.excludedCount)
+        assertEquals(1, stats.byType[ViolationType.OVERLAPPING_TOUCH_TARGETS])
+    }
+
+    @Test
     fun isStructuralNoiseId_recognizesContentAndScroll() {
         assertTrue(ViolationConfidencePolicy.isStructuralNoiseId("app:id/content"))
         assertTrue(ViolationConfidencePolicy.isStructuralNoiseId("app:id/scrollview_port"))

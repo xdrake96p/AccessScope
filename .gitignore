@@ -19,4 +19,8 @@ output/
 .cursor/*
 !.cursor/rules/
 !.cursor/rules/**
-reports/
+# Output scansioni locali (PDF/MD), ma tieni golden master anti-regressione
+reports/*
+!reports/golden/
+!reports/golden/**
+
