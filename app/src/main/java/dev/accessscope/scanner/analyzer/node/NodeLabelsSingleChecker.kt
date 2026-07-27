@@ -41,11 +41,13 @@ internal object NodeLabelsSingleChecker {
                         checkCollector.recordPass(
                             ViolationArea.LABELS, screenTitle, packageName,
                             "Etichetta accessibile presente", snap, ViolationType.MISSING_LABEL.wcagRef,
+                            screenFingerprint = screenFingerprint,
                         )
                     } else if (PrecisionRules.shouldReportMissingTopBarLabel(snap, all) && snap.hasAccessibleName()) {
                         checkCollector.recordPass(
                             ViolationArea.LABELS, screenTitle, packageName,
                             "Icona toolbar con descrizione", snap, ViolationType.MISSING_LABEL.wcagRef,
+                            screenFingerprint = screenFingerprint,
                         )
                     }
                 }

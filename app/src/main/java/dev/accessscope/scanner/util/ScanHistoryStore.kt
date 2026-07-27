@@ -341,6 +341,7 @@ class ScanHistoryStore(context: Context) {
         put("issue", f.issue)
         put("viewId", f.viewId)
         put("sectionTitle", f.sectionTitle)
+        put("screenFingerprint", f.screenFingerprint)
     }
 
     private fun parseFinding(json: JSONObject): ScreenReaderFinding = ScreenReaderFinding(
@@ -351,6 +352,7 @@ class ScanHistoryStore(context: Context) {
         issue = json.getString("issue"),
         viewId = json.optString("viewId").takeIf { it.isNotBlank() },
         sectionTitle = json.optString("sectionTitle").takeIf { it.isNotBlank() },
+        screenFingerprint = json.optString("screenFingerprint").takeIf { it.isNotBlank() },
     )
 
     companion object {

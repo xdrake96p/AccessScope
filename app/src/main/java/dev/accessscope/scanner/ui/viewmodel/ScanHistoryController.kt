@@ -105,6 +105,7 @@ internal class ScanHistoryController(
     fun currentSessionId(): String? = repository.currentSessionId()
 
     fun buildDynamicReport(sessionId: String? = null): List<DynamicScreenFrame> {
+        val includeLow = uiState.value.includeLowConfidenceFindings
         if (!sessionId.isNullOrBlank()) {
             val archived = getArchivedSession(sessionId) ?: return emptyList()
             return DynamicReportHelper.buildFrames(
@@ -113,6 +114,7 @@ internal class ScanHistoryController(
                 talkBackFindings = archived.screenReaderFindings,
                 checkSummaries = emptyList(),
                 screenEvidenceIdResolver = scanEvidenceStore::screenEvidenceId,
+                includeLowConfidence = includeLow,
             )
         }
         val scan = uiState.value.scanState
@@ -122,6 +124,7 @@ internal class ScanHistoryController(
             talkBackFindings = scan.screenReaderFindings,
             checkSummaries = scan.checkSummaries,
             screenEvidenceIdResolver = scanEvidenceStore::screenEvidenceId,
+            includeLowConfidence = includeLow,
         )
     }
 

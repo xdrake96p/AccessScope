@@ -32,6 +32,7 @@ data class AppSelectionLimitDialog(
  * @param statusMessage Messaggio temporaneo da mostrare all'utente (es. errori, conferme); null se assente.
  * @param themeMode Preferenza tema interfaccia (chiaro, scuro o sistema).
  * @param reliabilityReportEnabled Se true, genera report Markdown di affidabilità a fine scansione.
+ * @param includeLowConfidenceFindings Se true, il report include anche finding sotto soglia (più rumore).
  * @param latestArchivedSession Ultima sessione archiviata per l'app principale selezionata.
  * @param sessionComparison Confronto numerico ultima vs penultima sessione archiviata.
  * @param historyPackageName Package usato per cronologia e confronto.
@@ -52,6 +53,7 @@ data class HomeUiState(
     val statusMessage: String? = null,
     val themeMode: AppThemeMode = AppThemeMode.SYSTEM,
     val reliabilityReportEnabled: Boolean = false,
+    val includeLowConfidenceFindings: Boolean = false,
     val latestArchivedSession: ArchivedScanSession? = null,
     val sessionComparison: SessionComparison? = null,
     val historyPackageName: String? = null,

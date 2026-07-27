@@ -122,6 +122,42 @@ class DynamicReportHelperTest {
     }
 
     @Test
+    fun buildFrames_fingerprintTalkBack_doesNotLeakAcrossSameTitle() {
+        val visited = listOf(
+            VisitedScreen("fp-home-a", "Home", 0),
+            VisitedScreen("fp-home-b", "Home", 1),
+        )
+        val talkBack = listOf(
+            ScreenReaderFinding(
+                packageName = "com.example",
+                screenTitle = "Home",
+                nodeClassName = "Button",
+                announcedText = "OK",
+                issue = "Solo su frame B",
+                screenFingerprint = "fp-home-b",
+            ),
+        )
+        val frames = DynamicReportHelper.buildFrames(
+            visitedScreens = visited,
+            violations = emptyList(),
+            talkBackFindings = talkBack,
+            checkSummaries = listOf(
+                CheckAreaSummary(
+                    area = ViolationArea.LABELS,
+                    screenTitle = "Home",
+                    packageName = "com.example",
+                    passedCount = 3,
+                    screenFingerprint = "fp-home-a",
+                ),
+            ),
+        )
+        assertEquals(0, frames[0].talkBackFindings.size)
+        assertEquals(1, frames[1].talkBackFindings.size)
+        assertEquals(3, frames[0].passedCount)
+        assertEquals(0, frames[1].passedCount)
+    }
+
+    @Test
     fun filterFrameViolations_filtersBySeverity() {
         val frame = DynamicScreenFrame(
             fingerprint = "fp",

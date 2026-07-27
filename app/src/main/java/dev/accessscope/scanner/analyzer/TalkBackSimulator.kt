@@ -24,12 +24,14 @@ class TalkBackSimulator {
      * @param root Nodo radice dell'albero di accessibilità.
      * @param packageName Package dell'applicazione analizzata.
      * @param screenTitle Titolo umano della schermata corrente.
+     * @param screenFingerprint Fingerprint stabile della schermata (report dinamico).
      * @return Lista di [ScreenReaderFinding] per elementi silenziosi, troppo brevi o schermata innavigabile.
      */
     fun simulate(
         root: AccessibilityNodeInfo,
         packageName: String,
         screenTitle: String,
+        screenFingerprint: String? = null,
     ): List<ScreenReaderFinding> {
         val findings = mutableListOf<ScreenReaderFinding>()
         val focusableNodes = mutableListOf<AccessibilityNodeInfo>()
@@ -50,6 +52,7 @@ class TalkBackSimulator {
                     announcedText = null,
                     issue = "TalkBack non avrebbe testo da annunciare su questo elemento.",
                     viewId = viewId,
+                    screenFingerprint = screenFingerprint,
                 )
             } else if (announced.length < 2) {
                 findings += ScreenReaderFinding(
@@ -59,6 +62,7 @@ class TalkBackSimulator {
                     announcedText = announced,
                     issue = "Annuncio screen reader troppo breve o poco descrittivo.",
                     viewId = viewId,
+                    screenFingerprint = screenFingerprint,
                 )
             }
         }
@@ -70,6 +74,7 @@ class TalkBackSimulator {
                 nodeClassName = "—",
                 announcedText = null,
                 issue = "Nessun elemento focalizzabile: la schermata sarebbe quasi innavigabile con TalkBack.",
+                screenFingerprint = screenFingerprint,
             )
         } else if (silentCount > focusableNodes.size / 2) {
             findings += ScreenReaderFinding(
@@ -78,6 +83,7 @@ class TalkBackSimulator {
                 nodeClassName = "—",
                 announcedText = "$silentCount / ${focusableNodes.size} elementi",
                 issue = "Oltre il 50% degli elementi focalizzabili non ha un annuncio utile.",
+                screenFingerprint = screenFingerprint,
             )
         }
 
@@ -184,5 +190,6 @@ fun TalkBackSimulator.toViolations(
                 finding.announcedText?.let { append(" Annuncio simulato: \"$it\".") }
             },
             viewId = finding.viewId,
+            screenFingerprint = finding.screenFingerprint,
         )
     }

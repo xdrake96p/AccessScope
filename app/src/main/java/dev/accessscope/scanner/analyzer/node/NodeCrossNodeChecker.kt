@@ -3,6 +3,7 @@ package dev.accessscope.scanner.analyzer.node
 import android.graphics.Rect
 import dev.accessscope.scanner.analyzer.NodeSnapshot
 import dev.accessscope.scanner.analyzer.PrecisionRules
+import dev.accessscope.scanner.analyzer.ViolationConfidencePolicy
 import dev.accessscope.scanner.analyzer.precision.area
 import dev.accessscope.scanner.data.AccessibilityViolation
 import dev.accessscope.scanner.data.ViolationType
@@ -59,10 +60,11 @@ internal object NodeCrossNodeChecker {
                     val overlap = overlapArea(a.bounds, b.bounds)
                     val minArea = minOf(a.area(), b.area())
                     if (overlap > minArea * 0.45) {
+                        val confidence = ViolationConfidencePolicy.overlappingTouchConfidence(a, overlap)
                         violations += ViolationBuilder.v(
                             screenFingerprint,
                             ViolationType.OVERLAPPING_TOUCH_TARGETS, a, packageName, screenTitle,
-                            "Sovrapposizione ${overlap}px² con ${b.className}.", 0.88f,
+                            "Sovrapposizione ${overlap}px² con ${b.className}.", confidence,
                         )
                     }
                 } else {

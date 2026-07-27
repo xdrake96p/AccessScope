@@ -46,6 +46,12 @@ internal class ScanSessionController(
         uiState.update { it.copy(reliabilityReportEnabled = enabled) }
     }
 
+    fun toggleIncludeLowConfidenceFindings() {
+        val enabled = !uiState.value.includeLowConfidenceFindings
+        scanSettingsStore.includeLowConfidenceFindings = enabled
+        uiState.update { it.copy(includeLowConfidenceFindings = enabled) }
+    }
+
     fun toggleScanArea(area: ViolationArea) {
         val current = uiState.value.scanScope.enabledAreas.toMutableSet()
         if (area in current) {
@@ -280,6 +286,7 @@ internal class ScanSessionController(
                 scanScope = scanSettingsStore.getScanScope(),
                 themeMode = themePreferencesStore.getThemeMode(),
                 reliabilityReportEnabled = scanSettingsStore.reliabilityReportEnabled,
+                includeLowConfidenceFindings = scanSettingsStore.includeLowConfidenceFindings,
             )
         }
     }

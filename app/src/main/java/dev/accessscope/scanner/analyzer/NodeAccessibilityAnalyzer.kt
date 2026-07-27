@@ -125,11 +125,12 @@ class NodeAccessibilityAnalyzer(
                 packageName = packageName,
                 details = "Il contenuto è cambiato più volte senza annunci TalkBack.",
                 confidence = 0.85f,
+                screenFingerprint = screenFingerprint,
             )
         }
 
         val screenReaderFindings = if (includes(ViolationArea.SCREEN_READER)) {
-            TalkBackSimulator().simulate(root, packageName, screenTitle)
+            TalkBackSimulator().simulate(root, packageName, screenTitle, screenFingerprint)
         } else {
             emptyList()
         }

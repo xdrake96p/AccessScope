@@ -95,6 +95,7 @@ internal object NodeContrastChecker {
                     "Contrasto testo sufficiente",
                     snap, ViolationType.LOW_COLOR_CONTRAST.wcagRef,
                     "${"%.2f".format(result.ratio)}:1 (≥ $threshold:1)",
+                    screenFingerprint = screenFingerprint,
                 )
             }
         } else if (snap.isInteractiveClickable() || snap.isImageClass()) {
@@ -130,6 +131,7 @@ internal object NodeContrastChecker {
                     "Contrasto icona/controllo sufficiente",
                     snap, ViolationType.LOW_NON_TEXT_CONTRAST.wcagRef,
                     "${"%.2f".format(result.ratio)}:1",
+                    screenFingerprint = screenFingerprint,
                 )
             }
         }

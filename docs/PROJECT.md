@@ -6,7 +6,7 @@
 **Package:** `dev.accessscope.scanner`  
 **Branch principale sviluppo:** `develop`  
 **Branch release stabile:** `main`  
-**Ultimo aggiornamento:** 27 luglio 2026 (restyle Home: ricerca app senza elenco completo)
+**Ultimo aggiornamento:** 27 luglio 2026 (precisione: confidence gate + fingerprint report dinamico)
 
 **Manuale utente e tecnico:** [`docs/MANUALE_UTENTE.md`](MANUALE_UTENTE.md) — installazione, uso plugin AS/VS Code, troubleshooting.
 
@@ -95,6 +95,14 @@ Utente → HomeScreen (selezione app) → Avvia scan
 ---
 
 ## Cronologia sviluppo
+
+### Precisione anti-rumore + report dinamico fingerprint (27 luglio 2026, branch `restyle`)
+
+- `ViolationConfidencePolicy`: demota overlap/custom action su shell strutturali (`content`, `container`, scroll…) sotto soglia report
+- `ReportHelper`: soglie più alte per overlap/custom/scroll; filtro con demotion; Settings «Findings a bassa confidenza»
+- `ScreenReaderFinding` / `CheckAreaSummary`: `screenFingerprint`; TalkBack/passed attribuiti fingerprint-first in `DynamicReportHelper`
+- Skip overlap su ID strutturali in `PrecisionStructural`
+- Test: `ReportHelperConfidenceFilterTest`, estensione `DynamicReportHelperTest`
 
 ### Home search-only (27 luglio 2026, branch `restyle`)
 

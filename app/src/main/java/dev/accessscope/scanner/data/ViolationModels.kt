@@ -100,6 +100,8 @@ data class CheckAreaSummary(
     val packageName: String,
     val passedCount: Int,
     val samples: List<PassedCheck> = emptyList(),
+    /** Fingerprint schermata per attribuzione report dinamico (opzionale per retrocompatibilità). */
+    val screenFingerprint: String? = null,
 )
 
 /** Risultato dell'analisi simulata dello screen reader su un nodo dell'albero di accessibilità. */
@@ -111,6 +113,8 @@ data class ScreenReaderFinding(
     val issue: String,
     val viewId: String? = null,
     val sectionTitle: String? = null,
+    /** Fingerprint schermata per attribuzione report dinamico (opzionale). */
+    val screenFingerprint: String? = null,
 ) {
     /**
      * Sezione da usare nel report: preferisce [sectionTitle] se valorizzata,

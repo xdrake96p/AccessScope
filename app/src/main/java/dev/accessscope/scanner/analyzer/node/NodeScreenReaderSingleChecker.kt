@@ -5,6 +5,7 @@ import android.graphics.Rect
 import dev.accessscope.scanner.analyzer.CheckCollector
 import dev.accessscope.scanner.analyzer.NodeSnapshot
 import dev.accessscope.scanner.analyzer.PrecisionRules
+import dev.accessscope.scanner.analyzer.ViolationConfidencePolicy
 import dev.accessscope.scanner.data.AccessibilityViolation
 import dev.accessscope.scanner.data.ScanScope
 import dev.accessscope.scanner.data.ViolationArea
@@ -67,7 +68,8 @@ internal object NodeScreenReaderSingleChecker {
                         violations += ViolationBuilder.v(
                             screenFingerprint,
                             ViolationType.CUSTOM_ACTION_UNLABELED, snap, packageName, screenTitle,
-                            "${snap.unlabeledActionCount} azione/i personalizzata/e senza etichetta.", 0.88f,
+                            "${snap.unlabeledActionCount} azione/i personalizzata/e senza etichetta.",
+                            ViolationConfidencePolicy.customActionConfidence(snap),
                         )
                     }
                 }

@@ -69,7 +69,10 @@ fun DynamicReportScreen(
         viewModel.buildDynamicReport(sessionId)
     }
     val reportScore = remember(scan.violations, scan.uniqueScreens) {
-        ReportHelper.computeScore(ReportHelper.filterViolations(scan.violations), scan.uniqueScreens)
+        ReportHelper.computeScore(
+            ReportHelper.filterViolations(scan.violations, uiState.includeLowConfidenceFindings),
+            scan.uniqueScreens,
+        )
     }
 
     var selectedIndex by rememberSaveable { mutableIntStateOf(0) }
@@ -141,7 +144,10 @@ fun DynamicReportScreen(
         ) {
             DynamicReportScoreCard(
                 score = reportScore,
-                violationCount = ReportHelper.filterViolations(scan.violations).size,
+                violationCount = ReportHelper.filterViolations(
+                    scan.violations,
+                    uiState.includeLowConfidenceFindings,
+                ).size,
                 screensCount = frames.size,
             )
 

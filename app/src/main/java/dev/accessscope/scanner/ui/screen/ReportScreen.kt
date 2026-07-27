@@ -77,7 +77,9 @@ fun ReportScreen(
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val scan = uiState.scanState
-    val violations = remember(scan.violations) { ReportHelper.filterViolations(scan.violations) }
+    val violations = remember(scan.violations, uiState.includeLowConfidenceFindings) {
+        ReportHelper.filterViolations(scan.violations, uiState.includeLowConfidenceFindings)
+    }
     val score = ReportHelper.computeScore(violations, scan.uniqueScreens)
     var severityFilter by rememberSaveable { mutableStateOf<ViolationSeverity?>(null) }
     val filteredViolations = remember(violations, severityFilter) {

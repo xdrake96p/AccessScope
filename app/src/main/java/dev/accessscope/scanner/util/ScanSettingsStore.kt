@@ -81,10 +81,19 @@ class ScanSettingsStore(context: Context) {
         get() = prefs.getBoolean(KEY_RELIABILITY_REPORT, false)
         set(value) = prefs.edit().putBoolean(KEY_RELIABILITY_REPORT, value).apply()
 
+    /**
+     * Se true, il report include anche findings sotto soglia di confidenza (più rumore).
+     * Default false: solo findings affidabili.
+     */
+    var includeLowConfidenceFindings: Boolean
+        get() = prefs.getBoolean(KEY_INCLUDE_LOW_CONFIDENCE, false)
+        set(value) = prefs.edit().putBoolean(KEY_INCLUDE_LOW_CONFIDENCE, value).apply()
+
     companion object {
         private const val PREFS_NAME = "accessscope_settings"
         private const val KEY_AUTO_LAUNCH = "auto_launch_enabled"
         private const val KEY_RELIABILITY_REPORT = "reliability_report_enabled"
+        private const val KEY_INCLUDE_LOW_CONFIDENCE = "include_low_confidence_findings"
         private const val KEY_ENABLED_AREAS = "enabled_areas"
         private const val KEY_OVERLAY_X = "overlay_position_x"
         private const val KEY_OVERLAY_Y = "overlay_position_y"

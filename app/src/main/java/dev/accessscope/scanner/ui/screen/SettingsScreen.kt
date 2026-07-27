@@ -276,6 +276,24 @@ fun SettingsScreen(
                         onCheckedChange = { viewModel.toggleReliabilityReport() },
                     )
                 }
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Findings a bassa confidenza")
+                        Text(
+                            "Di default esclusi dal report (meno rumore). Attiva solo per debug.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = contentSecondary(),
+                        )
+                    }
+                    Switch(
+                        checked = uiState.includeLowConfidenceFindings,
+                        onCheckedChange = { viewModel.toggleIncludeLowConfidenceFindings() },
+                    )
+                }
             }
 
             // —— Diagnostica ——

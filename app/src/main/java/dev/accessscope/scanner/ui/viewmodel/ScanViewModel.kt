@@ -158,6 +158,8 @@ class ScanViewModel(application: Application) : AndroidViewModel(application) {
 
     fun toggleReliabilityReport() = sessionController.toggleReliabilityReport()
 
+    fun toggleIncludeLowConfidenceFindings() = sessionController.toggleIncludeLowConfidenceFindings()
+
     fun toggleAutoLaunch() = appListController.toggleAutoLaunch()
 
     fun toggleScanArea(area: ViolationArea) = sessionController.toggleScanArea(area)

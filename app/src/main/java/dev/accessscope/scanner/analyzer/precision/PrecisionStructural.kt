@@ -6,6 +6,7 @@ package dev.accessscope.scanner.analyzer.precision
 import android.graphics.Rect
 import dev.accessscope.scanner.analyzer.AppPrecisionProfiles
 import dev.accessscope.scanner.analyzer.NodeSnapshot
+import dev.accessscope.scanner.analyzer.ViolationConfidencePolicy
 import dev.accessscope.scanner.analyzer.precision.PrecisionGeometry
 import dev.accessscope.scanner.analyzer.precision.PrecisionLabels
 import dev.accessscope.scanner.analyzer.precision.PrecisionNavigation
@@ -142,6 +143,11 @@ internal object PrecisionStructural {
         if (PrecisionRulesPlatform.isInsideWebView(a, all) || PrecisionRulesPlatform.isInsideWebView(b, all)) return true
         if (PrecisionRulesPlatform.isClickableLayoutShell(a) && PrecisionRulesPlatform.isClickableLayoutShell(b)) return true
         if (PrecisionRulesPlatform.isLayoutShellOverlap(a, b, all)) return true
+        if (ViolationConfidencePolicy.isStructuralNoiseId(a.viewId) ||
+            ViolationConfidencePolicy.isStructuralNoiseId(b.viewId)
+        ) {
+            return true
+        }
         if (a.isWebView() || b.isWebView()) return true
         if (!PrecisionHome.isHomeScreenContext(all, packageName)) return false
         return PrecisionHome.shouldSkipHomeWidgetAnalysis(a, all, packageName) ||

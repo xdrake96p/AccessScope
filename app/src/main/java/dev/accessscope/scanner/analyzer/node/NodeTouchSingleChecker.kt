@@ -43,6 +43,7 @@ internal object NodeTouchSingleChecker {
                                 "Target di tocco sufficiente",
                                 snap, ViolationType.SMALL_TOUCH_TARGET.wcagRef,
                                 "${snap.bounds.width()}×${snap.bounds.height()} px",
+                                screenFingerprint = screenFingerprint,
                             )
                         }
                     }

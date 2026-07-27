@@ -12,12 +12,17 @@ import dev.accessscope.scanner.data.ViolationArea
 
 /**
  * Accumula conteggi e campioni dei controlli superati, raggruppati per area,
- * schermata e package.
+ * schermata, fingerprint e package.
  */
 class CheckCollector {
 
-    /** Chiave interna per raggruppare i pass per area, titolo e package. */
-    private data class Key(val area: ViolationArea, val screenTitle: String, val packageName: String)
+    /** Chiave interna per raggruppare i pass per area, titolo, fingerprint e package. */
+    private data class Key(
+        val area: ViolationArea,
+        val screenTitle: String,
+        val packageName: String,
+        val screenFingerprint: String?,
+    )
 
     private val passedCounts = mutableMapOf<Key, Int>()
     private val samples = mutableMapOf<Key, MutableList<PassedCheck>>()
@@ -32,6 +37,7 @@ class CheckCollector {
      * @param snap Snapshot del nodo che ha superato il controllo.
      * @param wcagRef Riferimento WCAG opzionale (es. "1.4.3").
      * @param detail Dettaglio opzionale; se assente viene derivato dallo snapshot.
+     * @param screenFingerprint Fingerprint schermata per report dinamico.
      */
     fun recordPass(
         area: ViolationArea,
@@ -41,8 +47,9 @@ class CheckCollector {
         snap: NodeSnapshot,
         wcagRef: String? = null,
         detail: String? = null,
+        screenFingerprint: String? = null,
     ) {
-        val key = Key(area, screenTitle, packageName)
+        val key = Key(area, screenTitle, packageName, screenFingerprint)
         passedCounts[key] = (passedCounts[key] ?: 0) + 1
         val bucket = samples.getOrPut(key) { mutableListOf() }
         if (bucket.size >= MAX_SAMPLES_PER_KEY) return
@@ -74,6 +81,7 @@ class CheckCollector {
                 packageName = key.packageName,
                 passedCount = count,
                 samples = samples[key].orEmpty().toList(),
+                screenFingerprint = key.screenFingerprint,
             )
         }
 
@@ -91,7 +99,7 @@ class CheckCollector {
         fun merge(summaries: List<CheckAreaSummary>): List<CheckAreaSummary> {
             if (summaries.isEmpty()) return emptyList()
             return summaries
-                .groupBy { Triple(it.area, it.screenTitle, it.packageName) }
+                .groupBy { Triple(it.area, it.screenTitle, it.packageName) to it.screenFingerprint }
                 .map { (_, items) ->
                     val first = items.first()
                     CheckAreaSummary(
@@ -102,6 +110,7 @@ class CheckCollector {
                         samples = items.flatMap { it.samples }
                             .distinctBy { "${it.viewId}|${it.bounds}|${it.checkLabel}" }
                             .take(MAX_SAMPLES_PER_KEY),
+                        screenFingerprint = first.screenFingerprint,
                     )
                 }
                 .sortedWith(compareBy({ it.screenTitle }, { it.area.ordinal }))

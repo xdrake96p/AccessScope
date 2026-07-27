@@ -6,6 +6,7 @@
  */
 package dev.accessscope.scanner.report
 
+import dev.accessscope.scanner.analyzer.ViolationConfidencePolicy
 import dev.accessscope.scanner.data.AccessibilityViolation
 import dev.accessscope.scanner.data.CheckAreaSummary
 import dev.accessscope.scanner.data.PassedCheck
@@ -66,19 +67,37 @@ object ReportHelper {
         ViolationType.REQUIRED_FIELD_UNMARKED,
         ViolationType.INPUT_ERROR_MISSING,
         -> 0.75f
+        ViolationType.OVERLAPPING_TOUCH_TARGETS,
+        ViolationType.REDUNDANT_ACCESSIBLE_NAME,
+        -> 0.80f
+        ViolationType.CUSTOM_ACTION_UNLABELED,
+        ViolationType.SCROLLABLE_WITHOUT_LABEL,
+        -> 0.78f
         else -> MIN_CONFIDENCE
     }
 
     /**
      * Filtra le violazioni la cui confidenza supera la soglia specifica per il tipo.
      *
+     * Applica anche [dev.accessscope.scanner.analyzer.ViolationConfidencePolicy.demoteIfNoisy]
+     * per demotare pattern strutturali rumorosi prima del confronto soglia.
+     *
      * @param violations Elenco completo delle violazioni rilevate in sessione.
+     * @param includeLowConfidence Se true, include anche findings sotto soglia (debug/Settings).
      * @return Sottoinsieme di violazioni con confidenza sufficiente per il report, deduplicate per [AccessibilityViolation.dedupeKey].
      */
-    fun filterViolations(violations: List<AccessibilityViolation>): List<AccessibilityViolation> =
-        violations
-            .filter { it.confidence >= confidenceThreshold(it.type) }
-            .distinctBy { it.dedupeKey }
+    fun filterViolations(
+        violations: List<AccessibilityViolation>,
+        includeLowConfidence: Boolean = false,
+    ): List<AccessibilityViolation> {
+        val demoted = violations.map { ViolationConfidencePolicy.demoteIfNoisy(it) }
+        val filtered = if (includeLowConfidence) {
+            demoted
+        } else {
+            demoted.filter { it.confidence >= confidenceThreshold(it.type) }
+        }
+        return filtered.distinctBy { it.dedupeKey }
+    }
 
     /**
      * Calcola un punteggio di accessibilità stimato (0–100) in base a violazioni e schermate.

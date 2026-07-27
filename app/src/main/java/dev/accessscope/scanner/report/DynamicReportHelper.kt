@@ -1,5 +1,8 @@
 /**
  * Aggregazione dati per il report dinamico navigabile per schermata.
+ *
+ * Attribuzione fingerprint-first per violazioni, TalkBack e controlli passati;
+ * fallback al titolo solo se fingerprint assente (sessioni legacy).
  */
 package dev.accessscope.scanner.report
 
@@ -22,6 +25,9 @@ data class DynamicScreenFrame(
     val protectionReason: ScreenProtectionReason = ScreenProtectionReason.NONE,
 )
 
+/**
+ * Costruisce i frame del report dinamico da visite e finding di sessione.
+ */
 object DynamicReportHelper {
 
     /**
@@ -32,6 +38,7 @@ object DynamicReportHelper {
      * @param talkBackFindings Note TalkBack della sessione.
      * @param checkSummaries Controlli superati per schermata.
      * @param screenEvidenceIdResolver Funzione per derivare l'ID evidenza da fingerprint.
+     * @param includeLowConfidence Se true, non filtra findings sotto soglia confidenza.
      */
     fun buildFrames(
         visitedScreens: List<VisitedScreen>,
@@ -41,8 +48,9 @@ object DynamicReportHelper {
         screenEvidenceIdResolver: (String) -> String = { fingerprint ->
             fingerprint.replace(Regex("""[^\w.-]"""), "_").take(120)
         },
+        includeLowConfidence: Boolean = false,
     ): List<DynamicScreenFrame> {
-        val filteredViolations = ReportHelper.filterViolations(violations)
+        val filteredViolations = ReportHelper.filterViolations(violations, includeLowConfidence)
         val violationsByFingerprint = filteredViolations
             .filter { !it.screenFingerprint.isNullOrBlank() }
             .groupBy { it.screenFingerprint!! }
@@ -50,10 +58,22 @@ object DynamicReportHelper {
             .filter { it.screenFingerprint.isNullOrBlank() }
             .groupBy { it.screenTitle }
 
-        val passedByTitle = checkSummaries.groupBy { it.screenTitle }
+        val talkBackByFingerprint = talkBackFindings
+            .filter { !it.screenFingerprint.isNullOrBlank() }
+            .groupBy { it.screenFingerprint!! }
+        val talkBackByTitle = talkBackFindings
+            .filter { it.screenFingerprint.isNullOrBlank() }
+            .groupBy { it.reportSection }
+
+        val passedByFingerprint = checkSummaries
+            .filter { !it.screenFingerprint.isNullOrBlank() }
+            .groupBy { it.screenFingerprint!! }
+            .mapValues { (_, items) -> items.sumOf { it.passedCount } }
+        val passedByTitle = checkSummaries
+            .filter { it.screenFingerprint.isNullOrBlank() }
+            .groupBy { it.screenTitle }
             .mapValues { (_, items) -> items.sumOf { it.passedCount } }
 
-        val talkBackByTitle = talkBackFindings.groupBy { it.reportSection }
         val titleVisitCount = visitedScreens.groupingBy { it.title }.eachCount()
 
         val framesFromVisits = visitedScreens.map { screen ->
@@ -64,20 +84,23 @@ object DynamicReportHelper {
                 screenViolations
             }
             val shareTitle = (titleVisitCount[screen.title] ?: 1) > 1
-            val talkBackForFrame = if (!shareTitle) {
-                talkBackByTitle[screen.title].orEmpty()
-            } else if (titleViolations.isNotEmpty()) {
-                talkBackByTitle[screen.title].orEmpty()
-            } else {
-                emptyList()
+
+            val talkBackFp = talkBackByFingerprint[screen.fingerprint].orEmpty()
+            val talkBackForFrame = when {
+                talkBackFp.isNotEmpty() -> talkBackFp
+                !shareTitle -> talkBackByTitle[screen.title].orEmpty()
+                titleViolations.isNotEmpty() -> talkBackByTitle[screen.title].orEmpty()
+                else -> emptyList()
             }
-            val passedForFrame = if (!shareTitle) {
-                passedByTitle[screen.title] ?: 0
-            } else if (titleViolations.isNotEmpty()) {
-                passedByTitle[screen.title] ?: 0
-            } else {
-                0
+
+            val passedFp = passedByFingerprint[screen.fingerprint]
+            val passedForFrame = when {
+                passedFp != null -> passedFp
+                !shareTitle -> passedByTitle[screen.title] ?: 0
+                titleViolations.isNotEmpty() -> passedByTitle[screen.title] ?: 0
+                else -> 0
             }
+
             DynamicScreenFrame(
                 fingerprint = screen.fingerprint,
                 title = screen.title,
@@ -109,6 +132,13 @@ object DynamicReportHelper {
         val passedByTitle = checkSummaries.groupBy { it.screenTitle }
             .mapValues { (_, items) -> items.sumOf { it.passedCount } }
         val talkBackByTitle = talkBackFindings.groupBy { it.reportSection }
+        val talkBackByFingerprint = talkBackFindings
+            .filter { !it.screenFingerprint.isNullOrBlank() }
+            .groupBy { it.screenFingerprint!! }
+        val passedByFingerprint = checkSummaries
+            .filter { !it.screenFingerprint.isNullOrBlank() }
+            .groupBy { it.screenFingerprint!! }
+            .mapValues { (_, items) -> items.sumOf { it.passedCount } }
 
         val fingerprintGroups = filteredViolations
             .filter { !it.screenFingerprint.isNullOrBlank() }
@@ -122,8 +152,11 @@ object DynamicReportHelper {
                     title = title,
                     visitIndex = index,
                     violations = group,
-                    talkBackFindings = talkBackByTitle[title].orEmpty(),
-                    passedCount = passedByTitle[title] ?: 0,
+                    talkBackFindings = talkBackByFingerprint[fingerprint]
+                        ?: talkBackByTitle[title].orEmpty(),
+                    passedCount = passedByFingerprint[fingerprint]
+                        ?: passedByTitle[title]
+                        ?: 0,
                     screenEvidenceId = screenEvidenceIdResolver(fingerprint),
                 )
             }
