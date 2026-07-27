@@ -1,0 +1,44 @@
+---
+description: Ogni modifica Maestro (recorder/Play/YAML) aggiorna anche l’algoritmo di ottimizzazione
+alwaysApply: true
+---
+
+# Maestro — algoritmo sempre allineato alle correzioni
+
+Quando si modifica qualsiasi comportamento della feature **Maestro** (registrazione, ottimizzazione, export YAML, Play in-app, overlay, mutex scan):
+
+## Obbligo
+
+1. **Non limitarsi al sintomo** (fix puntuale su un flusso o un tap).
+2. **Aggiornare l’algoritmo** nella pipeline di ottimizzazione / recorder in modo che le **registrazioni future** producano YAML/actions già corretti.
+3. Aggiungere o aggiornare **test JVM** che fissano la nuova regola (regressione).
+
+## Dove intervenire (tipico)
+
+| Sintomo utente | Modulo algoritmo |
+|----------------|------------------|
+| Wait mancanti / loader | `WaitPlanner`, `TransitionTimingAnalyzer` |
+| Input duplicati collassati (PIN×2) | `FlowOptimizationPipeline.coalesceInputText`, `ActionRecorder` pending flush |
+| Step editor `+` ignorati in Play | `sanitizeForPlay` (solo noise SystemUI/progress; non droppare hideKeyboard/tap campo/wait) |
+| Wait timed troncato | `FlowPlayer.waitUntil` senza selettore → timeout pieno |
+| PIN scritto su campo sbagliato | `FlowPlayer.findInputTarget`: mai `findFirstEditable` se viewId esplicito; `attachBlindWaitsToNextTarget` |
+| PIN×2 collassati | `isPinLikeField` → `shouldCoalesceInput` non merge completa; recorder `pin_reentry` (≥800ms) |
+| Password N× `****` | `isLoginPasswordField` (password non pin-like): niente pin_reentry; pipeline coalesca `****` |
+| Selettori `drawer_layout` | `isStructuralContainerViewId` + normalizer preferisce testo |
+| Overlay / PICK / YAML live | `RecordingOverlayService` + `RecordingLivePreview.summarize` one-line |
+| Pausa REC | `RecordingState.isPaused` + overlay PAUSE/RESUME |
+| Play senza sessione | long-press Play → `clearState` + stopApp + cold launch |
+| Feedback Maestro | drawer → `FeedbackIssueBuilder.buildMaestroUrl` |
+| Selettori deboli (solo testo) | `ActionRecorder.resolveTapIdentity`, `SelectorRanker`, exporter |
+| Password / hideKeyboard / BACK | `FlowPlayer`, `WaitPlanner` (no hideKeyboard auto) |
+
+## Checklist fine task Maestro
+
+- [ ] Regola generalizzata (non solo hardcode su un `viewId` AXA)
+- [ ] Test unitario sulla regola
+- [ ] `docs/PROJECT.md` aggiornato se cambia comportamento utente-visibile
+- [ ] Nessuna regressione scan WCAG (`AccessibilityEventRouter` / mutex)
+
+## Esempio
+
+Se CONTINUA non ha wait dopo il tap → in `WaitPlanner` trattare i tap “submit-like” (continua/conferma/accedi/…) inserendo sempre `waitForAnimationToEnd` + `extendedWaitUntil` sul prossimo target, non solo patchare un flusso salvato.

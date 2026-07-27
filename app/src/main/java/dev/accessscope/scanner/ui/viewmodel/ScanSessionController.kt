@@ -5,6 +5,7 @@ import android.app.Application
 import dev.accessscope.scanner.AccessScopeApp
 import dev.accessscope.scanner.data.ScanScope
 import dev.accessscope.scanner.data.ViolationArea
+import dev.accessscope.scanner.recorder.ScanRecorderMutexPolicy
 import dev.accessscope.scanner.service.AccessScopeAccessibilityService
 import dev.accessscope.scanner.service.ScanOverlayService
 import dev.accessscope.scanner.ui.selection.AppSelectionPolicy
@@ -14,7 +15,6 @@ import dev.accessscope.scanner.data.ScanSessionState
 import dev.accessscope.scanner.export.ScanReliabilityReportExporter
 import dev.accessscope.scanner.report.SessionComparisonHelper
 import dev.accessscope.scanner.util.AppLaunchHelper
-import dev.accessscope.scanner.util.DebugTrace
 import dev.accessscope.scanner.util.FeedbackIssueLauncher
 import dev.accessscope.scanner.util.PermissionHelper
 import dev.accessscope.scanner.util.ScanSettingsStore
@@ -89,12 +89,6 @@ internal class ScanSessionController(
             context,
             AccessScopeAccessibilityService::class.java,
         )
-        // #region agent log
-        DebugTrace.log("H1", "ViewModel.refreshPermissions", "state", mapOf(
-            "enabled" to a11yEnabled,
-            "connected" to a11yConnected,
-        ))
-        // #endregion
         uiState.update {
             it.copy(
                 accessibilityGranted = a11yEnabled,
@@ -106,6 +100,13 @@ internal class ScanSessionController(
 
     fun startScan() {
         val context = application
+        val app = context as AccessScopeApp
+        if (!ScanRecorderMutexPolicy.canStartScan(app.recordingController.isRecording)) {
+            uiState.update {
+                it.copy(statusMessage = "Ferma prima la registrazione Maestro (Beta).")
+            }
+            return
+        }
         val current = uiState.value
         val selected = current.selectedPackages
         val monitored = AppSelectionPolicy.enforceMax(selected)
@@ -153,13 +154,6 @@ internal class ScanSessionController(
             ),
         )
         AccessScopeAccessibilityService.instance?.resetDynamicTracking()
-        // #region agent log
-        DebugTrace.log("H1", "ViewModel.startScan", "scan_requested", mapOf(
-            "packages" to monitored.joinToString(","),
-            "serviceConnected" to (AccessScopeAccessibilityService.instance != null),
-            "accessibilityGranted" to state.accessibilityGranted,
-        ))
-        // #endregion
         ScanOverlayService.start(context)
 
         var message = "Scansione attiva. AccessScope è in ascolto — apri l'app selezionata."

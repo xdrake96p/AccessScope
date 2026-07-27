@@ -28,10 +28,12 @@ import dev.accessscope.scanner.R
 import dev.accessscope.scanner.ui.theme.HankenGroteskFamily
 
 /**
- * Barra superiore con titolo e pulsante indietro opzionale.
+ * Barra superiore con titolo e pulsante indietro o menu opzionale.
  *
  * @param title Titolo mostrato nella barra.
- * @param onBack Callback per tornare indietro; se null, non mostra l'icona.
+ * @param onBack Callback per tornare indietro; se null, non mostra l'icona indietro.
+ * @param onMenuClick Se impostato (e [onBack] null), mostra hamburger drawer.
+ * @param actions Slot azioni a destra (es. chip Beta).
  * @param modifier Modifier esterno.
  */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -39,6 +41,8 @@ import dev.accessscope.scanner.ui.theme.HankenGroteskFamily
 fun AccessScopeTopBar(
     title: String,
     onBack: (() -> Unit)? = null,
+    onMenuClick: (() -> Unit)? = null,
+    actions: @Composable () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     TopAppBar(
@@ -51,12 +55,16 @@ fun AccessScopeTopBar(
             )
         },
         navigationIcon = {
-            if (onBack != null) {
-                IconButton(onClick = onBack) {
+            when {
+                onBack != null -> IconButton(onClick = onBack) {
                     Icon(Icons.AutoMirrored.Outlined.ArrowBack, contentDescription = "Indietro")
+                }
+                onMenuClick != null -> IconButton(onClick = onMenuClick) {
+                    Icon(Icons.Outlined.Menu, contentDescription = "Apri menu")
                 }
             }
         },
+        actions = { actions() },
         colors = TopAppBarDefaults.topAppBarColors(
             containerColor = MaterialTheme.colorScheme.surface,
             titleContentColor = MaterialTheme.colorScheme.onSurface,

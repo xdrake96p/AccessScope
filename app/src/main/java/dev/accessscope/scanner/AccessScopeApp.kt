@@ -16,8 +16,22 @@ import dev.accessscope.scanner.bridge.EXTRA_SESSION_ID
 import dev.accessscope.scanner.data.ScanSessionRepository
 import dev.accessscope.scanner.export.pdf.PdfReportExporter
 import dev.accessscope.scanner.export.ScanReliabilityReportExporter
+import dev.accessscope.scanner.recorder.FlowOptimizer
+import dev.accessscope.scanner.recorder.FlowPlaybackController
+import dev.accessscope.scanner.recorder.FlowPlayer
+import dev.accessscope.scanner.recorder.FlowStore
+import dev.accessscope.scanner.recorder.RecordingSessionController
+import dev.accessscope.scanner.recorder.SavedFlow
+import dev.accessscope.scanner.service.AccessScopeAccessibilityService
+import dev.accessscope.scanner.service.PlaybackOverlayService
+import dev.accessscope.scanner.service.RecordingOverlayService
 import dev.accessscope.scanner.service.ScanOverlayService
 import dev.accessscope.scanner.util.AppFileLogger
+import dev.accessscope.scanner.util.DebugSessionLog
+import dev.accessscope.scanner.recorder.ScanRecorderMutexPolicy
+import dev.accessscope.scanner.recorder.intelligence.ScanIntelligenceProvider
+import dev.accessscope.scanner.recorder.model.OptimizationContext
+import dev.accessscope.scanner.util.PermissionHelper
 import dev.accessscope.scanner.util.FavoriteAppsStore
 import dev.accessscope.scanner.util.ScanHistoryStore
 import dev.accessscope.scanner.util.ScanEvidenceStore
@@ -27,6 +41,7 @@ import dev.accessscope.scanner.report.ReportHelper
 import dev.accessscope.scanner.report.SessionComparisonHelper
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -58,10 +73,20 @@ class AccessScopeApp : Application() {
     /** Cache JPEG screenshot ed evidenze annotate per sessione di scansione. */
     val scanEvidenceStore: ScanEvidenceStore by lazy { ScanEvidenceStore(this) }
 
+    /** Persistenza YAML Maestro (Beta). */
+    val flowStore: FlowStore by lazy { FlowStore(this) }
+
+    /** Sessione di registrazione azioni utente → YAML Maestro (Beta). */
+    val recordingController = RecordingSessionController(this)
+
+    /** Playback in-app flussi Maestro (Beta). */
+    val playbackController = FlowPlaybackController()
+
     private val pdfExporter by lazy { PdfReportExporter(this) }
     private val reliabilityExporter by lazy { ScanReliabilityReportExporter(this) }
     private var lastArchivedSessionId: String? = null
     private val applicationScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+    private var playbackJob: Job? = null
 
     /**
      * Inizializza l'applicazione: crea il repository, registra i callback
@@ -224,5 +249,227 @@ class AccessScopeApp : Application() {
             BRIDGE_LOG_TAG,
             "scan_complete sessionId=$sessionId package=${packageName.orEmpty()}",
         )
+    }
+
+    /**
+     * Avvia registrazione Maestro (Beta). Mutex con lo scan WCAG.
+     *
+     * @return Messaggio errore o `null` se ok.
+     */
+    fun startRecordingSession(targetPackage: String, targetLabel: String): String? {
+        if (!ScanRecorderMutexPolicy.canStartRecording(scanRepository.state.value.isScanning)) {
+            return "Ferma prima la scansione accessibilità"
+        }
+        if (recordingController.isRecording) {
+            return "Registrazione già in corso"
+        }
+        if (!PermissionHelper.isAccessibilityServiceEnabled(
+                this,
+                AccessScopeAccessibilityService::class.java,
+            )
+        ) {
+            return "Abilita il servizio di accessibilità AccessScope nelle impostazioni."
+        }
+        // Dopo install/force-stop il toggle può restare ON senza service bound → zero eventi.
+        if (AccessScopeAccessibilityService.instance == null) {
+            PermissionHelper.safeStartSettingsIntent(
+                this,
+                PermissionHelper.accessibilityServiceIntent(
+                    this,
+                    AccessScopeAccessibilityService::class.java,
+                ),
+            )
+            return "Accessibilità risulta ON ma il servizio non è collegato " +
+                "(tipico dopo update APK). In Accessibilità: OFF → attendi → ON. " +
+                "Se continua, riavvia il telefono e riprova."
+        }
+        if (playbackController.isPlaying) {
+            return "Ferma prima il playback del flusso"
+        }
+        if (!recordingController.start(targetPackage, targetLabel)) {
+            return "Impossibile avviare la registrazione"
+        }
+        RecordingOverlayService.start(this)
+        // Porta in foreground l'app target se possibile
+        runCatching {
+            val launch = packageManager.getLaunchIntentForPackage(targetPackage)
+            if (launch != null) {
+                launch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                startActivity(launch)
+            }
+        }
+        AppFileLogger.info(
+            "AccessScopeApp",
+            "recording_start pkg=$targetPackage a11yInstance=${AccessScopeAccessibilityService.instance != null}",
+        )
+        return null
+    }
+
+    /**
+     * Termina la registrazione, salva il flusso se richiesto e chiude l’overlay.
+     *
+     * @param save Se true salva YAML in [FlowStore].
+     * @return [SavedFlow] se salvato, altrimenti null.
+     */
+    fun stopRecordingSession(save: Boolean = true): SavedFlow? {
+        RecordingOverlayService.stop(this)
+        if (!recordingController.isRecording && recordingController.state.value.actions.isEmpty()) {
+            return null
+        }
+        val actions = if (recordingController.isRecording) {
+            recordingController.stop()
+        } else {
+            recordingController.state.value.actions
+        }
+        val pkg = recordingController.state.value.targetPackage ?: return null
+        val label = recordingController.state.value.targetLabel ?: pkg
+        if (!save || actions.isEmpty()) {
+            recordingController.cancel()
+            return null
+        }
+        val telemetry = recordingController.buildTelemetry()
+        val intel = ScanIntelligenceProvider(scanHistoryStore).load(
+            pkg,
+            scanRepository.state.value.takeIf { it.isScanning },
+        )
+        val optimizationContext = OptimizationContext(
+            appId = pkg,
+            telemetry = telemetry,
+            scanIntel = intel,
+        )
+        val flow = flowStore.saveFlow(
+            name = "Flusso $label",
+            appId = pkg,
+            appLabel = label,
+            actions = actions,
+            optimize = true,
+            optimizationContext = optimizationContext,
+            telemetry = telemetry,
+        )
+        AppFileLogger.info("AccessScopeApp", "recording_saved id=${flow.id} steps=${flow.stepCount}")
+        return flow
+    }
+
+    /**
+     * Avvia il playback in-app di un flusso salvato (richiede `actions.json`).
+     *
+     * @param flow Flusso target.
+     * @param withScan Se true, lo scan WCAG può già essere attivo in parallelo.
+     * @param clearState Se true, tenta stopApp + clear dati + cold launch prima del flusso.
+     * @return Messaggio errore o `null` se avviato.
+     */
+    fun startFlowPlayback(
+        flow: SavedFlow,
+        withScan: Boolean = false,
+        clearState: Boolean = false,
+    ): String? {
+        if (recordingController.isRecording) {
+            return "Ferma prima la registrazione Maestro"
+        }
+        if (playbackController.isPlaying) {
+            return "Playback già in corso"
+        }
+        if (AccessScopeAccessibilityService.instance == null) {
+            return "Servizio accessibilità non collegato. Riattiva AccessScope in Accessibilità."
+        }
+        val actions = flowStore.readActions(flow.id)
+            ?: return "Flusso senza azioni tipizzate — ri-registra o importa YAML."
+        val sanitized = FlowOptimizer.sanitizeForPlay(actions)
+        // #region agent log
+        DebugSessionLog.log(
+            "H7",
+            "AccessScopeApp.startFlowPlayback",
+            "play_actions",
+            mapOf(
+                "flowId" to flow.id,
+                "rawCount" to actions.size,
+                "playCount" to sanitized.size,
+                "clearState" to clearState,
+                "rawTypes" to actions.joinToString(",") { it::class.simpleName.orEmpty() },
+                "playTypes" to sanitized.joinToString(",") { it::class.simpleName.orEmpty() },
+            ),
+        )
+        // #endregion
+        if (!playbackController.begin(flow.id, sanitized.size, withScan)) {
+            return "Impossibile avviare il playback"
+        }
+        PlaybackOverlayService.start(this)
+        val player = FlowPlayer(this) { AccessScopeAccessibilityService.instance }
+        playbackJob?.cancel()
+        playbackJob = applicationScope.launch(Dispatchers.Default) {
+            val err = runCatching {
+                player.play(sanitized, clearState = clearState) { index, total ->
+                    playbackController.onStep(index, total)
+                    PlaybackOverlayService.updateStep(this@AccessScopeApp, index, total)
+                }
+            }.getOrElse { e ->
+                e.message ?: "Playback fallito"
+            }
+            withContext(Dispatchers.Main) {
+                val endMsg = when {
+                    err != null -> err
+                    else -> "Playback completato (${sanitized.size} step)"
+                }
+                playbackController.end(endMsg)
+                if (err == null) {
+                    PlaybackOverlayService.stop(this@AccessScopeApp)
+                } else {
+                    PlaybackOverlayService.showError(this@AccessScopeApp, endMsg)
+                }
+            }
+        }
+        AppFileLogger.info(
+            "AccessScopeApp",
+            "playback_start id=${flow.id} steps=${sanitized.size} clearState=$clearState",
+        )
+        return null
+    }
+
+    /**
+     * Interrompe il playback corrente.
+     *
+     * @param userCancelled Se true, messaggio «annullato dall’utente».
+     */
+    fun stopFlowPlayback(userCancelled: Boolean = false) {
+        playbackJob?.cancel()
+        playbackJob = null
+        PlaybackOverlayService.stop(this)
+        if (playbackController.isPlaying || userCancelled) {
+            playbackController.end(
+                if (userCancelled) "Playback interrotto" else playbackController.state.value.statusMessage,
+            )
+        }
+    }
+
+    /**
+     * Avvia scan WCAG sul package del flusso e, in parallelo, il playback.
+     *
+     * @return Messaggio errore o `null` se ok.
+     */
+    fun startScanWithFlow(flow: SavedFlow): String? {
+        if (recordingController.isRecording) {
+            return "Ferma prima la registrazione Maestro"
+        }
+        if (playbackController.isPlaying) {
+            return "Ferma prima il playback in corso"
+        }
+        if (!PermissionHelper.isAccessibilityServiceEnabled(
+                this,
+                AccessScopeAccessibilityService::class.java,
+            )
+        ) {
+            return "Abilita il servizio di accessibilità AccessScope."
+        }
+        if (AccessScopeAccessibilityService.instance == null) {
+            return "Servizio accessibilità non collegato. Riattiva AccessScope in Accessibilità."
+        }
+        if (!PermissionHelper.canDrawOverlays(this)) {
+            return "Concedi il permesso di sovrapposizione."
+        }
+        val scope = scanSettingsStore.getScanScope()
+        scanRepository.startScan(setOf(flow.appId), scope)
+        AccessScopeAccessibilityService.instance?.resetDynamicTracking()
+        ScanOverlayService.start(this)
+        return startFlowPlayback(flow, withScan = true)
     }
 }

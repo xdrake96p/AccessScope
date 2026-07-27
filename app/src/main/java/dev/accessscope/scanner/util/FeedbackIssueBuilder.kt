@@ -86,6 +86,39 @@ object FeedbackIssueBuilder {
     }
 
     /**
+     * URL issue precompilata per area Maestro (bug o miglioramento).
+     *
+     * @param bug `true` = bug, `false` = miglioramento.
+     * @param deviceInfo Riga dispositivo/versione.
+     * @return URL GitHub Issues.
+     */
+    fun buildMaestroUrl(bug: Boolean, deviceInfo: String? = null): String {
+        val kind = if (bug) "Bug" else "Miglioramento"
+        val title = URLEncoder.encode("[Maestro] $kind", StandardCharsets.UTF_8)
+        val body = buildString {
+            appendLine("## Area")
+            appendLine("Maestro (Beta) — registrazione / Play / YAML")
+            appendLine()
+            appendLine("## Tipo")
+            appendLine(kind)
+            appendLine()
+            appendLine("## Descrizione")
+            appendLine("(Descrivi il problema o la proposta)")
+            appendLine()
+            appendLine("## Passi per riprodurre")
+            appendLine("1. …")
+            appendLine("2. …")
+            if (!deviceInfo.isNullOrBlank()) {
+                appendLine()
+                appendLine("## Dispositivo")
+                appendLine(deviceInfo.trim())
+            }
+        }
+        val encodedBody = URLEncoder.encode(body, StandardCharsets.UTF_8)
+        return "$ISSUE_URL?template=$TEMPLATE&title=$title&body=$encodedBody"
+    }
+
+    /**
      * Formatta informazioni dispositivo e versione app.
      */
     fun formatDeviceInfo(

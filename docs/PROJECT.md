@@ -6,7 +6,7 @@
 **Package:** `dev.accessscope.scanner`  
 **Branch principale sviluppo:** `develop`  
 **Branch release stabile:** `main`  
-**Ultimo aggiornamento:** 27 luglio 2026 (precisione: confidence gate + fingerprint report dinamico)
+**Ultimo aggiornamento:** 27 luglio 2026 (Maestro editor UX: insert/duplica, overlay one-line, password vs PIN, pausa REC, Play clean)
 
 **Manuale utente e tecnico:** [`docs/MANUALE_UTENTE.md`](MANUALE_UTENTE.md) — installazione, uso plugin AS/VS Code, troubleshooting.
 
@@ -95,6 +95,32 @@ Utente → HomeScreen (selezione app) → Avvia scan
 ---
 
 ## Cronologia sviluppo
+
+### Maestro (Beta) — recorder / Play / editor YAML (27 luglio 2026, branch `restyle`)
+
+- Tab MAIN **Maestro**: registra tap/testo/scroll via AccessibilityService → YAML Maestro
+- Package `recorder/`: capture (`ActionRecorder`, `RecordingSessionController`), `FlowOptimizationPipeline` (noise, `WaitPlanner`, `SelectorRanker`, `PopupClassifier`), `MaestroYamlExporter`/`Importer`, `FlowStore` (`{id}.yaml`, `{id}.actions.json`, `{id}.telemetry.json`), `FlowPlayer`, overlay Play/Rec
+- **Nuovi comandi editor/Play/export:** `DoubleTap`, `EraseText`, `ScrollUntilVisible`, `Swipe`, `PressKey`, `AssertVisible`, `AssertNotVisible`, `OpenLink`, `StopApp`, `RawMaestroYaml` (Play salta raw con log); codec JSON + importer subset + menu `+` raggruppato
+- **Intelligence (senza scan in parallelo durante record):** `RecordingTelemetry` (fingerprint + transizioni) + `ScanIntelligenceProvider` (ultima sessione archiviata o live Scan+Flusso) → timeout adattivi, id-first, step `optional: true` su popup
+- **Regressione scan:** `AccessibilityEventRouter` (record blocca path scan); `ScanRecorderMutexPolicy`; gate `./gradlew :app:testDebugUnitTest` (175 test)
+- **Optimizer:** coalesce `inputText`, dedupe tap, drop noise; `sanitizeForPlay` su legacy; preview YAML scrollabile completo
+- **Wait submit-like:** dopo CONTINUA/CONFERMA/accedi/… sempre `waitForAnimationToEnd` + `extendedWaitUntil` (loader)
+- **PIN re-entry:** non coalesce due input uguali con gap ≥1.5s; flush pending su focus editabile / `WINDOW_STATE_CHANGED` / cambio campo
+- **Play rispetta editor:** `sanitizeForPlay` non rimuove più hideKeyboard / tap su campi / wait aggiunti con `+`; wait timed senza selettore usa il timeout intero
+- **Play PIN stretto:** con `viewId` esplicito non fallback al primo editable (evita SET_TEXT su `username` cercando `pincode`); wait ciechi arricchiti con `visibleId` del prossimo input; id strutturali (`drawer_layout`) → preferenza testo
+- **PIN×2 eccezione:** `isPinLikeField` non coalesce inserimenti completi; recorder flush `pin_reentry` (≥800ms); password login **non** è più pin-like → un solo `****`
+- **Overlay REC:** riepilogo one-line (`id=` / testo / `@%`) + contatore + PICK + **PAUSE/RESUME**
+- **Editor UX:** selezione step, `+` inserisce dopo selezione, duplica / inserisci sotto
+- **Play clean:** long-press Play → stopApp + tentativo clearState + cold launch
+- **Drawer Maestro:** Segnala bug / Suggerisci miglioramento → GitHub `[Maestro]`
+- **Editor `+`:** catalogo comandi Maestro esteso (assert, swipe, erase, pressKey, raw YAML, …)
+- **Regola Cursor:** `.cursor/rules/maestro-algorithm-learning.mdc` — ogni fix Maestro aggiorna l’algoritmo + test
+- Overlay **STOP REC · Beta** / **STOP PLAY · Beta**; mutex record↔scan; play+scan ammessi insieme (Scan+Flusso)
+- Drawer dedicato su route `maestro` (`MaestroDrawerContent`): **Importa YAML**, **Nuovo flusso YAML**, bug/suggerimento GitHub
+- Card flusso: Play, matita (editor step `maestro/edit/{id}`), logo AccessScope (Scan+Flusso), YAML/share/delete
+- Onboarding: pagina «Maestro» (Beta); password mascherate `****` (skip in Play)
+- **Fix cattura step:** fallback root/focus; FOCUSED/SELECTED; toast se 0 step / a11y non bound dopo update APK
+- Fase 2 futura: `maestro run` via plugin/CLI sul PC (export YAML già pronto per CI)
 
 ### Precisione anti-rumore + report dinamico fingerprint (27 luglio 2026, branch `restyle`)
 

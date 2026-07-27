@@ -8,6 +8,7 @@
 package dev.accessscope.scanner.service
 
 import android.accessibilityservice.AccessibilityService
+import android.accessibilityservice.AccessibilityServiceInfo
 import android.view.accessibility.AccessibilityEvent
 import dev.accessscope.scanner.AccessScopeApp
 import dev.accessscope.scanner.analyzer.DynamicContentTracker
@@ -17,7 +18,7 @@ import dev.accessscope.scanner.service.scan.AccessibilityRootSelector
 import dev.accessscope.scanner.service.scan.AccessibilityScanScheduler
 import dev.accessscope.scanner.service.scan.AccessibilityScreenshotCapture
 import dev.accessscope.scanner.service.scan.AccessibilityTreeScanner
-import dev.accessscope.scanner.util.AppFileLogger
+import dev.accessscope.scanner.recorder.AccessibilityRootProvider
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Executors
 import java.util.concurrent.ScheduledExecutorService
@@ -31,12 +32,6 @@ import java.util.concurrent.atomic.AtomicBoolean
  * e deduplicazione delle schermate tramite fingerprint.
  */
 class AccessScopeAccessibilityService : AccessibilityService() {
-
-    init {
-        // #region agent log
-        AppFileLogger.log("H1", "A11yService.<init>", "constructed", emptyMap())
-        // #endregion
-    }
 
     private val repository: ScanSessionRepository
         get() = (application as AccessScopeApp).scanRepository
@@ -102,23 +97,28 @@ class AccessScopeAccessibilityService : AccessibilityService() {
         if (event == null) return
 
         val packageName = event.packageName?.toString() ?: return
+        if (packageName == applicationContext.packageName) return
+
+        val app = application as AccessScopeApp
+        val recording = app.recordingController
+        if (AccessibilityEventRouter.routesToRecording(recording.isRecording)) {
+            val metrics = resources.displayMetrics
+            val rootProvider = AccessibilityRootProvider {
+                runCatching { rootInActiveWindow }.getOrNull()
+            }
+            recording.onAccessibilityEvent(
+                event,
+                metrics.widthPixels,
+                metrics.heightPixels,
+                rootProvider,
+            )
+            return
+        }
+
         val isScanning = repository.state.value.isScanning
         val isTarget = repository.isTargetPackage(packageName)
 
-        // #region agent log
-        if (packageName != applicationContext.packageName) {
-            AppFileLogger.log("H1", "A11yService.onEvent", "event_received", mapOf(
-                "pkg" to packageName,
-                "type" to event.eventType,
-                "isScanning" to isScanning,
-                "isTarget" to isTarget,
-            ))
-        }
-        // #endregion
-
-        if (!isScanning) return
-        if (packageName == applicationContext.packageName) return
-        if (!isTarget) return
+        if (!AccessibilityEventRouter.routesToScan(recording.isRecording, isScanning, isTarget)) return
 
         when (event.eventType) {
             AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED,
@@ -171,13 +171,35 @@ class AccessScopeAccessibilityService : AccessibilityService() {
     override fun onServiceConnected() {
         super.onServiceConnected()
         instance = this
-        // #region agent log
-        AppFileLogger.log("H1", "onServiceConnected", "service_bound", emptyMap())
-        // #endregion
+        // Forza i tipi evento a runtime: dopo install/force-stop la config XML può restare stale.
+        applyRecordingCapableServiceInfo()
         if (executor.isShutdown) {
             executor = Executors.newSingleThreadExecutor()
         }
         lastScanByWindow.clear()
+    }
+
+    /**
+     * Applica flag/eventi necessari a scan WCAG + recorder Maestro.
+     */
+    private fun applyRecordingCapableServiceInfo() {
+        val info = serviceInfo ?: AccessibilityServiceInfo()
+        info.eventTypes = AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED or
+            AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED or
+            AccessibilityEvent.TYPE_VIEW_CLICKED or
+            AccessibilityEvent.TYPE_VIEW_LONG_CLICKED or
+            AccessibilityEvent.TYPE_VIEW_TEXT_CHANGED or
+            AccessibilityEvent.TYPE_VIEW_SCROLLED or
+            AccessibilityEvent.TYPE_VIEW_FOCUSED or
+            AccessibilityEvent.TYPE_VIEW_SELECTED or
+            AccessibilityEvent.TYPE_ANNOUNCEMENT
+        info.feedbackType = AccessibilityServiceInfo.FEEDBACK_GENERIC
+        info.notificationTimeout = 100
+        info.flags = info.flags or
+            AccessibilityServiceInfo.FLAG_REPORT_VIEW_IDS or
+            AccessibilityServiceInfo.FLAG_RETRIEVE_INTERACTIVE_WINDOWS or
+            AccessibilityServiceInfo.FLAG_INCLUDE_NOT_IMPORTANT_VIEWS
+        serviceInfo = info
     }
 
     /**
@@ -188,9 +210,6 @@ class AccessScopeAccessibilityService : AccessibilityService() {
      */
     override fun onUnbind(intent: android.content.Intent?): Boolean {
         instance = null
-        // #region agent log
-        AppFileLogger.log("H1", "onUnbind", "service_unbound", emptyMap())
-        // #endregion
         return super.onUnbind(intent)
     }
 }

@@ -8,12 +8,14 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.Movie
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.outlined.Analytics
 import androidx.compose.material.icons.outlined.Description
 import androidx.compose.material.icons.outlined.History
 import androidx.compose.material.icons.outlined.Home
+import androidx.compose.material.icons.outlined.Movie
 import androidx.compose.material.icons.outlined.Radar
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.Star
@@ -50,6 +52,7 @@ private data class MainTabItem(
 private val mainTabs = listOf(
     MainTabItem("home", "Home", Icons.Filled.Home, Icons.Outlined.Home),
     MainTabItem("favorites", "Preferiti", Icons.Filled.Star, Icons.Outlined.Star),
+    MainTabItem("maestro", "Maestro", Icons.Filled.Movie, Icons.Outlined.Movie),
     MainTabItem("settings", "Settings", Icons.Filled.Settings, Icons.Outlined.Settings),
 )
 
@@ -60,7 +63,8 @@ private val mainTabs = listOf(
  */
 fun zoneForRoute(route: String?): BottomZone = when {
     route == null -> BottomZone.NONE
-    route == "home" || route == "favorites" || route == "settings" -> BottomZone.MAIN
+    route == "home" || route == "favorites" || route == "maestro" ||
+        route.startsWith("maestro/") || route == "settings" -> BottomZone.MAIN
     route == "report" || route == "dynamic_report" ||
         route.startsWith("violation_detail") || route.startsWith("history") -> BottomZone.SESSION
     else -> BottomZone.NONE
@@ -76,7 +80,7 @@ fun sessionTabForRoute(route: String?): SessionTab = when {
 }
 
 /**
- * Bottom bar della zona principale: Home, Preferiti, Settings.
+ * Bottom bar della zona principale: Home, Preferiti, Maestro, Settings.
  *
  * @param currentRoute Route attiva per evidenziare il tab selezionato.
  * @param onSelect Callback con la route della tab scelta.
@@ -88,7 +92,10 @@ fun MainBottomBar(currentRoute: String?, onSelect: (String) -> Unit) {
         tonalElevation = 3.dp,
     ) {
         mainTabs.forEach { tab ->
-            val selected = currentRoute == tab.route
+            val selected = when (tab.route) {
+                "maestro" -> currentRoute == "maestro" || currentRoute?.startsWith("maestro/") == true
+                else -> currentRoute == tab.route
+            }
             NavigationBarItem(
                 selected = selected,
                 onClick = { onSelect(tab.route) },
@@ -98,7 +105,12 @@ fun MainBottomBar(currentRoute: String?, onSelect: (String) -> Unit) {
                         contentDescription = tab.label,
                     )
                 },
-                label = { Text(tab.label, style = MaterialTheme.typography.labelSmall) },
+                label = {
+                    Text(
+                        tab.label,
+                        style = MaterialTheme.typography.labelSmall,
+                    )
+                },
                 colors = NavigationBarItemDefaults.colors(
                     selectedIconColor = MaterialTheme.colorScheme.primary,
                     selectedTextColor = MaterialTheme.colorScheme.primary,

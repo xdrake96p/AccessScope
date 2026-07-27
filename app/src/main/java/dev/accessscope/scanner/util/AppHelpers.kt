@@ -107,21 +107,19 @@ object PermissionHelper {
     }
 
     /**
-     * Verifica se il servizio di accessibilità è collegato o abilitato in impostazioni.
+     * Verifica se il servizio di accessibilità è realmente collegato (istanza viva).
      *
-     * Considera pronto il servizio anche se abilitato ma non ancora connesso,
-     * per evitare falsi negativi durante l'avvio.
+     * Non basta il toggle nelle impostazioni: dopo force-stop/install il toggle può
+     * restare ON senza `onServiceConnected` (nessun evento ricevuto).
      *
      * @param context Contesto Android.
      * @param serviceClass Classe del servizio di accessibilità.
-     * @return `true` se il servizio è istanziato o abilitato nelle impostazioni.
+     * @return `true` solo se [AccessScopeAccessibilityService.instance] è non null.
      */
     fun isAccessibilityServiceConnected(
         context: Context,
         serviceClass: Class<*>,
-    ): Boolean =
-        AccessScopeAccessibilityService.instance != null ||
-            isAccessibilityServiceEnabled(context, serviceClass)
+    ): Boolean = AccessScopeAccessibilityService.instance != null
 
     /**
      * Verifica se il servizio di accessibilità è abilitato e pronto all'uso.

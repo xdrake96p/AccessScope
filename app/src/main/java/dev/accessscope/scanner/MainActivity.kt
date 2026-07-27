@@ -6,6 +6,9 @@
  */
 package dev.accessscope.scanner
 
+import android.content.Intent
+import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import android.util.Base64
 import androidx.activity.ComponentActivity
@@ -38,15 +41,20 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
+import android.content.Context
 import dev.accessscope.scanner.ui.components.AccessScopeDrawerContent
 import dev.accessscope.scanner.ui.components.BottomZone
 import dev.accessscope.scanner.ui.components.MainBottomBar
+import dev.accessscope.scanner.ui.components.MaestroDrawerContent
 import dev.accessscope.scanner.ui.components.SessionBottomBar
 import dev.accessscope.scanner.ui.components.SessionTab
 import dev.accessscope.scanner.ui.components.zoneForRoute
+import dev.accessscope.scanner.util.FeedbackIssueBuilder
 import dev.accessscope.scanner.ui.screen.DynamicReportScreen
 import dev.accessscope.scanner.ui.screen.FavoritesScreen
 import dev.accessscope.scanner.ui.screen.FeedbackScreen
+import dev.accessscope.scanner.ui.screen.FlowEditScreen
+import dev.accessscope.scanner.ui.screen.FlowsScreen
 import dev.accessscope.scanner.ui.screen.HomeScreen
 import dev.accessscope.scanner.ui.screen.LogCheckerScreen
 import dev.accessscope.scanner.ui.screen.ReportScreen
@@ -112,10 +120,14 @@ private fun AccessScopeAppRoot(viewModel: ScanViewModel) {
     val zone = zoneForRoute(currentRoute)
 
     var lastDetailRoute by remember { mutableStateOf<String?>(null) }
+    var maestroImportRequest by remember { mutableStateOf(0) }
+    var maestroCreateRequest by remember { mutableStateOf(0) }
 
     val sessionPackage = uiState.historyPackageName
         ?: uiState.scanState.selectedPackages.firstOrNull()
         ?: uiState.latestArchivedSession?.targetPackages?.firstOrNull()
+
+    val isMaestroRoute = currentRoute == "maestro" || currentRoute?.startsWith("maestro/") == true
 
     fun navigateTab(route: String) {
         navController.navigate(route) {
@@ -130,22 +142,53 @@ private fun AccessScopeAppRoot(viewModel: ScanViewModel) {
         gesturesEnabled = zone == BottomZone.MAIN,
         drawerContent = {
             ModalDrawerSheet {
-                AccessScopeDrawerContent(
-                    versionName = BuildConfig.VERSION_NAME,
-                    historyEnabled = sessionPackage != null,
-                    onCronologia = {
-                        scope.launch { drawerState.close() }
-                        sessionPackage?.let { pkg -> navigateTab("history/$pkg") }
-                    },
-                    onUltimaSessione = {
-                        scope.launch { drawerState.close() }
-                        navigateTab("report")
-                    },
-                    onFeedback = {
-                        scope.launch { drawerState.close() }
-                        navController.navigate("feedback")
-                    },
-                )
+                if (isMaestroRoute) {
+                    MaestroDrawerContent(
+                        onImportYaml = {
+                            scope.launch {
+                                drawerState.close()
+                                if (currentRoute?.startsWith("maestro/edit") == true) {
+                                    navController.popBackStack("maestro", inclusive = false)
+                                }
+                                maestroImportRequest++
+                            }
+                        },
+                        onCreateYaml = {
+                            scope.launch {
+                                drawerState.close()
+                                if (currentRoute?.startsWith("maestro/edit") == true) {
+                                    navController.popBackStack("maestro", inclusive = false)
+                                }
+                                maestroCreateRequest++
+                            }
+                        },
+                        onMaestroBug = {
+                            scope.launch { drawerState.close() }
+                            openMaestroGithubIssue(context, bug = true)
+                        },
+                        onMaestroSuggestion = {
+                            scope.launch { drawerState.close() }
+                            openMaestroGithubIssue(context, bug = false)
+                        },
+                    )
+                } else {
+                    AccessScopeDrawerContent(
+                        versionName = BuildConfig.VERSION_NAME,
+                        historyEnabled = sessionPackage != null,
+                        onCronologia = {
+                            scope.launch { drawerState.close() }
+                            sessionPackage?.let { pkg -> navigateTab("history/$pkg") }
+                        },
+                        onUltimaSessione = {
+                            scope.launch { drawerState.close() }
+                            navigateTab("report")
+                        },
+                        onFeedback = {
+                            scope.launch { drawerState.close() }
+                            navController.navigate("feedback")
+                        },
+                    )
+                }
             }
         },
     ) {
@@ -178,6 +221,8 @@ private fun AccessScopeAppRoot(viewModel: ScanViewModel) {
                 modifier = Modifier.padding(padding),
                 onOpenDrawer = { scope.launch { drawerState.open() } },
                 onViolationDetailOpened = { route -> lastDetailRoute = route },
+                maestroImportRequest = maestroImportRequest,
+                maestroCreateRequest = maestroCreateRequest,
             )
         }
     }
@@ -195,6 +240,8 @@ private fun AccessScopeNavHost(
     modifier: Modifier = Modifier,
     onOpenDrawer: () -> Unit = {},
     onViolationDetailOpened: (String) -> Unit = {},
+    maestroImportRequest: Int = 0,
+    maestroCreateRequest: Int = 0,
 ) {
     val context = LocalContext.current
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
@@ -252,6 +299,29 @@ private fun AccessScopeNavHost(
         }
         composable("favorites") {
             FavoritesScreen(viewModel = viewModel)
+        }
+        composable("maestro") {
+            FlowsScreen(
+                viewModel = viewModel,
+                onOpenDrawer = onOpenDrawer,
+                onEditFlow = { flowId -> navController.navigate("maestro/edit/$flowId") },
+                importYamlRequest = maestroImportRequest,
+                createYamlRequest = maestroCreateRequest,
+            )
+        }
+        composable(
+            route = "maestro/edit/{flowId}",
+            arguments = listOf(navArgument("flowId") { type = NavType.StringType }),
+            enterTransition = { enter },
+            exitTransition = { exit },
+            popEnterTransition = { popEnter },
+            popExitTransition = { popExit },
+        ) { entry ->
+            val flowId = entry.arguments?.getString("flowId").orEmpty()
+            FlowEditScreen(
+                flowId = flowId,
+                onBack = { navController.popBackStack() },
+            )
         }
         composable(
             route = "settings",
@@ -359,5 +429,20 @@ private fun AccessScopeNavHost(
                 onOpenPdf = { path -> PdfHelper.openPdf(context, path) },
             )
         }
+    }
+}
+
+/**
+ * Apre GitHub Issues precompilata per feedback Maestro.
+ */
+private fun openMaestroGithubIssue(context: Context, bug: Boolean) {
+    val device = FeedbackIssueBuilder.formatDeviceInfo(
+        model = Build.MODEL,
+        apiLevel = Build.VERSION.SDK_INT,
+        appVersion = BuildConfig.VERSION_NAME,
+    )
+    val url = FeedbackIssueBuilder.buildMaestroUrl(bug = bug, deviceInfo = device)
+    runCatching {
+        context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
     }
 }

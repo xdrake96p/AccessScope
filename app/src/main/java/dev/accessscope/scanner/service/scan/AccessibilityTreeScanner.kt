@@ -97,12 +97,6 @@ internal class AccessibilityTreeScanner(
             seenFingerprintsThisSession.add(fingerprint)
             repository.registerUniqueScreen(fingerprint, screenTitle, assessment.reason)
         }
-        // #region agent log
-        AppFileLogger.info(
-            "A11yService",
-            "pass_summary screen=$screenTitle protection=${assessment.reason} violations=${result.violations.size}",
-        )
-        // #endregion
         AppFileLogger.info(
             "A11yService",
             "analyzed pkg=$packageName screen=$screenTitle protection=${assessment.reason} violations=${result.violations.size}",

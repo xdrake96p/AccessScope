@@ -74,7 +74,7 @@ Non serve essere esperti di accessibilità per **avviare** una scansione; il rep
 
 ## 4. L'app AccessScope (sul telefono)
 
-> **Novità UI "Scanner & HUD" (restyle luglio 2026):** splash animata e tutorial al primo avvio, bottom bar a due zone — **Home/Preferiti/Settings** (zona principale, con drawer laterale ☰) e **Scansione/Dettagli/Report/Storico** (zona sessione, si entra da "VEDI DETTAGLI" sulla card Ultima sessione). Preferiti ora in una schermata dedicata (tab centrale).
+> **Novità UI "Scanner & HUD" (restyle luglio 2026):** splash animata e tutorial al primo avvio, bottom bar a due zone — **Home/Preferiti/Maestro/Settings** (zona principale) e **Scansione/Dettagli/Report/Storico** (zona sessione). Su **Home** il drawer ☰ apre cronologia/ultima sessione/feedback; su **Maestro** il drawer ☰ apre **Importa YAML** / **Nuovo flusso YAML** / **Segnala bug Maestro** / **Suggerisci miglioramento**. **Maestro (Beta):** registra con overlay YAML live + PICK, importa/crea YAML, Play in-app, editor step completo, Scan+Flusso.
 
 ### Cosa fa
 
@@ -100,6 +100,34 @@ Non serve essere esperti di accessibilità per **avviare** una scansione; il rep
 | **Overlay** | Impostazioni → App → AccessScope → “Mostra sopra altre app” |
 
 Senza questi due permessi la scansione non parte. Il plugin può verificarli con **Setup Check**.
+
+### Maestro (Beta)
+
+Tab **Maestro** nella bottom bar. Serve a **registrare**, **importare/creare** e **riprodurre** flussi YAML Maestro.
+
+1. Apri **Maestro** → **Registra con Maestro** (oppure ☰ → **Nuovo flusso YAML** / **Importa YAML**).
+2. Scegli l’app target (serve accessibilità + overlay, come per lo scan).
+3. Usa l’app normalmente: tap, testo, scroll vengono catturati (password mascherate `****`). Sull’overlay vedi **riepilogo step** (`id` / testo / punto), contatore, **PICK**, **PAUSE/RESUME** e **STOP**.
+4. In pausa gli eventi non vengono registrati (PICK resta utile); riprendi con RESUME.
+5. Tocca **STOP** sull’overlay (o ferma da AccessScope).
+6. In elenco, sulla card:
+   - **Play** — riproduce il flusso in-app via accessibilità
+   - **Long-press Play** — dialog **Avvia pulito** (stopApp + cold launch) / **Avvia normale**
+   - **Matita** — editor step: seleziona una riga, `+` inserisce sotto, duplica; catalogo comandi via `+`
+   - **Logo AccessScope** — Scan+Flusso (scan WCAG + playback in parallelo)
+   - **YAML** / condividi / elimina
+
+Menu **☰** su Maestro (non è il drawer Home):
+
+- **Importa YAML** — file picker; subset Maestro esteso (tap, doubleTap, input, erase, scroll, swipe, assert, wait, openLink, stopApp, …)
+- **Nuovo flusso YAML** — nome + app → apre l’editor con `launchApp`
+- **Segnala bug Maestro** / **Suggerisci miglioramento** — GitHub Issues precompilata `[Maestro]`
+
+**Dopo un update dell’APK:** disattiva e riattiva **AccessScope** in Impostazioni → Accessibilità. Se il servizio non è collegato, i tap non vengono catturati e Play non parte.
+
+**Nota Beta:** per timeout e selettori più affidabili, esegui prima una **scan WCAG** sull’app target (la pipeline usa l’ultima sessione archiviata). Popup/dismiss possono essere esportati con `optional: true` nel YAML; il Play in-app li salta se falliscono. Selettori Compose senza id possono richiedere ritocchi. Le password `****` non sono ripristinabili in Play (un solo step password). I campi PIN restano **due step** se inseriti due volte. Export YAML resta utilizzabile in CI con Maestro sul PC. Il preview YAML sulla card è scrollabile per l’intero contenuto.
+
+Registrazione e playback/scansione: **record** è esclusivo; **Play + scan** possono coesistere (Scan+Flusso).
 
 ### Suggerimenti e segnalazioni
 

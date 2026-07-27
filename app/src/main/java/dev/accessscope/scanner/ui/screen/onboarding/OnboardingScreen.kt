@@ -1,5 +1,5 @@
 /**
- * Tutorial iniziale AccessScope: 6 pagine con pager, dots, skip e "non mostrare più".
+ * Tutorial iniziale AccessScope: 7 pagine con pager, dots, skip e "non mostrare più".
  */
 package dev.accessscope.scanner.ui.screen.onboarding
 
@@ -29,6 +29,7 @@ import androidx.compose.material.icons.automirrored.outlined.TrendingDown
 import androidx.compose.material.icons.outlined.AutoFixHigh
 import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material.icons.outlined.Explore
+import androidx.compose.material.icons.outlined.FiberManualRecord
 import androidx.compose.material.icons.outlined.PlayCircle
 import androidx.compose.material.icons.outlined.Psychology
 import androidx.compose.material.icons.outlined.Smartphone
@@ -71,10 +72,10 @@ import dev.accessscope.scanner.ui.theme.PillShape
 import dev.accessscope.scanner.ui.theme.contentSecondary
 import kotlinx.coroutines.launch
 
-private const val PAGE_COUNT = 6
+private const val PAGE_COUNT = 7
 
 /**
- * Tutorial a 6 pagine mostrato al primo avvio.
+ * Tutorial a 7 pagine mostrato al primo avvio (include Maestro Beta).
  *
  * @param onFinish Invocato alla chiusura; `dontShowAgain = true` se l'utente
  * ha saltato il tutorial o ha spuntato "non mostrare più".
@@ -116,6 +117,7 @@ fun OnboardingScreen(onFinish: (dontShowAgain: Boolean) -> Unit) {
                 2 -> EcosystemPage()
                 3 -> HowItWorksPage()
                 4 -> WcagAreasPage()
+                5 -> FlowsBetaPage()
                 else -> ResultsPage()
             }
         }
@@ -343,7 +345,58 @@ private fun WcagAreasPage() {
     }
 }
 
-/** Pagina 6 — Risultati certificati (benchmark reale Nexi). */
+/** Pagina 6 — Maestro (Beta). */
+@Composable
+private fun FlowsBetaPage() {
+    OnboardingPage(
+        title = {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                PageTitle("Maestro")
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    "BETA",
+                    style = MaterialTheme.typography.labelSmall,
+                    fontFamily = JetBrainsMonoFamily,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onTertiaryContainer,
+                    modifier = Modifier
+                        .clip(PillShape)
+                        .background(MaterialTheme.colorScheme.tertiaryContainer)
+                        .padding(horizontal = 8.dp, vertical = 2.dp),
+                )
+            }
+        },
+        subtitle = "Registra i passaggi mentre usi un’app: AccessScope genera un file YAML Maestro " +
+            "riproducibile. Funzione in anteprima — i selettori possono richiedere ritocchi.",
+    ) {
+        StepRow(
+            1,
+            Icons.Outlined.FiberManualRecord,
+            "Tab Maestro",
+            "Apri Maestro dalla barra in basso e scegli l’app da registrare.",
+        )
+        StepRow(
+            2,
+            Icons.Outlined.TouchApp,
+            "Naviga normalmente",
+            "Tap e testo vengono catturati dal servizio di accessibilità.",
+        )
+        StepRow(
+            3,
+            Icons.Outlined.StopCircle,
+            "Stop REC",
+            "Salva e condividi il YAML; eseguilo con Maestro sul PC.",
+        )
+        Text(
+            "L’esecuzione automatica durante la scansione arriverà via plugin/CLI.",
+            style = MaterialTheme.typography.bodySmall,
+            color = contentSecondary(),
+            modifier = Modifier.padding(top = 8.dp),
+        )
+    }
+}
+
+/** Pagina 7 — Risultati certificati (benchmark reale Nexi). */
 @Composable
 private fun ResultsPage() {
     OnboardingPage(

@@ -10,7 +10,6 @@ import dev.accessscope.scanner.analyzer.CheckCollector
 import dev.accessscope.scanner.report.ReportHelper
 import dev.accessscope.scanner.ui.selection.AppSelectionPolicy
 import dev.accessscope.scanner.util.AppFileLogger
-import dev.accessscope.scanner.util.DebugTrace
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -164,30 +163,6 @@ class ScanSessionRepository(context: android.content.Context) {
     fun addViolations(violations: List<AccessibilityViolation>) {
         val filtered = ReportHelper.filterViolations(violations)
         val newOnes = filtered.filter { violationKeys.add(it.dedupeKey) }
-        val skipped = filtered.size - newOnes.size
-        // #region agent log
-        if (filtered.isNotEmpty()) {
-            val newDetails = newOnes.joinToString(" || ") { v ->
-                "${v.type.name}|${v.viewId?.substringAfterLast('/') ?: "no-id"}|${v.screenTitle}|${v.bounds?.take(40) ?: "-"}|${v.dedupeKey}"
-            }
-            DebugTrace.log(
-                hypothesisId = if (newOnes.isNotEmpty()) "H1-H2" else "H-DEDUPE",
-                location = "ScanSessionRepository.addViolations",
-                message = if (newOnes.isNotEmpty()) "violation_added" else "violation_skipped_only",
-                data = mapOf(
-                    "rawInPass" to violations.size,
-                    "afterConfidenceFilter" to filtered.size,
-                    "addedNew" to newOnes.size,
-                    "skippedDuplicate" to skipped,
-                    "sessionViolations" to (_state.value.violations.size + newOnes.size),
-                    "sessionTalkBack" to _state.value.screenReaderFindings.size,
-                    "sessionScreens" to _state.value.uniqueScreens,
-                    "sessionAnalyses" to _state.value.scanAnalyses,
-                    "newDetails" to newDetails,
-                ),
-            )
-        }
-        // #endregion
         if (newOnes.isEmpty()) return
         _state.update { current ->
             current.copy(violations = current.violations + newOnes)
@@ -201,7 +176,6 @@ class ScanSessionRepository(context: android.content.Context) {
      */
     fun addScreenReaderFindings(findings: List<ScreenReaderFinding>) {
         if (findings.isEmpty()) return
-        val sessionBefore = _state.value.screenReaderFindings.size
         val newOnes = findings.filter {
             val normalizedViewId = it.viewId?.let { id -> ViolationDedupeRules.normalizeViewId(id) }
             val labelToken = it.announcedText?.let { t -> ViolationDedupeRules.normalizeElementLabel(t) }
@@ -220,26 +194,6 @@ class ScanSessionRepository(context: android.content.Context) {
             }
             screenReaderKeys.add(key)
         }
-        val skipped = findings.size - newOnes.size
-        // #region agent log
-        if (newOnes.isNotEmpty() || skipped > 0) {
-            DebugTrace.log(
-                hypothesisId = "H3",
-                location = "ScanSessionRepository.addScreenReaderFindings",
-                message = if (newOnes.isNotEmpty()) "talkback_added" else "talkback_skipped_only",
-                data = mapOf(
-                    "rawInPass" to findings.size,
-                    "addedNew" to newOnes.size,
-                    "skippedDuplicate" to skipped,
-                    "sessionTalkBack" to (sessionBefore + newOnes.size),
-                    "sessionViolations" to _state.value.violations.size,
-                    "newIssues" to newOnes.take(3).joinToString(" || ") {
-                        "${it.screenTitle}|${it.viewId?.substringAfterLast('/') ?: "no-id"}|${it.issue.take(40)}"
-                    },
-                ),
-            )
-        }
-        // #endregion
         if (newOnes.isEmpty()) return
         _state.update { current ->
             current.copy(screenReaderFindings = current.screenReaderFindings + newOnes)
@@ -278,18 +232,6 @@ class ScanSessionRepository(context: android.content.Context) {
         val screensBefore = _state.value.uniqueScreens
         syncVisitedScreensState()
         _state.update { it.copy(uniqueScreens = screensBefore + 1) }
-        // #region agent log
-        DebugTrace.log(
-            hypothesisId = "H4",
-            location = "ScanSessionRepository.registerUniqueScreen",
-            message = "screen_count_incremented",
-            data = mapOf(
-                "screenTitle" to screenTitle,
-                "fingerprintPrefix" to fingerprint.take(100),
-                "uniqueScreens" to (screensBefore + 1),
-            ),
-        )
-        // #endregion
     }
 
     /**

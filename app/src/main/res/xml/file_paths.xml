@@ -6,4 +6,7 @@
     <files-path
         name="internal_logs"
         path="logs/" />
+    <files-path
+        name="maestro_flows"
+        path="maestro_flows/" />
 </paths>
