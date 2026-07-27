@@ -66,9 +66,11 @@ class FlowOptimizationPipelineTest {
         assertFalse(yaml.contains("systemui"))
 
         val sanitized = FlowOptimizationPipeline.sanitizeForPlay(raw, pkg)
-        assertEquals(5, sanitized.size) // launch + ACCEDI + username + password + CONTINUA (no systemui)
+        // systemui droppato; possono comparire waitForAnimation extra
         assertTrue(sanitized.none { it.packageName.contains("systemui") })
         assertTrue(sanitized.any { it is RecordedAction.HideKeyboard }.not())
         assertTrue(sanitized.count { it is RecordedAction.InputText } == 2)
+        assertTrue(sanitized.any { it is RecordedAction.Tap && it.text == "ACCEDI" })
+        assertTrue(sanitized.any { it is RecordedAction.Tap && it.text == "CONTINUA" })
     }
 }

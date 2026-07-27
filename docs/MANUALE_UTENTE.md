@@ -113,7 +113,7 @@ Tab **Maestro** nella bottom bar. Serve a **registrare**, **importare/creare** e
 6. In elenco, sulla card:
    - **Play** — riproduce il flusso in-app via accessibilità
    - **Long-press Play** — dialog **Avvia pulito** (stopApp + cold launch) / **Avvia normale**
-   - **Matita** — editor step: seleziona una riga, `+` inserisce sotto, duplica; catalogo comandi via `+`
+   - **Matita** — editor step: seleziona una riga (i nuovi vanno **subito dopo**), `+` / duplica; **Valida** (dry-run selettori); **Vault** (PIN/password per `${PIN}`/`${PASSWORD}`); in modifica tap puoi segnare **Opzionale**; catalogo comandi via `+`
    - **Logo AccessScope** — Scan+Flusso (scan WCAG + playback in parallelo)
    - **YAML** / condividi / elimina
 
@@ -125,7 +125,7 @@ Menu **☰** su Maestro (non è il drawer Home):
 
 **Dopo un update dell’APK:** disattiva e riattiva **AccessScope** in Impostazioni → Accessibilità. Se il servizio non è collegato, i tap non vengono catturati e Play non parte.
 
-**Nota Beta:** per timeout e selettori più affidabili, esegui prima una **scan WCAG** sull’app target (la pipeline usa l’ultima sessione archiviata). Popup/dismiss possono essere esportati con `optional: true` nel YAML; il Play in-app li salta se falliscono. Selettori Compose senza id possono richiedere ritocchi. Le password `****` non sono ripristinabili in Play (un solo step password). I campi PIN restano **due step** se inseriti due volte. Export YAML resta utilizzabile in CI con Maestro sul PC. Il preview YAML sulla card è scrollabile per l’intero contenuto.
+**Nota Beta:** dopo ogni tap/navigazione il flusso include `waitForAnimationToEnd` e il Play attende che la UI sia stabile (≥650ms) prima dello step successivo — riduce tap “a caso” durante le animazioni. Credenziali: al Play compare il dialog Vault se mancano. Selettori: catena di fallback + promozione automatica dopo 2 fail. Export YAML con `${PIN}`/`${PASSWORD}`.
 
 Registrazione e playback/scansione: **record** è esclusivo; **Play + scan** possono coesistere (Scan+Flusso).
 

@@ -111,12 +111,23 @@ fun FlowsScreen(
     var previewFlow by remember { mutableStateOf<SavedFlow?>(null) }
     var previewYaml by remember { mutableStateOf<String?>(null) }
     var playCleanFlow by remember { mutableStateOf<SavedFlow?>(null) }
+    var vaultPromptFlow by remember { mutableStateOf<SavedFlow?>(null) }
+    var vaultPromptClear by remember { mutableStateOf(false) }
+    var vaultPin by remember { mutableStateOf("") }
+    var vaultPassword by remember { mutableStateOf("") }
 
     fun refresh() {
         flows = app.flowStore.listFlows()
     }
 
     fun startPlay(flow: SavedFlow, clearState: Boolean) {
+        if (app.needsMaestroCredentials(flow)) {
+            vaultPromptFlow = flow
+            vaultPromptClear = clearState
+            vaultPin = ""
+            vaultPassword = ""
+            return
+        }
         val err = app.startFlowPlayback(flow, clearState = clearState)
         if (err != null) {
             Toast.makeText(context, err, Toast.LENGTH_LONG).show()
@@ -492,6 +503,51 @@ fun FlowsScreen(
                     ) { Text("Avvia normale") }
                     TextButton(onClick = { playCleanFlow = null }) { Text("Annulla") }
                 }
+            },
+        )
+    }
+
+    vaultPromptFlow?.let { flow ->
+        AlertDialog(
+            onDismissRequest = { vaultPromptFlow = null },
+            title = { Text("Credenziali per Play") },
+            text = {
+                Column {
+                    Text(
+                        "Il flusso usa PIN/password. Salvali una volta (solo su questo device).",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = contentSecondary(),
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    OutlinedTextField(
+                        value = vaultPin,
+                        onValueChange = { vaultPin = it },
+                        label = { Text("PIN") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    OutlinedTextField(
+                        value = vaultPassword,
+                        onValueChange = { vaultPassword = it },
+                        label = { Text("Password") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        app.saveMaestroCredential(flow.appId, vaultPin, vaultPassword)
+                        val clear = vaultPromptClear
+                        vaultPromptFlow = null
+                        startPlay(flow, clearState = clear)
+                    },
+                ) { Text("Salva e Play") }
+            },
+            dismissButton = {
+                TextButton(onClick = { vaultPromptFlow = null }) { Text("Annulla") }
             },
         )
     }

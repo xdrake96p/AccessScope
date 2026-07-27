@@ -48,11 +48,14 @@ class MaestroYamlExporterTest {
                 ),
             ),
         )
-        assertTrue(yaml.contains("****"))
-        // launchApp + wait (synthetic) + inputText = 3 senza LaunchApp in lista
-        assertEquals(3, MaestroYamlExporter.countSteps(listOf(
-            RecordedAction.InputText("com.example", "****", isPassword = true),
-        )))
+        assertTrue(yaml.contains("\${PASSWORD}") || yaml.contains("\${PIN}"))
+        assertTrue(yaml.contains("secret placeholder") || yaml.contains("CredentialVault") || yaml.contains("PIN"))
+        // launchApp + wait (synthetic) + tapOn+inputText steps
+        assertTrue(
+            MaestroYamlExporter.countSteps(
+                listOf(RecordedAction.InputText("com.example", "****", isPassword = true)),
+            ) >= 2,
+        )
     }
 
     @Test

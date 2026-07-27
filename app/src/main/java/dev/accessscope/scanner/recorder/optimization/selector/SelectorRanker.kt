@@ -1,5 +1,5 @@
 /**
- * Ranking selettori Maestro: id-first, point solo come fallback.
+ * Ranking selettori Maestro: id-first, point solo come fallback; catena ordinata per Play.
  */
 package dev.accessscope.scanner.recorder.optimization.selector
 
@@ -7,6 +7,7 @@ import dev.accessscope.scanner.recorder.MaestroSelectorHeuristics
 import dev.accessscope.scanner.recorder.RecordedAction
 import dev.accessscope.scanner.recorder.intelligence.ScanIntelligenceBundle
 import dev.accessscope.scanner.recorder.model.FlowTelemetry
+import dev.accessscope.scanner.recorder.model.SelectorCandidate
 
 /** Tipo selettore preferito per export/replay. */
 enum class SelectorKind {
@@ -28,7 +29,7 @@ data class SelectorRank(
 )
 
 /**
- * Ordina selettori: viewId stabile > testo > contentDescription > point.
+ * Ordina selettori: viewId stabile > contentDescription > testo > point.
  */
 object SelectorRanker {
 
@@ -42,11 +43,6 @@ object SelectorRanker {
 
     /**
      * Calcola rank per tap.
-     *
-     * @param action Tap da valutare.
-     * @param allActions Tutte le azioni (ripetizioni testo/id).
-     * @param intel Intelligence scan opzionale.
-     * @param telemetry Telemetria opzionale.
      */
     fun rankTap(
         action: RecordedAction.Tap,
@@ -57,17 +53,80 @@ object SelectorRanker {
         val idScore = scoreViewId(action.viewId, allActions, intel, telemetry)
         if (idScore >= EXPORT_ID_THRESHOLD) return SelectorRank(SelectorKind.ViewId, idScore)
 
-        val textScore = scoreText(action.text, allActions)
-        if (textScore >= EXPORT_ID_THRESHOLD) return SelectorRank(SelectorKind.Text, textScore)
-
         val cdScore = scoreText(action.contentDescription, allActions)
         if (cdScore >= EXPORT_ID_THRESHOLD) return SelectorRank(SelectorKind.ContentDescription, cdScore)
+
+        val textScore = scoreText(action.text, allActions)
+        if (textScore >= EXPORT_ID_THRESHOLD) return SelectorRank(SelectorKind.Text, textScore)
 
         if (action.pointPercentX != null && action.pointPercentY != null) {
             return SelectorRank(SelectorKind.Point, POINT_SCORE)
         }
         return SelectorRank(SelectorKind.ViewId, idScore)
     }
+
+    /**
+     * Costruisce la catena ordinata di candidati per [action].
+     * Ordine: id stabile → contentDescription → text → point (ultima risorsa).
+     */
+    fun buildChain(
+        action: RecordedAction.Tap,
+        allActions: List<RecordedAction>,
+        intel: ScanIntelligenceBundle? = null,
+        telemetry: FlowTelemetry? = null,
+    ): List<SelectorCandidate> {
+        val scored = mutableListOf<Pair<Int, SelectorCandidate>>()
+        val idScore = scoreViewId(action.viewId, allActions, intel, telemetry)
+        if (idScore > 0 && !action.viewId.isNullOrBlank()) {
+            scored += idScore to SelectorCandidate(viewId = action.viewId)
+        }
+        val cdScore = scoreText(action.contentDescription, allActions)
+        if (cdScore > 0 && !action.contentDescription.isNullOrBlank()) {
+            scored += (cdScore + 1) to SelectorCandidate(contentDescription = action.contentDescription)
+        }
+        val textScore = scoreText(action.text, allActions)
+        if (textScore > 0 && !action.text.isNullOrBlank()) {
+            // Testo leggermente sotto cd a parità; section header → testo prioritario su id ambiguo.
+            val boost = if (MaestroSelectorHeuristics.isAmbiguousSharedViewId(action.viewId)) 30 else 0
+            scored += (textScore + boost) to SelectorCandidate(text = action.text)
+        }
+        if (action.pointPercentX != null && action.pointPercentY != null) {
+            scored += POINT_SCORE to SelectorCandidate(
+                pointPercentX = action.pointPercentX,
+                pointPercentY = action.pointPercentY,
+            )
+        }
+        return scored
+            .sortedByDescending { it.first }
+            .map { it.second }
+            .distinctBy { it.dedupeKey() }
+            .filterNot { it.isBlank() }
+            .ifEmpty {
+                listOfNotNull(
+                    SelectorCandidate(
+                        viewId = action.viewId,
+                        text = action.text,
+                        contentDescription = action.contentDescription,
+                        pointPercentX = action.pointPercentX,
+                        pointPercentY = action.pointPercentY,
+                    ).takeUnless { it.isBlank() },
+                )
+            }
+    }
+
+    /**
+     * Popola [RecordedAction.Tap.selectorChain] su tutti i tap.
+     */
+    fun attachChains(
+        actions: List<RecordedAction>,
+        intel: ScanIntelligenceBundle? = null,
+        telemetry: FlowTelemetry? = null,
+    ): List<RecordedAction> =
+        actions.map { action ->
+            if (action !is RecordedAction.Tap) return@map action
+            if (action.selectorChain.isNotEmpty()) return@map action
+            action.copy(selectorChain = buildChain(action, actions, intel, telemetry))
+        }
 
     /**
      * `true` se l’export YAML può usare solo id (no point).
@@ -103,6 +162,8 @@ object SelectorRanker {
         val short = MaestroSelectorHeuristics.shortViewId(viewId)
         if (short.isNullOrBlank() || MaestroSelectorHeuristics.isNoiseViewId(short)) return 0
         if (MaestroSelectorHeuristics.isStructuralContainerViewId(short)) return 0
+        if (MaestroSelectorHeuristics.isAmbiguousSharedViewId(short)) return 0
+        if (MaestroSelectorHeuristics.isVolatileViewId(short)) return 15
         var score = ID_BASE
         val repeats = allActions.count {
             MaestroSelectorHeuristics.shortViewId(

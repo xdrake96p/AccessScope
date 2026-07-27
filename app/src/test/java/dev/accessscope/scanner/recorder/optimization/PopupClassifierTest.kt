@@ -29,4 +29,11 @@ class PopupClassifierTest {
         val meta = PopupClassifier.classifyTap(tap, 1, telemetry, ScanIntelligenceBundle(mainPathFingerprints = listOf("com.app::home")))
         assertEquals(StepExecutionMode.Optional, meta.executionMode)
     }
+
+    @Test
+    fun nonOraWithoutTelemetry_isOptional() {
+        val tap = RecordedAction.Tap("com.app", text = "Non ora")
+        val meta = PopupClassifier.classifyTap(tap, 0, null, null)
+        assertEquals(StepExecutionMode.Optional, meta.executionMode)
+    }
 }

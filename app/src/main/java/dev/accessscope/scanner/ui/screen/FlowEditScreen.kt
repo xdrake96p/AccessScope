@@ -26,6 +26,7 @@ import androidx.compose.material.icons.outlined.ContentCopy
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -43,6 +44,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -50,7 +52,11 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import dev.accessscope.scanner.AccessScopeApp
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import dev.accessscope.scanner.recorder.RecordedAction
+import dev.accessscope.scanner.recorder.model.StepExecutionMode
 import dev.accessscope.scanner.recorder.optimization.lint.FlowLintIssue
 import dev.accessscope.scanner.recorder.optimization.lint.FlowLinter
 import dev.accessscope.scanner.recorder.optimization.lint.LintSeverity
@@ -73,9 +79,13 @@ fun FlowEditScreen(
 ) {
     val context = LocalContext.current
     val app = context.applicationContext as AccessScopeApp
+    val scope = rememberCoroutineScope()
     val flow = remember(flowId) { app.flowStore.getFlow(flowId) }
     val actions = remember { mutableStateListOf<RecordedAction>() }
     var flowName by remember { mutableStateOf(flow?.name.orEmpty()) }
+    var showVaultDialog by remember { mutableStateOf(false) }
+    var vaultPin by remember { mutableStateOf("") }
+    var vaultPassword by remember { mutableStateOf("") }
     var addMenuExpanded by remember { mutableStateOf(false) }
     var editIndex by remember { mutableStateOf<Int?>(null) }
     var selectedIndex by remember { mutableStateOf<Int?>(null) }
@@ -94,7 +104,10 @@ fun FlowEditScreen(
         actions.clear()
         actions.addAll(loaded)
         flowName = flow.name
-        selectedIndex = null
+        // Seleziona il primo step dopo launchApp così «+» non appende sempre in coda.
+        selectedIndex = loaded.indexOfFirst { it !is RecordedAction.LaunchApp }
+            .takeIf { it >= 0 }
+            ?: loaded.lastIndex.takeIf { it >= 0 }
     }
 
     // Lint statico del flusso (piano M1-A1): ricalcolato ad ogni modifica degli step.
@@ -103,14 +116,24 @@ fun FlowEditScreen(
 
     fun insertAction(action: RecordedAction) {
         val sel = selectedIndex
-        val insertAt = when {
-            sel == null -> actions.size
-            else -> (sel + 1).coerceIn(1, actions.size) // mai prima di launchApp (indice 0)
+        if (sel == null) {
+            Toast.makeText(
+                context,
+                "Seleziona prima uno step: i nuovi vanno subito dopo",
+                Toast.LENGTH_SHORT,
+            ).show()
+            addMenuExpanded = false
+            return
         }
+        val insertAt = (sel + 1).coerceIn(1, actions.size) // mai prima di launchApp (indice 0)
         actions.add(insertAt, action)
         selectedIndex = insertAt
         addMenuExpanded = false
-        Toast.makeText(context, "Inserito dopo step ${insertAt}", Toast.LENGTH_SHORT).show()
+        Toast.makeText(
+            context,
+            "Inserito dopo lo step ${sel + 1} (posizione ${insertAt + 1})",
+            Toast.LENGTH_SHORT,
+        ).show()
     }
 
     fun duplicateAction(index: Int) {
@@ -270,6 +293,16 @@ fun FlowEditScreen(
                 style = CodeTextStyle,
                 color = contentSecondary(),
             )
+            Spacer(Modifier.height(6.dp))
+            Text(
+                if (selectedIndex != null) {
+                    "Nuovi step: dopo #${(selectedIndex ?: 0) + 1}. Tocca un’altra riga per cambiare punto."
+                } else {
+                    "Tocca uno step per selezionarlo — i nuovi si inseriscono subito dopo."
+                },
+                style = MaterialTheme.typography.labelMedium,
+                color = contentSecondary(),
+            )
             if (lintReport.warningCount > 0) {
                 Spacer(Modifier.height(8.dp))
                 Text(
@@ -342,6 +375,29 @@ fun FlowEditScreen(
                 Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
+                TextButton(
+                    onClick = {
+                        scope.launch {
+                            val f = flow ?: return@launch
+                            val msg = withContext(Dispatchers.Default) { app.validateFlow(f) }
+                            Toast.makeText(context, msg, Toast.LENGTH_LONG).show()
+                        }
+                    },
+                    modifier = Modifier.weight(1f),
+                ) {
+                    Text("Valida")
+                }
+                TextButton(
+                    onClick = { showVaultDialog = true },
+                    modifier = Modifier.weight(1f),
+                ) {
+                    Text("Vault")
+                }
+            }
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
                 TextButton(onClick = onBack, modifier = Modifier.weight(1f)) {
                     Text("Annulla")
                 }
@@ -367,6 +423,50 @@ fun FlowEditScreen(
                 }
             }
         }
+    }
+
+    if (showVaultDialog) {
+        AlertDialog(
+            onDismissRequest = { showVaultDialog = false },
+            title = { Text("Credenziali Maestro") },
+            text = {
+                Column {
+                    Text(
+                        "Salvate solo su device per Play (${'$'}{PIN} / ${'$'}{PASSWORD}).",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = contentSecondary(),
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    OutlinedTextField(
+                        value = vaultPin,
+                        onValueChange = { vaultPin = it },
+                        label = { Text("PIN") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    OutlinedTextField(
+                        value = vaultPassword,
+                        onValueChange = { vaultPassword = it },
+                        label = { Text("Password") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        app.saveMaestroCredential(flow?.appId.orEmpty(), vaultPin, vaultPassword)
+                        showVaultDialog = false
+                        Toast.makeText(context, "Vault aggiornato", Toast.LENGTH_SHORT).show()
+                    },
+                ) { Text("Salva") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showVaultDialog = false }) { Text("Annulla") }
+            },
+        )
     }
 
     editIndex?.let { idx ->
@@ -563,6 +663,11 @@ private fun StepEditDialog(
             },
         )
     }
+    var optional by remember {
+        mutableStateOf(
+            action is RecordedAction.Tap && action.executionMode == StepExecutionMode.Optional,
+        )
+    }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -577,6 +682,20 @@ private fun StepEditDialog(
                     -> {
                         OutlinedTextField(viewId, { viewId = it }, label = { Text("id") }, singleLine = true)
                         OutlinedTextField(text, { text = it }, label = { Text("text") }, singleLine = true)
+                        if (action is RecordedAction.Tap) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable { optional = !optional },
+                            ) {
+                                Checkbox(checked = optional, onCheckedChange = { optional = it })
+                                Text(
+                                    "Opzionale (optional: true) — es. popup «Non ora»",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                )
+                            }
+                        }
                     }
                     is RecordedAction.InputText -> {
                         OutlinedTextField(viewId, { viewId = it }, label = { Text("id campo") }, singleLine = true)
@@ -637,6 +756,11 @@ private fun StepEditDialog(
                         is RecordedAction.Tap -> action.copy(
                             viewId = viewId.ifBlank { null },
                             text = text.ifBlank { null },
+                            executionMode = if (optional) {
+                                StepExecutionMode.Optional
+                            } else {
+                                StepExecutionMode.Required
+                            },
                         )
                         is RecordedAction.DoubleTap -> action.copy(
                             viewId = viewId.ifBlank { null },
@@ -710,12 +834,13 @@ fun stepSummary(action: RecordedAction): String = when (action) {
     is RecordedAction.LaunchApp -> "launchApp"
     is RecordedAction.Tap -> {
         val id = action.viewId?.substringAfterLast('/')
-        when {
+        val base = when {
             !id.isNullOrBlank() -> "tapOn id=$id"
             !action.text.isNullOrBlank() -> "tapOn \"${action.text}\""
             action.pointPercentX != null -> "tapOn point"
             else -> "tapOn"
         }
+        if (action.executionMode == StepExecutionMode.Optional) "$base · optional" else base
     }
     is RecordedAction.DoubleTap -> {
         val id = action.viewId?.substringAfterLast('/')

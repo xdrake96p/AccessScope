@@ -4,6 +4,7 @@
 package dev.accessscope.scanner.recorder.telemetry
 
 import dev.accessscope.scanner.recorder.model.FlowTelemetry
+import dev.accessscope.scanner.recorder.model.QuiescenceGap
 import dev.accessscope.scanner.recorder.model.RecordedTransition
 import dev.accessscope.scanner.recorder.model.ScreenSnapshot
 import dev.accessscope.scanner.recorder.model.TransitionKind
@@ -48,6 +49,18 @@ object FlowTelemetryCodec {
             )
         }
         root.put("transitions", trans)
+        val gaps = JSONArray()
+        telemetry.quiescenceGaps.forEach { g ->
+            gaps.put(
+                JSONObject().apply {
+                    put("afterActionIndex", g.afterActionIndex)
+                    put("quietMs", g.quietMs)
+                    put("contentBurstMs", g.contentBurstMs)
+                    put("contentChangeCount", g.contentChangeCount)
+                },
+            )
+        }
+        root.put("quiescenceGaps", gaps)
         return root.toString(2)
     }
 
@@ -92,6 +105,20 @@ object FlowTelemetryCodec {
                 )
             }
         }
-        FlowTelemetry(snapshots = snapshots, transitions = transitions)
+        val gapArr = root.optJSONArray("quiescenceGaps") ?: JSONArray()
+        val gaps = buildList {
+            for (i in 0 until gapArr.length()) {
+                val o = gapArr.getJSONObject(i)
+                add(
+                    QuiescenceGap(
+                        afterActionIndex = o.getInt("afterActionIndex"),
+                        quietMs = o.getLong("quietMs"),
+                        contentBurstMs = o.optLong("contentBurstMs", 0L),
+                        contentChangeCount = o.optInt("contentChangeCount", 0),
+                    ),
+                )
+            }
+        }
+        FlowTelemetry(snapshots = snapshots, transitions = transitions, quiescenceGaps = gaps)
     }.getOrDefault(FlowTelemetry())
 }

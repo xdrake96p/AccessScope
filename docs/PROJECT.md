@@ -6,7 +6,7 @@
 **Package:** `dev.accessscope.scanner`  
 **Branch principale sviluppo:** `develop`  
 **Branch release stabile:** `main`  
-**Ultimo aggiornamento:** 27 luglio 2026 (M0/M1 piano Maestro+scan: lint, scroll coalesce, round-trip YAML, golden compare, gate stats)
+**Ultimo aggiornamento:** 27 luglio 2026 (Maestro R1: waitForAnimation quiescenza, soft-fail onesti, vault Play, fail-rate, overlay UNDO)
 
 **Manuale utente e tecnico:** [`docs/MANUALE_UTENTE.md`](MANUALE_UTENTE.md) — installazione, uso plugin AS/VS Code, troubleshooting.
 
@@ -106,6 +106,22 @@ Documento vivo: [`docs/PIANO_MAESTRO_E_SCANSIONE.md`](PIANO_MAESTRO_E_SCANSIONE.
 - **M1-A3:** round-trip export↔import (`MaestroYamlRoundTripTest`); merge tap+inputText in importer
 - **M1-A4:** `tools/verify_yaml_with_maestro_cli.sh`
 - **M1-B1:** `ReportHelper.confidenceGateStats` + sezione «Confidence gate» nel reliability MD
+- **Popup Maestro:** package `permissioncontroller` / installer / GMS non più droppati in REC/optimize; tap Allow/Consenti → `optional: true`; root multi-window in recording
+- **Popup in-app (27 luglio):** «Non ora» anche se source è EditText sotto dialog; `AssertVisible` titolo (es. caricamento documento); scroll solo con delta reale + soppressione dopo Back/popup; Back via `onKeyEvent`; editor insert dopo selezione + checkbox Opzionale su tap
+
+- **R1 affidabilità (27 luglio):**
+  - **waitForAnimationToEnd ovunque serve:** `WaitPlanner` inserisce anim dopo ogni tap (anche same-screen), Back, InputText→Tap; `ensureAnimationWaits` anche in `sanitizeForPlay`; Play attende **UI stabile ≥650ms** (`waitForAnimationToEnd`) non solo delay fisso
+  - **Quiescenza REC:** `RecordingTelemetry.onContentChanged` → `QuiescenceGap` guida timeout
+  - **Soft-fail onesti:** Assert/Tap Required falliscono; popup KYC → `optional` via `OptionalStepPolicy`
+  - **Vault pre-Play** se PIN/password mancanti; **fail-rate** promuove ramo catena dopo 2 fail
+  - **Overlay REC:** UNDO ultimo step, OPT (ultimo tap optional)
+
+- **M2 Track A (27 luglio):**
+  - **A5 selector chain:** `SelectorCandidate` + `SelectorRanker.buildChain` / `attachChains`; Play prova la catena in ordine; YAML comment `# fallbackChain`; auto-heal `FlowStore.applySelectorWins` dopo Play
+  - **A6 ghost tap:** `dropGhostTapsAfterScrollOrIme`; section header generico `isSectionHeaderLabel` (non solo etichette AXA)
+  - **A7 lint autofix:** `FlowLintAutoFix` inserisce wait dopo submit e arricchisce blind wait lunghi in pipeline
+  - **A8 secrets:** export `${PIN}` / `${PASSWORD}`; `CredentialVault` + editor **Vault**; Play resolve da SharedPreferences
+  - **Validate:** `FlowPlayer.validate` (find-only) + bottone **Valida** in `FlowEditScreen`
 
 ### Maestro (Beta) — recorder / Play / editor YAML (27 luglio 2026, branch `restyle`)
 

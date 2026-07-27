@@ -109,7 +109,7 @@ class MaestroYamlRoundTripTest {
             ),
         )
         assertTrue("la password non deve apparire in chiaro", !yaml.contains("superSecret123"))
-        assertTrue(yaml.contains("password masked"))
+        assertTrue(yaml.contains("\${PASSWORD}") || yaml.contains("secret placeholder"))
     }
 
     @Test

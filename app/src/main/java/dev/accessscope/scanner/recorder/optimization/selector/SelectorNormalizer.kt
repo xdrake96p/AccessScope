@@ -27,7 +27,10 @@ object SelectorNormalizer {
                         ?: action.viewId
                     // Preferisci testo se id è solo shell di layout.
                     val viewId = if (
-                        MaestroSelectorHeuristics.isStructuralContainerViewId(normalized) &&
+                        (
+                            MaestroSelectorHeuristics.isStructuralContainerViewId(normalized) ||
+                                MaestroSelectorHeuristics.isAmbiguousSharedViewId(normalized)
+                            ) &&
                         (!action.text.isNullOrBlank() || !action.contentDescription.isNullOrBlank())
                     ) {
                         null
@@ -40,7 +43,10 @@ object SelectorNormalizer {
                     val normalized = MaestroSelectorHeuristics.normalizeViewId(action.viewId, appId)
                         ?: action.viewId
                     val viewId = if (
-                        MaestroSelectorHeuristics.isStructuralContainerViewId(normalized) &&
+                        (
+                            MaestroSelectorHeuristics.isStructuralContainerViewId(normalized) ||
+                                MaestroSelectorHeuristics.isAmbiguousSharedViewId(normalized)
+                            ) &&
                         (!action.text.isNullOrBlank() || !action.contentDescription.isNullOrBlank())
                     ) {
                         null
@@ -53,7 +59,10 @@ object SelectorNormalizer {
                     val normalized = MaestroSelectorHeuristics.normalizeViewId(action.viewId, appId)
                         ?: action.viewId
                     val viewId = if (
-                        MaestroSelectorHeuristics.isStructuralContainerViewId(normalized) &&
+                        (
+                            MaestroSelectorHeuristics.isStructuralContainerViewId(normalized) ||
+                                MaestroSelectorHeuristics.isAmbiguousSharedViewId(normalized)
+                            ) &&
                         (!action.text.isNullOrBlank() || !action.contentDescription.isNullOrBlank())
                     ) {
                         null

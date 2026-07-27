@@ -10,6 +10,9 @@ import android.content.Intent
 import android.graphics.Path
 import android.os.Bundle
 import android.view.accessibility.AccessibilityNodeInfo
+import dev.accessscope.scanner.recorder.model.PlayOutcome
+import dev.accessscope.scanner.recorder.model.SelectorCandidate
+import dev.accessscope.scanner.recorder.model.SelectorWin
 import dev.accessscope.scanner.recorder.model.StepExecutionMode
 import dev.accessscope.scanner.util.AppFileLogger
 import dev.accessscope.scanner.util.DebugSessionLog
@@ -23,7 +26,11 @@ import kotlin.coroutines.resume
 class FlowPlayer(
     private val context: Context,
     private val serviceProvider: () -> AccessibilityService?,
+    private val credentialVault: CredentialVault = CredentialVault(context),
 ) {
+
+    private val selectorWins = mutableListOf<SelectorWin>()
+    private var currentStepIndex: Int = 0
 
     /**
      * Riproduce le azioni.
@@ -31,14 +38,15 @@ class FlowPlayer(
      * @param actions Lista da `actions.json`.
      * @param clearState Se true, stopApp + tentativo clear + cold launch prima del flusso.
      * @param onStep Callback (indice 0-based, totale) a ogni step.
-     * @return Messaggio errore o `null` se ok.
+     * @return [PlayOutcome] con errore e selettori vincenti.
      */
     suspend fun play(
         actions: List<RecordedAction>,
         clearState: Boolean = false,
         onStep: (index: Int, total: Int) -> Unit = { _, _ -> },
-    ): String? {
-        if (actions.isEmpty()) return "Flusso vuoto"
+    ): PlayOutcome {
+        selectorWins.clear()
+        if (actions.isEmpty()) return PlayOutcome(error = "Flusso vuoto")
         val appId = actions.firstOrNull()?.packageName?.takeIf { it.isNotBlank() }
             ?: actions.filterIsInstance<RecordedAction.LaunchApp>().firstOrNull()?.packageName
         if (clearState && !appId.isNullOrBlank()) {
@@ -49,6 +57,7 @@ class FlowPlayer(
         }
         val total = actions.size
         for ((index, action) in actions.withIndex()) {
+            currentStepIndex = index
             onStep(index, total)
             // #region agent log
             DebugSessionLog.log(
@@ -97,7 +106,6 @@ class FlowPlayer(
             // #endregion
             val err = runCatching {
                 when {
-                    // Con clear già fatto, launchApp successivo usa cold start.
                     clearState && action is RecordedAction.LaunchApp ->
                         launchApp(action.packageName, coldStart = true)
                     else -> execute(action)
@@ -117,11 +125,34 @@ class FlowPlayer(
                     continue
                 }
                 AppFileLogger.info("FlowPlayer", "step_fail i=$index err=$err")
-                return "Step ${index + 1}: $err"
+                return PlayOutcome(
+                    error = "Step ${index + 1}: $err",
+                    selectorWins = selectorWins.toList(),
+                )
             }
             delay(BETWEEN_STEPS_MS)
         }
-        return null
+        return PlayOutcome(selectorWins = selectorWins.toList())
+    }
+
+    /**
+     * Dry-run: verifica che i target Tap/Assert siano trovabili senza gesture.
+     */
+    suspend fun validate(actions: List<RecordedAction>): PlayOutcome {
+        val failures = mutableListOf<Int>()
+        val svc = service() ?: return PlayOutcome(error = "Servizio accessibilità non collegato")
+        for ((index, action) in actions.withIndex()) {
+            when (action) {
+                is RecordedAction.Tap -> if (!canResolveTap(svc, action)) failures += index
+                is RecordedAction.AssertVisible -> {
+                    val node = findNode(svc, action.viewId, action.text, null)
+                    if (node == null) failures += index else node.recycle()
+                }
+                else -> Unit
+            }
+            delay(50)
+        }
+        return PlayOutcome(validateFailures = failures)
     }
 
     /**
@@ -164,6 +195,7 @@ class FlowPlayer(
     private fun isOptionalStep(action: RecordedAction): Boolean =
         when (action) {
             is RecordedAction.Tap -> action.executionMode == StepExecutionMode.Optional
+            is RecordedAction.AssertVisible -> action.executionMode == StepExecutionMode.Optional
             else -> false
         }
 
@@ -194,9 +226,7 @@ class FlowPlayer(
             is RecordedAction.OpenLink -> openLink(action.url)
             is RecordedAction.StopApp -> stopApp(action.packageName)
             is RecordedAction.HideKeyboard -> hideKeyboardSoft()
-            is RecordedAction.WaitForAnimation -> {
-                delay(action.timeoutMs?.coerceAtMost(5_000L) ?: DEFAULT_ANIM_MS)
-            }
+            is RecordedAction.WaitForAnimation -> waitForAnimationToEnd(action)
             is RecordedAction.Wait -> waitUntil(action)
             is RecordedAction.RawMaestroYaml -> {
                 AppFileLogger.info(
@@ -204,6 +234,60 @@ class FlowPlayer(
                     "skip_raw_yaml lines=${action.yamlLines.lineSequence().count()}",
                 )
             }
+        }
+    }
+
+    /**
+     * Attende fine animazione: UI stabile (fingerprint root) per ≥650ms, entro timeout.
+     * Evita tap sul frame successivo mentre la schermata sta ancora animando.
+     */
+    private suspend fun waitForAnimationToEnd(action: RecordedAction.WaitForAnimation) {
+        val timeout = action.timeoutMs?.coerceIn(400L, 10_000L) ?: DEFAULT_ANIM_MS
+        val quietNeededMs = 650L
+        val deadline = System.currentTimeMillis() + timeout
+        var lastSig: String? = null
+        var stableSince = System.currentTimeMillis()
+        // #region agent log
+        DebugSessionLog.log(
+            "H1",
+            "FlowPlayer.waitForAnimationToEnd",
+            "start",
+            mapOf("timeoutMs" to timeout),
+        )
+        // #endregion
+        while (System.currentTimeMillis() < deadline) {
+            val sig = uiStabilitySignature()
+            val now = System.currentTimeMillis()
+            if (sig != lastSig) {
+                lastSig = sig
+                stableSince = now
+            } else if (now - stableSince >= quietNeededMs) {
+                return
+            }
+            delay(100)
+        }
+    }
+
+    /** Firma leggera della UI attiva (titolo + childCount + testi top) per quiescenza. */
+    private fun uiStabilitySignature(): String {
+        val svc = service() ?: return "no-svc"
+        val root = svc.rootInActiveWindow ?: return "no-root"
+        return try {
+            val title = root.window?.title?.toString().orEmpty()
+            val texts = StringBuilder()
+            fun walk(n: AccessibilityNodeInfo, depth: Int) {
+                if (depth > 2) return
+                n.text?.toString()?.take(24)?.let { texts.append(it).append('|') }
+                for (i in 0 until minOf(n.childCount, 6)) {
+                    val c = n.getChild(i) ?: continue
+                    walk(c, depth + 1)
+                    c.recycle()
+                }
+            }
+            walk(root, 0)
+            "$title#${root.childCount}#$texts"
+        } finally {
+            root.recycle()
         }
     }
 
@@ -230,38 +314,176 @@ class FlowPlayer(
 
     private suspend fun tap(action: RecordedAction.Tap) {
         val svc = service() ?: error("Servizio accessibilità non collegato")
-        val node = waitForTapTarget(svc, action, TAP_FIND_TIMEOUT_MS)
+        val chain = action.selectorChain.ifEmpty {
+            listOf(
+                SelectorCandidate(
+                    viewId = action.viewId,
+                    text = action.text,
+                    contentDescription = action.contentDescription,
+                    pointPercentX = action.pointPercentX,
+                    pointPercentY = action.pointPercentY,
+                ),
+            ).filterNot { it.isBlank() }
+        }
+        for ((ci, candidate) in chain.withIndex()) {
+            val probe = action.copy(
+                viewId = candidate.viewId,
+                text = candidate.text,
+                contentDescription = candidate.contentDescription,
+                pointPercentX = candidate.pointPercentX,
+                pointPercentY = candidate.pointPercentY,
+                selectorChain = emptyList(),
+            )
+            val hasLogical = !candidate.viewId.isNullOrBlank() ||
+                !candidate.text.isNullOrBlank() ||
+                !candidate.contentDescription.isNullOrBlank()
+            val node = if (hasLogical) {
+                waitForTapTarget(svc, probe, TAP_FIND_TIMEOUT_MS)
+            } else {
+                null
+            }
+            // #region agent log
+            DebugSessionLog.log(
+                "P1",
+                "FlowPlayer.tap",
+                "tap_target",
+                mapOf(
+                    "chainIndex" to ci,
+                    "viewId" to candidate.viewId,
+                    "text" to candidate.text,
+                    "found" to (node != null),
+                    "nodeText" to node?.text?.toString()?.take(40),
+                    "nodeViewId" to node?.viewIdResourceName?.substringAfterLast('/'),
+                    "clickable" to node?.isClickable,
+                    "hasPoint" to (candidate.pointPercentX != null),
+                ),
+            )
+            // #endregion
+            if (node != null) {
+                try {
+                    performTapOnNode(svc, probe, node)
+                    if (ci > 0) {
+                        selectorWins += SelectorWin(
+                            stepIndex = currentStepIndex,
+                            originalViewId = action.viewId,
+                            originalText = action.text,
+                            candidate = candidate,
+                            chainIndex = ci,
+                        )
+                    }
+                    return
+                } finally {
+                    node.recycle()
+                }
+            }
+            if (!hasLogical && candidate.pointPercentX != null && candidate.pointPercentY != null) {
+                // #region agent log
+                DebugSessionLog.log(
+                    "F3",
+                    "FlowPlayer.tap",
+                    "point_only",
+                    mapOf("chainIndex" to ci, "hasPoint" to true),
+                )
+                // #endregion
+                clickPointFallback(svc, candidate.pointPercentX, candidate.pointPercentY, null)
+                if (ci > 0) {
+                    selectorWins += SelectorWin(
+                        stepIndex = currentStepIndex,
+                        originalViewId = action.viewId,
+                        originalText = action.text,
+                        candidate = candidate,
+                        chainIndex = ci,
+                    )
+                }
+                return
+            }
+        }
         // #region agent log
         DebugSessionLog.log(
-            "P1",
+            "F3",
             "FlowPlayer.tap",
-            "tap_target",
+            "skip_stale_point_fallback",
+            mapOf("text" to action.text, "viewId" to action.viewId, "chainSize" to chain.size),
+        )
+        // #endregion
+        AppFileLogger.info(
+            "FlowPlayer",
+            "tap_skip_not_found id=${action.viewId} text=${action.text} chain=${chain.size}",
+        )
+        if (action.executionMode == StepExecutionMode.Optional) return
+        error("Tap non trovato id=${action.viewId} text=${action.text}")
+    }
+
+    private suspend fun performTapOnNode(
+        svc: AccessibilityService,
+        action: RecordedAction.Tap,
+        node: AccessibilityNodeInfo,
+    ) {
+        val vid = node.viewIdResourceName
+        val ambiguous = MaestroSelectorHeuristics.isAmbiguousSharedViewId(vid)
+        val labelLeaf = !action.text.isNullOrBlank() &&
+            (
+                node.text?.toString()?.equals(action.text, ignoreCase = true) == true ||
+                    node.contentDescription?.toString()?.equals(action.text, ignoreCase = true) == true
+                )
+        val preferGesture = ambiguous || (labelLeaf && !node.isClickable)
+        // #region agent log
+        DebugSessionLog.log(
+            "F2",
+            "FlowPlayer.tap",
+            if (preferGesture) "gesture_on_label" else "action_click",
             mapOf(
-                "viewId" to action.viewId,
                 "text" to action.text,
-                "found" to (node != null),
-                "nodeText" to node?.text?.toString(),
-                "clickable" to node?.isClickable,
-                "hasPoint" to (action.pointPercentX != null),
+                "nodeViewId" to vid?.substringAfterLast('/'),
+                "ambiguous" to ambiguous,
+                "labelLeaf" to labelLeaf,
+                "clickable" to node.isClickable,
             ),
         )
         // #endregion
-        if (node != null) {
-            try {
-                val clicked = node.performAction(AccessibilityNodeInfo.ACTION_CLICK)
-                if (!clicked) {
-                    clickPointFallback(svc, action.pointPercentX, action.pointPercentY, node)
-                }
-            } finally {
-                node.recycle()
-            }
+        val clicked = if (!preferGesture) {
+            node.performAction(AccessibilityNodeInfo.ACTION_CLICK)
         } else {
-            // Senza nodo: point solo se presente; altrimenti errore (non “tap fantasma”).
-            if (action.pointPercentX == null || action.pointPercentY == null) {
-                error("Tap non trovato id=${action.viewId} text=${action.text}")
-            }
-            clickPointFallback(svc, action.pointPercentX, action.pointPercentY, null)
+            false
         }
+        if (!clicked) {
+            clickPointFallback(svc, null, null, node)
+        }
+    }
+
+    private suspend fun canResolveTap(svc: AccessibilityService, action: RecordedAction.Tap): Boolean {
+        val chain = action.selectorChain.ifEmpty {
+            listOf(
+                SelectorCandidate(
+                    viewId = action.viewId,
+                    text = action.text,
+                    contentDescription = action.contentDescription,
+                    pointPercentX = action.pointPercentX,
+                    pointPercentY = action.pointPercentY,
+                ),
+            ).filterNot { it.isBlank() }
+        }
+        for (candidate in chain) {
+            val hasLogical = !candidate.viewId.isNullOrBlank() ||
+                !candidate.text.isNullOrBlank() ||
+                !candidate.contentDescription.isNullOrBlank()
+            if (!hasLogical) {
+                if (candidate.pointPercentX != null && candidate.pointPercentY != null) return true
+                continue
+            }
+            val probe = action.copy(
+                viewId = candidate.viewId,
+                text = candidate.text,
+                contentDescription = candidate.contentDescription,
+                selectorChain = emptyList(),
+            )
+            val node = waitForTapTarget(svc, probe, 800L)
+            if (node != null) {
+                node.recycle()
+                return true
+            }
+        }
+        return false
     }
 
     /**
@@ -413,7 +635,9 @@ class FlowPlayer(
      * Attende che il nodo sia visibile entro timeout, altrimenti errore.
      */
     private suspend fun assertVisible(action: RecordedAction.AssertVisible) {
-        val deadline = System.currentTimeMillis() + action.timeoutMs
+        val optional = action.executionMode == StepExecutionMode.Optional
+        val timeoutMs = if (optional) minOf(action.timeoutMs, 2_000L) else action.timeoutMs
+        val deadline = System.currentTimeMillis() + timeoutMs
         while (System.currentTimeMillis() < deadline) {
             val svc = service() ?: error("Servizio accessibilità non collegato")
             val node = findNode(svc, action.viewId, action.text, null)
@@ -421,7 +645,30 @@ class FlowPlayer(
                 node.recycle()
                 return
             }
+            val firstLine = action.text?.lineSequence()?.map { it.trim() }?.firstOrNull { it.length >= 8 }
+            if (!firstLine.isNullOrBlank() && firstLine != action.text) {
+                val alt = findNode(svc, action.viewId, firstLine, null)
+                if (alt != null) {
+                    alt.recycle()
+                    return
+                }
+            }
             delay(250)
+        }
+        if (optional) {
+            AppFileLogger.info(
+                "FlowPlayer",
+                "assertVisible_optional_skip id=${action.viewId} text=${action.text?.take(40)}",
+            )
+            // #region agent log
+            DebugSessionLog.log(
+                "F4",
+                "FlowPlayer.assertVisible",
+                "optional_skip",
+                mapOf("text" to action.text?.take(60), "viewId" to action.viewId),
+            )
+            // #endregion
+            return
         }
         error("assertVisible fallito id=${action.viewId} text=${action.text}")
     }
@@ -501,6 +748,12 @@ class FlowPlayer(
 
     private suspend fun inputText(action: RecordedAction.InputText) {
         val svc = service() ?: error("Servizio accessibilità non collegato")
+        val resolvedText = credentialVault.resolveInput(
+            appId = action.packageName,
+            text = action.text,
+            isPassword = action.isPassword,
+            viewId = action.viewId,
+        )
         val node = waitForInputTarget(svc, action.viewId, INPUT_FIND_TIMEOUT_MS)
         // #region agent log
         DebugSessionLog.log(
@@ -517,7 +770,8 @@ class FlowPlayer(
                 "nodeViewId" to (node?.viewIdResourceName),
                 "isPasswordAction" to action.isPassword,
                 "textMasked" to (action.text == "****"),
-                "textLen" to action.text.length,
+                "textLen" to resolvedText.length,
+                "fromVault" to (resolvedText != action.text),
             ),
         )
         // #endregion
@@ -551,11 +805,11 @@ class FlowPlayer(
             }
             delay(250)
 
-            // Skip SET_TEXT solo se il testo è ancora mascherato.
-            // Se l’utente ha messo una password reale in editor/actions.json, va scritta
-            // anche se in registrazione isPassword=true.
-            val masked = action.text == "****"
-            if (masked) {
+            // Skip SET_TEXT se ancora mascherato / placeholder senza vault.
+            val stillMasked = resolvedText == "****" ||
+                resolvedText == CredentialVault.PLACEHOLDER_PASSWORD ||
+                resolvedText == CredentialVault.PLACEHOLDER_PIN
+            if (stillMasked) {
                 AppFileLogger.info(
                     "FlowPlayer",
                     "password_focused_skip_set_text id=${action.viewId}",
@@ -567,7 +821,7 @@ class FlowPlayer(
                     "password_skip_set_text",
                     mapOf(
                         "viewId" to action.viewId,
-                        "reason" to "text_is_masked_stars",
+                        "reason" to "text_is_masked_or_placeholder",
                         "isPasswordFlag" to action.isPassword,
                     ),
                 )
@@ -583,13 +837,13 @@ class FlowPlayer(
                 mapOf(
                     "viewId" to action.viewId,
                     "isPasswordFlag" to action.isPassword,
-                    "textLen" to action.text.length,
+                    "textLen" to resolvedText.length,
                     "textMasked" to false,
                 ),
             )
             // #endregion
             val args = Bundle().apply {
-                putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, action.text)
+                putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, resolvedText)
             }
             val setOk = node.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args)
             // #region agent log
@@ -869,11 +1123,14 @@ class FlowPlayer(
                 }
                 val root = window.root ?: return@forEach
                 val pkg = root.packageName?.toString().orEmpty()
-                // Solo finestre app target: ignora SystemUI / overlay AccessScope.
-                if (pkg.isBlank() ||
-                    MaestroSelectorHeuristics.isForeignUiPackage(pkg) ||
-                    pkg == context.packageName
-                ) {
+                // Finestre app target + dialog permesso/installer; ignora SystemUI / overlay AccessScope.
+                val keep = pkg.isNotBlank() &&
+                    pkg != context.packageName &&
+                    (
+                        !MaestroSelectorHeuristics.isForeignUiPackage(pkg) ||
+                            MaestroSelectorHeuristics.isCaptureDialogPackage(pkg)
+                        )
+                if (!keep) {
                     root.recycle()
                     return@forEach
                 }
@@ -883,10 +1140,13 @@ class FlowPlayer(
         if (appRoots.isEmpty()) {
             svc.rootInActiveWindow?.let { root ->
                 val pkg = root.packageName?.toString().orEmpty()
-                if (pkg.isNotBlank() &&
-                    !MaestroSelectorHeuristics.isForeignUiPackage(pkg) &&
-                    pkg != context.packageName
-                ) {
+                val keep = pkg.isNotBlank() &&
+                    pkg != context.packageName &&
+                    (
+                        !MaestroSelectorHeuristics.isForeignUiPackage(pkg) ||
+                            MaestroSelectorHeuristics.isCaptureDialogPackage(pkg)
+                        )
+                if (keep) {
                     appRoots += root
                 } else {
                     root.recycle()
@@ -907,16 +1167,14 @@ class FlowPlayer(
                     node.contentDescription?.toString().equals(label, ignoreCase = true) == true
             }
             if (exact != null) {
-                val clickable = climbToClickable(exact) ?: exact
-                return AccessibilityNodeInfo.obtain(clickable)
+                return climbToClickable(exact, label) ?: AccessibilityNodeInfo.obtain(exact)
             }
             val partial = list?.firstOrNull { node ->
                 node.text?.toString()?.contains(label, ignoreCase = true) == true ||
                     node.contentDescription?.toString()?.contains(label, ignoreCase = true) == true
             }
             if (partial != null) {
-                val clickable = climbToClickable(partial) ?: partial
-                return AccessibilityNodeInfo.obtain(clickable)
+                return climbToClickable(partial, label) ?: AccessibilityNodeInfo.obtain(partial)
             }
         } finally {
             list?.forEach { it.recycle() }
@@ -932,8 +1190,7 @@ class FlowPlayer(
             t?.contains(label, ignoreCase = true) == true ||
             cd?.contains(label, ignoreCase = true) == true
         if (hit) {
-            val clickable = climbToClickable(node) ?: node
-            return AccessibilityNodeInfo.obtain(clickable)
+            return climbToClickable(node, label) ?: AccessibilityNodeInfo.obtain(node)
         }
         for (i in 0 until node.childCount) {
             val child = node.getChild(i) ?: continue
@@ -944,17 +1201,85 @@ class FlowPlayer(
         return null
     }
 
-    private fun climbToClickable(node: AccessibilityNodeInfo): AccessibilityNodeInfo? {
+    /**
+     * Sale al cliccabile più vicino evitando shell strutturali e id condivisi (`header`, …).
+     * Per accordion: meglio la foglia testo → gesture sui bounds della riga corretta.
+     */
+    private fun climbToClickable(node: AccessibilityNodeInfo, label: String? = null): AccessibilityNodeInfo? {
+        // Foglia con etichetta esatta: se non è cliccabile, sale a riga cliccabile non ambigua.
+        if (!label.isNullOrBlank()) {
+            val t = node.text?.toString()
+            val cd = node.contentDescription?.toString()
+            if (t.equals(label, ignoreCase = true) || cd.equals(label, ignoreCase = true)) {
+                if (node.isClickable || node.isCheckable) {
+                    // #region agent log
+                    DebugSessionLog.log(
+                        "F1",
+                        "FlowPlayer.climbToClickable",
+                        "keep_exact_label_leaf",
+                        mapOf(
+                            "label" to label,
+                            "leafClickable" to true,
+                            "viewId" to node.viewIdResourceName?.substringAfterLast('/'),
+                        ),
+                    )
+                    // #endregion
+                    return AccessibilityNodeInfo.obtain(node)
+                }
+            }
+        }
         var current: AccessibilityNodeInfo? = AccessibilityNodeInfo.obtain(node)
-        repeat(6) {
-            val c = current ?: return null
-            if (c.isClickable || c.isCheckable) return c
+        var depth = 0
+        while (current != null && depth < 6) {
+            val c = current!!
+            if (c.isClickable || c.isCheckable) {
+                val vid = c.viewIdResourceName
+                if (!MaestroSelectorHeuristics.isAmbiguousSharedViewId(vid)) {
+                    // #region agent log
+                    DebugSessionLog.log(
+                        "F1",
+                        "FlowPlayer.climbToClickable",
+                        "accepted_row",
+                        mapOf(
+                            "label" to label,
+                            "viewId" to vid?.substringAfterLast('/'),
+                            "nodeText" to c.text?.toString()?.take(40),
+                        ),
+                    )
+                    // #endregion
+                    return c
+                }
+                // #region agent log
+                DebugSessionLog.log(
+                    "F1",
+                    "FlowPlayer.climbToClickable",
+                    "skip_ambiguous",
+                    mapOf(
+                        "label" to label,
+                        "viewId" to vid?.substringAfterLast('/'),
+                    ),
+                )
+                // #endregion
+            }
             val parent = c.parent
             c.recycle()
             current = parent
+            depth++
         }
         current?.recycle()
-        return null
+        // #region agent log
+        DebugSessionLog.log(
+            "F1",
+            "FlowPlayer.climbToClickable",
+            "keep_leaf_label",
+            mapOf(
+                "label" to label,
+                "leafText" to node.text?.toString()?.take(40),
+                "leafClickable" to node.isClickable,
+            ),
+        )
+        // #endregion
+        return AccessibilityNodeInfo.obtain(node)
     }
 
     private fun findFirstEditable(node: AccessibilityNodeInfo): AccessibilityNodeInfo? {

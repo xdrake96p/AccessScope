@@ -70,6 +70,18 @@ object MaestroSelectorHeuristics {
         "android",
     )
 
+    /**
+     * Package di dialog di sistema da **catturare** in registrazione Maestro
+     * (permessi, installer, consent GMS) come step opzionali — non sono SystemUI/IME.
+     */
+    private val CAPTURE_DIALOG_PACKAGE_HINTS = listOf(
+        "permissioncontroller",
+        "packageinstaller",
+        "com.android.vpndialogs",
+        "com.google.android.gms",
+        "com.google.android.permissioncontroller",
+    )
+
     private val SYSTEM_CHROME_ID_EXACT = setOf(
         "back",
         "home",
@@ -96,8 +108,27 @@ object MaestroSelectorHeuristics {
     fun isForeignUiPackage(packageName: String?): Boolean {
         val pkg = packageName?.trim().orEmpty()
         if (pkg.isBlank()) return false
+        // I dialog di permesso/installer non sono "foreign" ai fini della cattura Maestro.
+        if (isCaptureDialogPackage(pkg)) return false
         return FOREIGN_UI_PACKAGE_PREFIXES.any { prefix ->
             pkg == prefix || pkg.startsWith("$prefix.")
+        }
+    }
+
+    /**
+     * Dialog di runtime permission / installer / GMS: vanno registrati (tap Allow/Consenti)
+     * anche se il package ≠ app target.
+     *
+     * @param packageName Package dell’evento o dell’azione.
+     * @return `true` se è un dialog di sistema da includere nel flusso (optional).
+     */
+    fun isCaptureDialogPackage(packageName: String?): Boolean {
+        val pkg = packageName?.trim()?.lowercase().orEmpty()
+        if (pkg.isBlank()) return false
+        // SystemUI resta escluso anche se contiene sottostringhe ambigue.
+        if (pkg.startsWith("com.android.systemui")) return false
+        return CAPTURE_DIALOG_PACKAGE_HINTS.any { hint ->
+            pkg == hint || pkg.contains(hint)
         }
     }
 
@@ -152,6 +183,43 @@ object MaestroSelectorHeuristics {
     }
 
     /**
+     * Etichette tipiche di dismiss popup (in-app e runtime permission).
+     */
+    val POPUP_DISMISS_LABELS = listOf(
+        "non ora",
+        "not now",
+        "allow",
+        "consenti",
+        "deny",
+        "nega",
+        "rifiuta",
+        "chiudi",
+        "close",
+        "annulla",
+        "cancel",
+        "skip",
+        "no thanks",
+        "accetta",
+        "later",
+        "più tardi",
+        "solo questa volta",
+        "while using",
+        "ho capito",
+        "got it",
+        "ok, ho capito",
+        "non adesso",
+    )
+
+    /**
+     * `true` se il testo è un dismiss tipico di popup.
+     */
+    fun isPopupDismissLabel(text: String?): Boolean {
+        val value = text?.trim()?.lowercase().orEmpty()
+        if (value.isBlank()) return false
+        return POPUP_DISMISS_LABELS.any { value == it || value.contains(it) }
+    }
+
+    /**
      * Campo PIN / OTP (non password login): eccezione coalescenza per PIN + conferma.
      *
      * @param viewId Resource id.
@@ -203,6 +271,54 @@ object MaestroSelectorHeuristics {
                 short.startsWith("container_") ||
                 short.contains("drawer")
         }
+    }
+
+    /**
+     * Id riutilizzati su più righe (accordion ExpandableList): non usare ACTION_CLICK sull’id,
+     * preferire testo + gesture sui bounds della label.
+     */
+    fun isAmbiguousSharedViewId(viewId: String?): Boolean {
+        val short = shortViewId(viewId)?.lowercase().orEmpty()
+        if (short.isBlank()) return false
+        if (isStructuralContainerViewId(short)) return true
+        return short in setOf(
+            "header", "item", "row", "title", "cell", "group", "list_item",
+            "expandable", "accordion", "section",
+        ) || short.endsWith("_header") || short.startsWith("header_") ||
+            short.endsWith("_item") || short.endsWith("_row")
+    }
+
+    private val VOLATILE_ID_REGEX = Regex(".*(_\\d{4,}|[0-9a-f]{8}-[0-9a-f]{4}|[0-9a-f]{16,}|compose_[a-z0-9]+).*")
+
+    /**
+     * Id con hash/UUID/suffissi numerici lunghi tipici Compose — poco stabili tra build.
+     */
+    fun isVolatileViewId(viewId: String?): Boolean {
+        val short = shortViewId(viewId)?.lowercase().orEmpty()
+        if (short.isBlank()) return false
+        return VOLATILE_ID_REGEX.matches(short)
+    }
+
+    /**
+     * Etichetta tipica di header di sezione/accordion (non specifica di un’app).
+     * Usata per dedupe scroll e preferenza testo su id condivisi.
+     */
+    fun isSectionHeaderLabel(text: String?): Boolean {
+        val t = text?.lowercase()?.trim().orEmpty()
+        if (t.length < 4) return false
+        if (t.startsWith("le mie ") || t.startsWith("la mia ") || t.startsWith("il mio ") ||
+            t.startsWith("my ") || t.startsWith("your ")
+        ) {
+            return true
+        }
+        return t.contains("garanzie") ||
+            t.contains("inventario") ||
+            t.contains("dettagli") ||
+            t.contains("documenti") ||
+            (t.contains("polizza") && t.length < 40) ||
+            t.contains("section") ||
+            t.endsWith("…") ||
+            t.endsWith("...")
     }
 
     fun isNoiseTap(action: RecordedAction.Tap): Boolean =

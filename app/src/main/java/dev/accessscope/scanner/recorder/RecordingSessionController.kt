@@ -8,6 +8,7 @@ import android.view.accessibility.AccessibilityEvent
 import dev.accessscope.scanner.recorder.model.FlowTelemetry
 import dev.accessscope.scanner.recorder.telemetry.RecordingTelemetry
 import dev.accessscope.scanner.util.AppFileLogger
+import dev.accessscope.scanner.util.DebugSessionLog
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -137,6 +138,40 @@ class RecordingSessionController(
     }
 
     /**
+     * Rimuove l’ultimo step non-LaunchApp (undo mid-REC).
+     * @return `true` se rimosso.
+     */
+    fun undoLastStep(): Boolean {
+        if (!_state.value.isRecording) return false
+        val actions = _state.value.actions
+        val idx = actions.indexOfLast { it !is RecordedAction.LaunchApp }
+        if (idx < 0) return false
+        _state.update {
+            it.copy(actions = it.actions.toMutableList().also { list -> list.removeAt(idx) })
+        }
+        publishPreview()
+        return true
+    }
+
+    /**
+     * Segna l’ultimo Tap come optional (popup dismiss mid-REC).
+     * @return `true` se aggiornato.
+     */
+    fun markLastTapOptional(): Boolean {
+        if (!_state.value.isRecording) return false
+        val actions = _state.value.actions.toMutableList()
+        val idx = actions.indexOfLast { it is RecordedAction.Tap }
+        if (idx < 0) return false
+        val tap = actions[idx] as RecordedAction.Tap
+        actions[idx] = tap.copy(
+            executionMode = dev.accessscope.scanner.recorder.model.StepExecutionMode.Optional,
+        )
+        _state.update { it.copy(actions = actions) }
+        publishPreview()
+        return true
+    }
+
+    /**
      * Telemetria raccolta durante la registrazione (snapshot + transizioni).
      */
     fun buildTelemetry(): FlowTelemetry {
@@ -157,9 +192,30 @@ class RecordingSessionController(
         if (!current.isRecording) return
         val target = current.targetPackage ?: return
         val pkg = event.packageName?.toString() ?: return
-        if (!isRelevantPackage(pkg, target, rootProvider)) {
-            val interesting = event.eventType == AccessibilityEvent.TYPE_VIEW_CLICKED ||
-                event.eventType == AccessibilityEvent.TYPE_VIEW_LONG_CLICKED ||
+        val isClick = event.eventType == AccessibilityEvent.TYPE_VIEW_CLICKED ||
+            event.eventType == AccessibilityEvent.TYPE_VIEW_LONG_CLICKED
+        val isWindow = event.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED
+        val relevant = isRelevantPackage(pkg, target, rootProvider)
+        // #region agent log
+        if (isClick || isWindow) {
+            DebugSessionLog.log(
+                if (!relevant) "A" else "A",
+                "RecordingSession.onAccessibilityEvent",
+                if (!relevant) "event_skipped_pkg" else "event_accepted",
+                mapOf(
+                    "type" to event.eventType,
+                    "pkg" to pkg,
+                    "target" to target,
+                    "relevant" to relevant,
+                    "paused" to current.isPaused,
+                    "eventText" to event.text?.joinToString("|") { it?.toString().orEmpty() }?.take(120),
+                    "className" to event.className?.toString()?.substringAfterLast('.')?.take(40),
+                ),
+            )
+        }
+        // #endregion
+        if (!relevant) {
+            val interesting = isClick ||
                 event.eventType == AccessibilityEvent.TYPE_VIEW_TEXT_CHANGED ||
                 event.eventType == AccessibilityEvent.TYPE_VIEW_SCROLLED ||
                 event.eventType == AccessibilityEvent.TYPE_VIEW_SELECTED
@@ -174,6 +230,16 @@ class RecordingSessionController(
 
         // In pausa: solo PICK esplicito registra; niente cattura automatica.
         if (current.isPaused && !(current.pickMode && event.eventType == AccessibilityEvent.TYPE_VIEW_CLICKED)) {
+            // #region agent log
+            if (isClick) {
+                DebugSessionLog.log(
+                    "A",
+                    "RecordingSession.onAccessibilityEvent",
+                    "event_skipped_paused",
+                    mapOf("pkg" to pkg, "type" to event.eventType),
+                )
+            }
+            // #endregion
             return
         }
 
@@ -183,6 +249,31 @@ class RecordingSessionController(
         }
 
         val newActions = recorder.onEvent(event, screenWidthPx, screenHeightPx, rootProvider)
+        if (event.eventType == AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED) {
+            telemetryCollector.onContentChanged(System.currentTimeMillis())
+        }
+        // #region agent log
+        if (isClick || isWindow) {
+            DebugSessionLog.log(
+                "B",
+                "RecordingSession.onAccessibilityEvent",
+                "recorder_result",
+                mapOf(
+                    "type" to event.eventType,
+                    "pkg" to pkg,
+                    "added" to newActions.size,
+                    "kinds" to newActions.joinToString(",") { it::class.simpleName.orEmpty() },
+                    "texts" to newActions.mapNotNull {
+                        when (it) {
+                            is RecordedAction.Tap -> it.text
+                            is RecordedAction.AssertVisible -> it.text
+                            else -> null
+                        }
+                    }.joinToString("|").take(100),
+                ),
+            )
+        }
+        // #endregion
         if (newActions.isEmpty()) {
             return
         }
@@ -199,6 +290,21 @@ class RecordingSessionController(
             "RecordingSession",
             "added ${newActions.size} action(s) type=${event.eventType} total=${_state.value.actions.size}",
         )
+    }
+
+    /**
+     * Registra Back hardware/gesture come step Maestro (sopprime scroll spurî successivi).
+     *
+     * @param targetPackage Package app in registrazione.
+     */
+    fun onHardwareBack(targetPackage: String) {
+        val current = _state.value
+        if (!current.isRecording || current.isPaused) return
+        val newActions = recorder.onBackPressed(targetPackage)
+        if (newActions.isEmpty()) return
+        _state.update { it.copy(actions = it.actions + newActions) }
+        publishPreview()
+        AppFileLogger.info("RecordingSession", "hardware_back total=${_state.value.actions.size}")
     }
 
     private fun handlePickClick(
@@ -277,11 +383,15 @@ class RecordingSessionController(
         rootProvider: AccessibilityRootProvider,
     ): Boolean {
         if (eventPackage == targetPackage) return true
+        // Popup permesso / installer: cattura tap anche se root attiva ≠ target.
+        if (MaestroSelectorHeuristics.isCaptureDialogPackage(eventPackage)) return true
         if (MaestroSelectorHeuristics.isForeignUiPackage(eventPackage)) return false
         val root = rootProvider.root() ?: return false
         val rootPkg = root.packageName?.toString()
         root.recycle()
-        return rootPkg == targetPackage
+        if (rootPkg == targetPackage) return true
+        // Dialog dello stesso target in finestra secondaria: root può essere il dialog package.
+        return MaestroSelectorHeuristics.isCaptureDialogPackage(rootPkg)
     }
 
     fun clearStatus() {

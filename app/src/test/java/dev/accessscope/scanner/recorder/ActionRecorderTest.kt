@@ -46,14 +46,77 @@ class ActionRecorderTest {
     }
 
     @Test
-    fun scroll_producesScrollAction() {
+    fun scroll_withoutDelta_discarded() {
+        recorder.reset()
         val event = AccessibilityEvent.obtain(AccessibilityEvent.TYPE_VIEW_SCROLLED).apply {
             packageName = "com.example"
+            fromIndex = -1
+            toIndex = -1
+            if (android.os.Build.VERSION.SDK_INT >= 28) {
+                runCatching {
+                    AccessibilityEvent::class.java.getMethod("setScrollDeltaY", Int::class.javaPrimitiveType)
+                        .invoke(this, 0)
+                    AccessibilityEvent::class.java.getMethod("setScrollDeltaX", Int::class.javaPrimitiveType)
+                        .invoke(this, 0)
+                }
+            }
+        }
+        val actions = recorder.onEvent(event, 1080, 1920)
+        event.recycle()
+        assertTrue(actions.isEmpty())
+    }
+
+    @Test
+    fun scroll_withDelta_producesScrollAction() {
+        val event = AccessibilityEvent.obtain(AccessibilityEvent.TYPE_VIEW_SCROLLED).apply {
+            packageName = "com.example"
+            if (android.os.Build.VERSION.SDK_INT >= 28) {
+                // Robolectric: set field if available
+                runCatching {
+                    AccessibilityEvent::class.java.getMethod("setScrollDeltaY", Int::class.javaPrimitiveType)
+                        .invoke(this, 40)
+                }
+            }
+            fromIndex = 0
+            toIndex = 3
         }
         val actions = recorder.onEvent(event, 1080, 1920)
         event.recycle()
         assertEquals(1, actions.size)
         assertTrue(actions.first() is RecordedAction.Scroll)
+    }
+
+    @Test
+    fun backPressed_recordsBackAndSuppressesScroll() {
+        val back = recorder.onBackPressed("com.example")
+        assertEquals(1, back.size)
+        assertTrue(back.first() is RecordedAction.Back)
+
+        val scroll = AccessibilityEvent.obtain(AccessibilityEvent.TYPE_VIEW_SCROLLED).apply {
+            packageName = "com.example"
+            fromIndex = 0
+            toIndex = 2
+        }
+        val after = recorder.onEvent(scroll, 1080, 1920)
+        scroll.recycle()
+        assertTrue(after.isEmpty())
+    }
+
+    @Test
+    fun click_nonOra_fromEventText_withoutSource() {
+        val click = AccessibilityEvent.obtain(AccessibilityEvent.TYPE_VIEW_CLICKED).apply {
+            packageName = "com.example"
+            text.add("Non ora")
+        }
+        val actions = recorder.onEvent(click, 1080, 1920)
+        click.recycle()
+        assertEquals(1, actions.size)
+        val tap = actions.first() as RecordedAction.Tap
+        assertEquals("Non ora", tap.text)
+        assertEquals(
+            dev.accessscope.scanner.recorder.model.StepExecutionMode.Optional,
+            tap.executionMode,
+        )
     }
 
     @Test

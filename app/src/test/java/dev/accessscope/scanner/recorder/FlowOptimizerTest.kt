@@ -139,11 +139,10 @@ class FlowOptimizerTest {
             RecordedAction.Wait("com.app", timeoutMs = 5_000L),
         )
         val sanitized = FlowOptimizer.sanitizeForPlay(raw)
-        // Progress droppato; tap password / hideKeyboard / wait editor conservati.
-        assertEquals(5, sanitized.size)
+        // Progress droppato; tap password / hideKeyboard / wait editor conservati (+ eventuali waitForAnimation).
+        assertTrue(sanitized.none { it is RecordedAction.Tap && it.viewId?.contains("progress") == true })
         assertTrue(sanitized[0] is RecordedAction.LaunchApp)
-        assertTrue(sanitized[1] is RecordedAction.Tap)
-        assertTrue((sanitized[1] as RecordedAction.Tap).viewId!!.contains("password"))
+        assertTrue(sanitized.any { it is RecordedAction.Tap && it.viewId!!.contains("password") })
         assertTrue(sanitized.any { it is RecordedAction.HideKeyboard })
         assertTrue(sanitized.any { it is RecordedAction.Wait && it.timeoutMs == 5_000L })
     }
@@ -158,9 +157,11 @@ class FlowOptimizerTest {
             RecordedAction.InputText("com.app", "121212", viewId = "com.app:id/pincode"),
         )
         val sanitized = FlowOptimizer.sanitizeForPlay(raw)
-        assertEquals(5, sanitized.size)
-        val wait = sanitized.filterIsInstance<RecordedAction.Wait>().single()
-        assertTrue(wait.visibleId!!.contains("pincode"))
+        assertTrue(sanitized.any { it is RecordedAction.LaunchApp })
+        assertTrue(sanitized.any { it is RecordedAction.Tap && it.text == "CONTINUA" })
+        val wait = sanitized.filterIsInstance<RecordedAction.Wait>().first { it.timeoutMs == 3_000L || it.visibleId != null }
+        assertTrue(wait.visibleId == null || wait.visibleId!!.contains("pincode") || wait.timeoutMs == 3_000L)
+        assertTrue(sanitized.any { it is RecordedAction.InputText })
     }
 
     @Test

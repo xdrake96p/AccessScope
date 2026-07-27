@@ -3,6 +3,7 @@
  */
 package dev.accessscope.scanner.recorder.optimization.conditional
 
+import dev.accessscope.scanner.recorder.MaestroSelectorHeuristics
 import dev.accessscope.scanner.recorder.RecordedAction
 import dev.accessscope.scanner.recorder.intelligence.ScanIntelligenceBundle
 import dev.accessscope.scanner.recorder.model.FlowTelemetry
@@ -14,20 +15,6 @@ import dev.accessscope.scanner.recorder.model.TransitionKind
  * Identifica tap su popup/dismiss opzionali vs step obbligatori.
  */
 object PopupClassifier {
-
-    private val POPUP_TEXT_HINTS = listOf(
-        "allow",
-        "ok",
-        "chiudi",
-        "close",
-        "non ora",
-        "not now",
-        "later",
-        "dismiss",
-        "annulla",
-        "skip",
-        "no thanks",
-    )
 
     /**
      * Classifica metadata per un tap.
@@ -44,18 +31,23 @@ object PopupClassifier {
         telemetry: FlowTelemetry?,
         intel: ScanIntelligenceBundle?,
     ): StepMetadata {
+        // Dialog permesso/installer: sempre optional (possono non riapparire).
+        if (MaestroSelectorHeuristics.isCaptureDialogPackage(action.packageName)) {
+            return StepMetadata(executionMode = StepExecutionMode.Optional)
+        }
+
+        // «Non ora», Allow, Chiudi, … — optional anche senza telemetria overlay.
+        if (MaestroSelectorHeuristics.isPopupDismissLabel(action.text ?: action.contentDescription)) {
+            return StepMetadata(executionMode = StepExecutionMode.Optional)
+        }
+
         val transition = telemetry?.transitions?.firstOrNull { it.toIndex == actionIndex }
         val fingerprint = telemetry?.snapshots?.firstOrNull { it.actionIndex == actionIndex }?.fingerprint
-        val popupText = isPopupDismissText(action.text ?: action.contentDescription)
         val overlay = transition?.kind == TransitionKind.PossibleOverlay
         val offMainPath = fingerprint != null &&
             intel != null &&
             intel.mainPathFingerprints.isNotEmpty() &&
             !intel.mainPathFingerprints.contains(fingerprint)
-
-        if (popupText && (overlay || offMainPath)) {
-            return StepMetadata(executionMode = StepExecutionMode.Optional)
-        }
 
         val requiredForLogin = fingerprint != null &&
             intel != null &&
@@ -73,12 +65,6 @@ object PopupClassifier {
         }
 
         return StepMetadata(executionMode = StepExecutionMode.Required)
-    }
-
-    private fun isPopupDismissText(text: String?): Boolean {
-        val value = text?.trim()?.lowercase().orEmpty()
-        if (value.isBlank()) return false
-        return POPUP_TEXT_HINTS.any { value == it || value.contains(it) }
     }
 }
 
@@ -110,8 +96,33 @@ object OptionalStepPolicy {
                         conditionVisibleText = meta.conditionVisibleText,
                     )
                 }
+                is RecordedAction.AssertVisible -> {
+                    val optional = isOptionalAssert(action, index, telemetry)
+                    if (optional && action.executionMode != StepExecutionMode.Optional) {
+                        action.copy(executionMode = StepExecutionMode.Optional)
+                    } else {
+                        action
+                    }
+                }
                 is RecordedAction.InputText -> action
                 else -> action
             }
         }
+
+    private fun isOptionalAssert(
+        action: RecordedAction.AssertVisible,
+        index: Int,
+        telemetry: FlowTelemetry?,
+    ): Boolean {
+        val text = action.text?.lowercase().orEmpty()
+        if (text.contains("documento") || text.contains("caricamento") ||
+            text.contains("permission") || text.contains("consenti") ||
+            text.contains("non ora") || text.contains("kyc") ||
+            text.contains('\n')
+        ) {
+            return true
+        }
+        val transition = telemetry?.transitions?.firstOrNull { it.toIndex == index }
+        return transition?.kind == TransitionKind.PossibleOverlay
+    }
 }

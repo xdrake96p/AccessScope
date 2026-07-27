@@ -31,6 +31,7 @@ import android.widget.HorizontalScrollView
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
+import android.widget.Toast
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 import dev.accessscope.scanner.AccessScopeApp
@@ -218,6 +219,22 @@ class RecordingOverlayService : Service() {
         }
         pickBtn = chipButton("PICK", density, accent = 0xFF0D9488.toInt()) { togglePick() }
         pauseBtn = chipButton("PAUSE", density, accent = 0xFFCA8A04.toInt()) { togglePause() }
+        val undoBtn = chipButton("UNDO", density) {
+            val ok = (application as? AccessScopeApp)?.recordingController?.undoLastStep() == true
+            Toast.makeText(
+                this,
+                if (ok) "Ultimo step rimosso" else "Niente da annullare",
+                Toast.LENGTH_SHORT,
+            ).show()
+        }
+        val optBtn = chipButton("OPT", density, accent = 0xFF7C3AED.toInt()) {
+            val ok = (application as? AccessScopeApp)?.recordingController?.markLastTapOptional() == true
+            Toast.makeText(
+                this,
+                if (ok) "Ultimo tap → optional" else "Nessun tap da segnare",
+                Toast.LENGTH_SHORT,
+            ).show()
+        }
         val collapseBtn = chipButton("↕", density) {
             expanded = !expanded
             yamlScroll.visibility = if (expanded) View.VISIBLE else View.GONE
@@ -227,6 +244,8 @@ class RecordingOverlayService : Service() {
         }
         actionsRow.addView(pickBtn)
         actionsRow.addView(pauseBtn)
+        actionsRow.addView(undoBtn)
+        actionsRow.addView(optBtn)
         actionsRow.addView(collapseBtn)
         actionsRow.addView(stopBtn)
         root.addView(actionsRow)

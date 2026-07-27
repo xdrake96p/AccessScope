@@ -17,19 +17,30 @@ Quando si modifica qualsiasi comportamento della feature **Maestro** (registrazi
 
 | Sintomo utente | Modulo algoritmo |
 |----------------|------------------|
-| Wait mancanti / loader | `WaitPlanner`, `TransitionTimingAnalyzer` |
+| Wait mancanti / loader / animazioni | `WaitPlanner.ensureAnimationWaits`, `FlowPlayer.waitForAnimationToEnd` (quiescenza UI) |
+| Wait adattivi quiescenza | `RecordingTelemetry.onContentChanged` + `QuiescenceGap` |
+| Soft-fail assert/tap | solo `Optional`; Required → hard-fail |
+| Fail-rate selettori | `SelectorFailRateStore` + `SelectorChainHealer` (≥2 fail → promuovi ramo) |
+| Vault pre-Play | dialog su `FlowsScreen` se `${PIN}`/`${PASSWORD}` mancanti |
+| Overlay UNDO/OPT | `RecordingSessionController.undoLastStep` / `markLastTapOptional` |
 | Input duplicati collassati (PIN×2) | `FlowOptimizationPipeline.coalesceInputText`, `ActionRecorder` pending flush |
 | Step editor `+` ignorati in Play | `sanitizeForPlay` (solo noise SystemUI/progress; non droppare hideKeyboard/tap campo/wait) |
 | Wait timed troncato | `FlowPlayer.waitUntil` senza selettore → timeout pieno |
 | PIN scritto su campo sbagliato | `FlowPlayer.findInputTarget`: mai `findFirstEditable` se viewId esplicito; `attachBlindWaitsToNextTarget` |
 | PIN×2 collassati | `isPinLikeField` → `shouldCoalesceInput` non merge completa; recorder `pin_reentry` (≥800ms) |
 | Password N× `****` | `isLoginPasswordField` (password non pin-like): niente pin_reentry; pipeline coalesca `****` |
+| Popup permesso non catturati | `isCaptureDialogPackage` + `isRelevantPackage` + `dropForeignUiActions` keep; optional via `PopupClassifier` |
 | Selettori `drawer_layout` | `isStructuralContainerViewId` + normalizer preferisce testo |
 | Overlay / PICK / YAML live | `RecordingOverlayService` + `RecordingLivePreview.summarize` one-line |
 | Pausa REC | `RecordingState.isPaused` + overlay PAUSE/RESUME |
 | Play senza sessione | long-press Play → `clearState` + stopApp + cold launch |
 | Feedback Maestro | drawer → `FeedbackIssueBuilder.buildMaestroUrl` |
-| Selettori deboli (solo testo) | `ActionRecorder.resolveTapIdentity`, `SelectorRanker`, exporter |
+| Selettori deboli (solo testo) | `ActionRecorder.resolveTapIdentity`, `SelectorRanker.buildChain`, exporter |
+| Catena fallback / heal Play | `SelectorRanker.attachChains`, `FlowPlayer` chain, `FlowStore.applySelectorWins` |
+| Ghost tap post-scroll/IME | `NoiseActionFilter.dropGhostTapsAfterScrollOrIme` |
+| Wait lint auto-fix | `FlowLintAutoFix` in pipeline dopo WaitPlanner |
+| `${PIN}` / `${PASSWORD}` | `CredentialVault` + exporter placeholder + editor Vault |
+| Validate find-only | `FlowPlayer.validate` + bottone Valida in editor |
 | Password / hideKeyboard / BACK | `FlowPlayer`, `WaitPlanner` (no hideKeyboard auto) |
 
 ## Checklist fine task Maestro

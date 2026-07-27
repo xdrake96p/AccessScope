@@ -16,12 +16,18 @@ import dev.accessscope.scanner.bridge.EXTRA_SESSION_ID
 import dev.accessscope.scanner.data.ScanSessionRepository
 import dev.accessscope.scanner.export.pdf.PdfReportExporter
 import dev.accessscope.scanner.export.ScanReliabilityReportExporter
+import dev.accessscope.scanner.recorder.CredentialVault
 import dev.accessscope.scanner.recorder.FlowOptimizer
 import dev.accessscope.scanner.recorder.FlowPlaybackController
 import dev.accessscope.scanner.recorder.FlowPlayer
 import dev.accessscope.scanner.recorder.FlowStore
+import dev.accessscope.scanner.recorder.MaestroSelectorHeuristics
+import dev.accessscope.scanner.recorder.RecordedAction
 import dev.accessscope.scanner.recorder.RecordingSessionController
 import dev.accessscope.scanner.recorder.SavedFlow
+import dev.accessscope.scanner.recorder.SelectorChainHealer
+import dev.accessscope.scanner.recorder.SelectorFailRateStore
+import dev.accessscope.scanner.recorder.model.PlayOutcome
 import dev.accessscope.scanner.service.AccessScopeAccessibilityService
 import dev.accessscope.scanner.service.PlaybackOverlayService
 import dev.accessscope.scanner.service.RecordingOverlayService
@@ -75,6 +81,8 @@ class AccessScopeApp : Application() {
 
     /** Persistenza YAML Maestro (Beta). */
     val flowStore: FlowStore by lazy { FlowStore(this) }
+    val credentialVault: CredentialVault by lazy { CredentialVault(this) }
+    val selectorFailRateStore: SelectorFailRateStore by lazy { SelectorFailRateStore(this) }
 
     /** Sessione di registrazione azioni utente → YAML Maestro (Beta). */
     val recordingController = RecordingSessionController(this)
@@ -394,27 +402,65 @@ class AccessScopeApp : Application() {
             return "Impossibile avviare il playback"
         }
         PlaybackOverlayService.start(this)
-        val player = FlowPlayer(this) { AccessScopeAccessibilityService.instance }
+        val player = FlowPlayer(
+            context = this,
+            serviceProvider = { AccessScopeAccessibilityService.instance },
+            credentialVault = credentialVault,
+        )
         playbackJob?.cancel()
         playbackJob = applicationScope.launch(Dispatchers.Default) {
-            val err = runCatching {
+            val outcome = runCatching {
                 player.play(sanitized, clearState = clearState) { index, total ->
                     playbackController.onStep(index, total)
                     PlaybackOverlayService.updateStep(this@AccessScopeApp, index, total)
                 }
             }.getOrElse { e ->
-                e.message ?: "Playback fallito"
+                PlayOutcome(error = e.message ?: "Playback fallito")
+            }
+            if (outcome.error == null && outcome.selectorWins.isNotEmpty()) {
+                runCatching { flowStore.applySelectorWins(flow.id, outcome.selectorWins) }
+                AppFileLogger.info(
+                    "AccessScopeApp",
+                    "selector_heal applied=${outcome.selectorWins.size} id=${flow.id}",
+                )
+            }
+            var healMsg: String? = null
+            if (outcome.error != null) {
+                val stepIdx = SelectorChainHealer.parseStepIndex(outcome.error)
+                val failedTap = stepIdx?.let { sanitized.getOrNull(it) as? RecordedAction.Tap }
+                if (failedTap != null && stepIdx != null) {
+                    val promote = selectorFailRateStore.recordFailure(
+                        flow.id,
+                        failedTap.viewId,
+                        failedTap.text,
+                    )
+                    if (promote) {
+                        val promoted = SelectorChainHealer.applyPromotion(sanitized, stepIdx)
+                        if (promoted != null) {
+                            flowStore.updateFlow(flow.id, promoted, optimize = false)
+                            selectorFailRateStore.clear(flow.id, failedTap.viewId, failedTap.text)
+                            healMsg = "Selettore aggiornato (ramo successivo) — riprova Play"
+                            AppFileLogger.info(
+                                "AccessScopeApp",
+                                "fail_rate_promote flow=${flow.id} step=$stepIdx",
+                            )
+                        }
+                    }
+                }
             }
             withContext(Dispatchers.Main) {
                 val endMsg = when {
-                    err != null -> err
+                    healMsg != null -> "${outcome.error}\n$healMsg"
+                    outcome.error != null -> outcome.error
+                    outcome.selectorWins.isNotEmpty() ->
+                        "Playback completato (${sanitized.size} step, ${outcome.selectorWins.size} selettori aggiornati)"
                     else -> "Playback completato (${sanitized.size} step)"
                 }
                 playbackController.end(endMsg)
-                if (err == null) {
+                if (outcome.error == null) {
                     PlaybackOverlayService.stop(this@AccessScopeApp)
                 } else {
-                    PlaybackOverlayService.showError(this@AccessScopeApp, endMsg)
+                    PlaybackOverlayService.showError(this@AccessScopeApp, endMsg ?: "")
                 }
             }
         }
@@ -471,5 +517,58 @@ class AccessScopeApp : Application() {
         AccessScopeAccessibilityService.instance?.resetDynamicTracking()
         ScanOverlayService.start(this)
         return startFlowPlayback(flow, withScan = true)
+    }
+
+    /**
+     * `true` se il flusso richiede PIN/password e il vault non li ha ancora.
+     */
+    fun needsMaestroCredentials(flow: SavedFlow): Boolean {
+        val actions = flowStore.readActions(flow.id) ?: return false
+        val appId = flow.appId
+        var needPin = false
+        var needPassword = false
+        for (a in actions) {
+            if (a !is RecordedAction.InputText) continue
+            val t = a.text.trim()
+            val pinLike = MaestroSelectorHeuristics.isPinLikeField(a.viewId) ||
+                t.equals(CredentialVault.PLACEHOLDER_PIN, ignoreCase = true)
+            val passLike = a.isPassword || t == "****" ||
+                t.equals(CredentialVault.PLACEHOLDER_PASSWORD, ignoreCase = true)
+            if (pinLike) needPin = true
+            if (passLike && !pinLike) needPassword = true
+        }
+        if (needPin && credentialVault.get(appId, CredentialVault.Kind.Pin).isNullOrBlank()) return true
+        if (needPassword && credentialVault.get(appId, CredentialVault.Kind.Password).isNullOrBlank()) return true
+        return false
+    }
+
+    /**
+     * Dry-run find-only sui tap/assert del flusso (senza gesture).
+     *
+     * @return Messaggio esito per Toast/UI.
+     */
+    suspend fun validateFlow(flow: SavedFlow): String {
+        if (AccessScopeAccessibilityService.instance == null) {
+            return "Servizio accessibilità non collegato. Riattiva AccessScope in Accessibilità."
+        }
+        val actions = flowStore.readActions(flow.id)
+            ?: return "Flusso senza azioni tipizzate"
+        val sanitized = FlowOptimizer.sanitizeForPlay(actions)
+        val player = FlowPlayer(this, { AccessScopeAccessibilityService.instance }, credentialVault)
+        val outcome = player.validate(sanitized)
+        if (outcome.error != null) return outcome.error
+        return if (outcome.validateFailures.isEmpty()) {
+            "Validate OK (${sanitized.size} step)"
+        } else {
+            "Validate: ${outcome.validateFailures.size} step non trovati (indici ${outcome.validateFailures.map { it + 1 }})"
+        }
+    }
+
+    /**
+     * Salva PIN/password nel vault locale per [appId] (Play resolve `${PIN}` / `${PASSWORD}`).
+     */
+    fun saveMaestroCredential(appId: String, pin: String?, password: String?) {
+        if (!pin.isNullOrBlank()) credentialVault.put(appId, CredentialVault.Kind.Pin, pin)
+        if (!password.isNullOrBlank()) credentialVault.put(appId, CredentialVault.Kind.Password, password)
     }
 }

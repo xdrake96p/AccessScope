@@ -3,6 +3,7 @@
  */
 package dev.accessscope.scanner.recorder
 
+import dev.accessscope.scanner.recorder.model.SelectorCandidate
 import dev.accessscope.scanner.recorder.model.StepExecutionMode
 
 /**
@@ -28,6 +29,11 @@ sealed class RecordedAction {
         val executionMode: StepExecutionMode = StepExecutionMode.Required,
         val conditionVisibleId: String? = null,
         val conditionVisibleText: String? = null,
+        /**
+         * Catena ordinata di selettori (id → cd → text → point).
+         * Se vuota, Play usa i campi primari; la pipeline la popola in optimize.
+         */
+        val selectorChain: List<SelectorCandidate> = emptyList(),
         override val timestampMs: Long = System.currentTimeMillis(),
     ) : RecordedAction()
 
@@ -105,6 +111,7 @@ sealed class RecordedAction {
         val viewId: String? = null,
         val text: String? = null,
         val timeoutMs: Long = 10_000L,
+        val executionMode: StepExecutionMode = StepExecutionMode.Required,
         override val timestampMs: Long = System.currentTimeMillis(),
     ) : RecordedAction()
 

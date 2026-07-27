@@ -3,6 +3,7 @@
  */
 package dev.accessscope.scanner.recorder
 
+import dev.accessscope.scanner.recorder.model.SelectorCandidate
 import dev.accessscope.scanner.recorder.model.StepExecutionMode
 import org.json.JSONArray
 import org.json.JSONObject
@@ -56,6 +57,24 @@ object ActionJsonCodec {
                 }
                 putOpt("conditionVisibleId", action.conditionVisibleId)
                 putOpt("conditionVisibleText", action.conditionVisibleText)
+                if (action.selectorChain.isNotEmpty()) {
+                    put(
+                        "selectorChain",
+                        JSONArray().apply {
+                            action.selectorChain.forEach { c ->
+                                put(
+                                    JSONObject().apply {
+                                        putOpt("viewId", c.viewId)
+                                        putOpt("text", c.text)
+                                        putOpt("contentDescription", c.contentDescription)
+                                        putOpt("pointPercentX", c.pointPercentX)
+                                        putOpt("pointPercentY", c.pointPercentY)
+                                    },
+                                )
+                            }
+                        },
+                    )
+                }
             }
             is RecordedAction.DoubleTap -> {
                 putOpt("viewId", action.viewId)
@@ -96,6 +115,9 @@ object ActionJsonCodec {
                 putOpt("viewId", action.viewId)
                 putOpt("text", action.text)
                 put("timeoutMs", action.timeoutMs)
+                if (action.executionMode != StepExecutionMode.Required) {
+                    put("executionMode", action.executionMode.name)
+                }
             }
             is RecordedAction.AssertNotVisible -> {
                 putOpt("viewId", action.viewId)
@@ -132,6 +154,7 @@ object ActionJsonCodec {
                 }.getOrDefault(StepExecutionMode.Required),
                 conditionVisibleId = o.optStringOrNull("conditionVisibleId"),
                 conditionVisibleText = o.optStringOrNull("conditionVisibleText"),
+                selectorChain = parseSelectorChain(o.optJSONArray("selectorChain")),
                 timestampMs = ts,
             )
             "DoubleTap" -> RecordedAction.DoubleTap(
@@ -196,6 +219,9 @@ object ActionJsonCodec {
                 viewId = o.optStringOrNull("viewId"),
                 text = o.optStringOrNull("text"),
                 timeoutMs = o.optLong("timeoutMs", 10_000L),
+                executionMode = runCatching {
+                    StepExecutionMode.valueOf(o.optString("executionMode", "Required"))
+                }.getOrDefault(StepExecutionMode.Required),
                 timestampMs = ts,
             )
             "AssertNotVisible" -> RecordedAction.AssertNotVisible(
@@ -231,6 +257,24 @@ object ActionJsonCodec {
             )
             else -> error("Tipo azione sconosciuto: ${o.optString("type")}")
         }
+    }
+
+    private fun parseSelectorChain(arr: JSONArray?): List<SelectorCandidate> {
+        if (arr == null || arr.length() == 0) return emptyList()
+        return buildList {
+            for (i in 0 until arr.length()) {
+                val c = arr.optJSONObject(i) ?: continue
+                add(
+                    SelectorCandidate(
+                        viewId = c.optStringOrNull("viewId"),
+                        text = c.optStringOrNull("text"),
+                        contentDescription = c.optStringOrNull("contentDescription"),
+                        pointPercentX = c.optFloatOrNull("pointPercentX"),
+                        pointPercentY = c.optFloatOrNull("pointPercentY"),
+                    ),
+                )
+            }
+        }.filterNot { it.isBlank() }
     }
 
     private fun parseDirection(raw: String): ScrollDirection =

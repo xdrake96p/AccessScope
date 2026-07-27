@@ -10,6 +10,7 @@ package dev.accessscope.scanner.service
 import android.accessibilityservice.AccessibilityService
 import android.accessibilityservice.AccessibilityServiceInfo
 import android.view.accessibility.AccessibilityEvent
+import android.view.accessibility.AccessibilityNodeInfo
 import dev.accessscope.scanner.AccessScopeApp
 import dev.accessscope.scanner.analyzer.DynamicContentTracker
 import dev.accessscope.scanner.analyzer.ScreenTitleResolver
@@ -19,6 +20,7 @@ import dev.accessscope.scanner.service.scan.AccessibilityScanScheduler
 import dev.accessscope.scanner.service.scan.AccessibilityScreenshotCapture
 import dev.accessscope.scanner.service.scan.AccessibilityTreeScanner
 import dev.accessscope.scanner.recorder.AccessibilityRootProvider
+import dev.accessscope.scanner.recorder.MaestroSelectorHeuristics
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Executors
 import java.util.concurrent.ScheduledExecutorService
@@ -103,9 +105,7 @@ class AccessScopeAccessibilityService : AccessibilityService() {
         val recording = app.recordingController
         if (AccessibilityEventRouter.routesToRecording(recording.isRecording)) {
             val metrics = resources.displayMetrics
-            val rootProvider = AccessibilityRootProvider {
-                runCatching { rootInActiveWindow }.getOrNull()
-            }
+            val rootProvider = recordingRootProvider()
             recording.onAccessibilityEvent(
                 event,
                 metrics.widthPixels,
@@ -137,6 +137,69 @@ class AccessScopeAccessibilityService : AccessibilityService() {
      * Callback di interruzione del servizio di accessibilità; non richiede azioni specifiche.
      */
     override fun onInterrupt() = Unit
+
+    /**
+     * Cattura Back hardware/gesture durante REC Maestro (senza consumare l’evento).
+     */
+    override fun onKeyEvent(event: android.view.KeyEvent): Boolean {
+        if (event.keyCode == android.view.KeyEvent.KEYCODE_BACK &&
+            event.action == android.view.KeyEvent.ACTION_UP
+        ) {
+            val app = application as? AccessScopeApp
+            val recording = app?.recordingController
+            if (recording?.isRecording == true) {
+                val target = recording.state.value.targetPackage
+                if (!target.isNullOrBlank()) {
+                    recording.onHardwareBack(target)
+                }
+            }
+        }
+        return false
+    }
+
+    /**
+     * Root provider multi-finestra per dialog/sheet Compose sopra l’activity.
+     */
+    private fun recordingRootProvider(): AccessibilityRootProvider =
+        object : AccessibilityRootProvider {
+            override fun root(): AccessibilityNodeInfo? =
+                runCatching { rootInActiveWindow }.getOrNull()
+
+            override fun roots(): List<AccessibilityNodeInfo> {
+                val out = mutableListOf<AccessibilityNodeInfo>()
+                val seen = HashSet<Int>()
+                fun consider(windowId: Int, node: AccessibilityNodeInfo?) {
+                    if (node == null) return
+                    if (!seen.add(windowId)) {
+                        node.recycle()
+                        return
+                    }
+                    val pkg = node.packageName?.toString().orEmpty()
+                    if (pkg == applicationContext.packageName) {
+                        node.recycle()
+                        return
+                    }
+                    if (MaestroSelectorHeuristics.isForeignUiPackage(pkg) &&
+                        !MaestroSelectorHeuristics.isCaptureDialogPackage(pkg)
+                    ) {
+                        node.recycle()
+                        return
+                    }
+                    out += node
+                }
+                val wins = runCatching { windows }.getOrNull()
+                val active = wins?.firstOrNull { it.isActive }
+                consider(active?.id ?: -1, active?.root ?: runCatching { rootInActiveWindow }.getOrNull())
+                wins?.forEach { w ->
+                    if (w.type == android.view.accessibility.AccessibilityWindowInfo.TYPE_INPUT_METHOD) {
+                        return@forEach
+                    }
+                    if (active != null && w.id == active.id) return@forEach
+                    consider(w.id, w.root)
+                }
+                return out
+            }
+        }
 
     /**
      * Pulisce risorse e riferimenti statici alla distruzione del servizio.
@@ -198,7 +261,8 @@ class AccessScopeAccessibilityService : AccessibilityService() {
         info.flags = info.flags or
             AccessibilityServiceInfo.FLAG_REPORT_VIEW_IDS or
             AccessibilityServiceInfo.FLAG_RETRIEVE_INTERACTIVE_WINDOWS or
-            AccessibilityServiceInfo.FLAG_INCLUDE_NOT_IMPORTANT_VIEWS
+            AccessibilityServiceInfo.FLAG_INCLUDE_NOT_IMPORTANT_VIEWS or
+            AccessibilityServiceInfo.FLAG_REQUEST_FILTER_KEY_EVENTS
         serviceInfo = info
     }
 

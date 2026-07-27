@@ -63,7 +63,6 @@ object WaitPlanner {
                     val timeout = TransitionTimingAnalyzer.launchAnimationTimeoutMs(telemetry)
                     out += RecordedAction.WaitForAnimation(packageName = a.packageName, timeoutMs = timeout)
                 }
-                is RecordedAction.InputText -> Unit
                 is RecordedAction.Tap -> {
                     val next = actions.getOrNull(i + 1) ?: continue
                     if (next is RecordedAction.Wait ||
@@ -80,38 +79,35 @@ object WaitPlanner {
                         continue
                     }
                     val transition = telemetry?.transitions?.firstOrNull { it.fromIndex == i }
+                    val quiescence = telemetry?.quiescenceGaps?.firstOrNull { it.afterActionIndex == i }
+                    val quiescenceWait = quiescence?.let {
+                        dev.accessscope.scanner.recorder.telemetry.RecordingTelemetry.suggestedWaitMs(it)
+                    }
                     val delta = transition?.deltaMs
                         ?: (next.timestampMs - a.timestampMs).takeIf { a.timestampMs > 0L && next.timestampMs > a.timestampMs }
                     val submit = isSubmitLikeTap(a)
                     when {
-                        // Tap verso campo vicino: wait breve o nessuno.
+                        // Stessa schermata: comunque breve waitForAnimation (evita tap durante anim).
                         !submit &&
                             transition?.kind == TransitionKind.SameScreen &&
-                            (delta == null || delta < 800L) -> {
+                            (delta == null || delta < 800L) &&
+                            quiescenceWait == null -> {
                             val short = TransitionTimingAnalyzer.sameScreenShortWaitMs(delta)
-                            // #region agent log
-                            DebugSessionLog.log(
-                                "H1",
-                                "WaitPlanner.enrich",
-                                "same_screen_short_or_skip",
-                                mapOf(
-                                    "tapText" to a.text,
-                                    "tapId" to a.viewId,
-                                    "shortMs" to short,
-                                    "deltaMs" to delta,
-                                ),
+                                ?: 600L
+                            out += RecordedAction.WaitForAnimation(
+                                packageName = a.packageName.ifBlank { pkg },
+                                timeoutMs = short.coerceIn(400L, 1_500L),
                             )
-                            // #endregion
-                            if (short != null) {
-                                out += RecordedAction.WaitForAnimation(
-                                    packageName = a.packageName.ifBlank { pkg },
-                                    timeoutMs = short,
-                                )
-                            }
                         }
-                        // Navigazione / loader / submit: sempre animazione + waitUntil sul prossimo target.
+                        // Navigazione / loader / submit / quiescenza: animazione + waitUntil.
                         else -> {
                             val animTimeout = when {
+                                quiescenceWait != null -> TransitionTimingAnalyzer.clamp(
+                                    quiescenceWait,
+                                    minMs = 700L,
+                                    maxMs = 8_000L,
+                                    fallbackMs = 2_000L,
+                                )
                                 submit -> TransitionTimingAnalyzer.clamp(
                                     delta?.let { (it * 1.2).toLong() },
                                     minMs = 1_500L,
@@ -137,6 +133,13 @@ object WaitPlanner {
                                 timeoutMs = animTimeout,
                             )
                             val until = waitUntilFor(next, a.packageName.ifBlank { pkg }, delta, intel, actions)
+                                ?.let { w ->
+                                    if (quiescenceWait != null) {
+                                        w.copy(timeoutMs = maxOf(w.timeoutMs, quiescenceWait))
+                                    } else {
+                                        w
+                                    }
+                                }
                             // #region agent log
                             DebugSessionLog.log(
                                 "H1",
@@ -147,6 +150,7 @@ object WaitPlanner {
                                     "tapText" to a.text,
                                     "tapId" to a.viewId,
                                     "animMs" to animTimeout,
+                                    "quiescenceMs" to quiescenceWait,
                                     "hasWaitUntil" to (until != null),
                                     "waitVisibleId" to until?.visibleId,
                                     "waitVisibleText" to until?.visibleText,
@@ -158,11 +162,86 @@ object WaitPlanner {
                         }
                     }
                 }
+                is RecordedAction.Back -> {
+                    out += RecordedAction.WaitForAnimation(
+                        packageName = a.packageName.ifBlank { pkg },
+                        timeoutMs = 1_200L,
+                    )
+                }
+                is RecordedAction.InputText -> {
+                    val next = actions.getOrNull(i + 1) ?: continue
+                    if (next is RecordedAction.Wait ||
+                        next is RecordedAction.WaitForAnimation ||
+                        next is RecordedAction.HideKeyboard
+                    ) {
+                        continue
+                    }
+                    if (next is RecordedAction.Tap || next is RecordedAction.InputText) {
+                        out += RecordedAction.WaitForAnimation(
+                            packageName = a.packageName.ifBlank { pkg },
+                            timeoutMs = 700L,
+                        )
+                    }
+                }
                 else -> Unit
             }
         }
+        return ensureAnimationWaits(out, pkg)
+    }
+
+    /**
+     * Safety net: inserisce `waitForAnimationToEnd` tra azioni interattive consecutive
+     * se manca già un wait (flussi legacy / editor).
+     */
+    fun ensureAnimationWaits(actions: List<RecordedAction>, appId: String): List<RecordedAction> {
+        if (actions.size < 2) return actions
+        val pkg = appId.ifBlank {
+            actions.firstNotNullOfOrNull { it.packageName.takeIf { p -> p.isNotBlank() } }.orEmpty()
+        }
+        val out = mutableListOf<RecordedAction>()
+        for (i in actions.indices) {
+            val cur = actions[i]
+            out += cur
+            val next = actions.getOrNull(i + 1) ?: break
+            if (isSettlingAction(next)) continue
+            if (!triggersUiAnimation(cur)) continue
+            out += RecordedAction.WaitForAnimation(
+                packageName = cur.packageName.ifBlank { pkg },
+                timeoutMs = defaultAnimTimeoutMs(cur),
+            )
+        }
         return out
     }
+
+    private fun isSettlingAction(action: RecordedAction): Boolean =
+        action is RecordedAction.Wait ||
+            action is RecordedAction.WaitForAnimation ||
+            action is RecordedAction.HideKeyboard ||
+            action is RecordedAction.AssertVisible ||
+            action is RecordedAction.AssertNotVisible
+
+    private fun triggersUiAnimation(action: RecordedAction): Boolean =
+        when (action) {
+            is RecordedAction.Tap,
+            is RecordedAction.DoubleTap,
+            is RecordedAction.LongPress,
+            is RecordedAction.Back,
+            is RecordedAction.LaunchApp,
+            is RecordedAction.Scroll,
+            is RecordedAction.ScrollUntilVisible,
+            is RecordedAction.Swipe,
+            is RecordedAction.InputText,
+            -> true
+            else -> false
+        }
+
+    private fun defaultAnimTimeoutMs(action: RecordedAction): Long =
+        when (action) {
+            is RecordedAction.LaunchApp -> 2_000L
+            is RecordedAction.Back -> 1_200L
+            is RecordedAction.Tap -> if (isSubmitLikeTap(action)) 2_000L else 800L
+            else -> 800L
+        }
 
     /**
      * Tap tipici di conferma/login che spesso attivano loader.

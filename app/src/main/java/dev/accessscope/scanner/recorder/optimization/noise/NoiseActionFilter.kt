@@ -32,6 +32,8 @@ object NoiseActionFilter {
             val prev = actions.getOrNull(index - 1)
             val next = actions.getOrNull(index + 1)
             if (prev is RecordedAction.InputText || next is RecordedAction.InputText) return@filterIndexed false
+            // Scroll tra tap accordion/section header: chiude la sezione appena aperta.
+            if (isSectionHeaderTap(prev) || isSectionHeaderTap(next)) return@filterIndexed false
             // Scroll dopo input/wait (IME / lista): rumore tipico post-PIN.
             var i = index - 1
             while (i >= 0 && actions[i] is RecordedAction.Scroll) i--
@@ -45,6 +47,66 @@ object NoiseActionFilter {
             }
             true
         }
+    }
+
+    /** Tap su header sezione / accordion (etichetta generica). */
+    private fun isSectionHeaderTap(action: RecordedAction?): Boolean {
+        val tap = action as? RecordedAction.Tap ?: return false
+        if (MaestroSelectorHeuristics.isSectionHeaderLabel(tap.text)) return true
+        if (MaestroSelectorHeuristics.isAmbiguousSharedViewId(tap.viewId) &&
+            !tap.text.isNullOrBlank()
+        ) {
+            return true
+        }
+        return false
+    }
+
+    /**
+     * Rimuove tap fantasma subito dopo scroll / hideKeyboard (stesso punto ±8%, ≤300ms).
+     */
+    fun dropGhostTapsAfterScrollOrIme(actions: List<RecordedAction>): List<RecordedAction> {
+        if (actions.size < 2) return actions
+        val out = mutableListOf<RecordedAction>()
+        for (i in actions.indices) {
+            val action = actions[i]
+            if (action is RecordedAction.Tap) {
+                val prev = actions.getOrNull(i - 1)
+                val afterScrollOrIme = prev is RecordedAction.Scroll ||
+                    prev is RecordedAction.ScrollUntilVisible ||
+                    prev is RecordedAction.HideKeyboard
+                if (afterScrollOrIme && isGhostNearPrevPoint(prev, action)) {
+                    continue
+                }
+                // Tap point-like subito dopo altro tap sulle stesse % entro 300ms.
+                val lastTap = out.lastOrNull() as? RecordedAction.Tap
+                if (lastTap != null &&
+                    kotlin.math.abs(action.timestampMs - lastTap.timestampMs) <= 300L &&
+                    samePointApprox(lastTap, action) &&
+                    action.text.isNullOrBlank() &&
+                    action.viewId.isNullOrBlank()
+                ) {
+                    continue
+                }
+            }
+            out += action
+        }
+        return out
+    }
+
+    private fun isGhostNearPrevPoint(prev: RecordedAction?, tap: RecordedAction.Tap): Boolean {
+        if (prev == null) return false
+        if (kotlin.math.abs(tap.timestampMs - prev.timestampMs) > 300L) return false
+        // Dopo scroll/IME: tap senza testo/id = spesso fantasma.
+        return tap.viewId.isNullOrBlank() && tap.text.isNullOrBlank() &&
+            tap.contentDescription.isNullOrBlank()
+    }
+
+    private fun samePointApprox(a: RecordedAction.Tap, b: RecordedAction.Tap): Boolean {
+        val ax = a.pointPercentX ?: return false
+        val ay = a.pointPercentY ?: return false
+        val bx = b.pointPercentX ?: return false
+        val by = b.pointPercentY ?: return false
+        return kotlin.math.abs(ax - bx) <= 8f && kotlin.math.abs(ay - by) <= 8f
     }
 
     /**
@@ -131,7 +193,7 @@ object NoiseActionFilter {
         }
 
     /**
-     * Filtro leggero per Play: solo tap SystemUI / progress / selettore vuoto.
+     * Filtro leggero per Play: solo tap SystemUI / progress / selettore vuoto / point-only.
      * Conserva tap su campi editabili, hideKeyboard e wait aggiunti dall’editor.
      */
     fun dropPlaybackNoiseTaps(actions: List<RecordedAction>): List<RecordedAction> =
@@ -145,7 +207,12 @@ object NoiseActionFilter {
                         action.contentDescription,
                     ) &&
                         !MaestroSelectorHeuristics.isNoiseViewId(action.viewId) &&
-                        !(action.viewId == null && action.text.isNullOrBlank() && action.pointPercentX == null)
+                        // Point-only: coordinate obsolete su un’altra schermata → tap spurî.
+                        !(
+                            action.viewId.isNullOrBlank() &&
+                                action.text.isNullOrBlank() &&
+                                action.contentDescription.isNullOrBlank()
+                            )
                 }
                 is RecordedAction.DoubleTap ->
                     !MaestroSelectorHeuristics.isNoiseViewId(action.viewId) &&
@@ -167,6 +234,53 @@ object NoiseActionFilter {
             }
         }
 
+    /**
+     * Collassa tap identici (stesso testo/id) separati solo da Wait / HideKeyboard.
+     * Evita doppio tap accordion da a11y duplicati.
+     */
+    fun dropDuplicateTapsAcrossWaits(actions: List<RecordedAction>): List<RecordedAction> {
+        if (actions.size < 2) return actions
+        val out = mutableListOf<RecordedAction>()
+        for (action in actions) {
+            if (action is RecordedAction.Tap) {
+                val lastTapIdx = out.indexOfLast { it is RecordedAction.Tap }
+                if (lastTapIdx >= 0) {
+                    val prev = out[lastTapIdx] as RecordedAction.Tap
+                    val onlyWaitsBetween = out.subList(lastTapIdx + 1, out.size).all { isWaitLike(it) }
+                    if (onlyWaitsBetween && sameLogicalTap(prev, action)) {
+                        continue
+                    }
+                }
+            }
+            out += action
+        }
+        return out
+    }
+
+    /**
+     * Rimuove ScrollUntilVisible su id strutturali (drawer_layout, …) inutili/pericolosi.
+     */
+    fun dropStructuralScrollUntilVisible(actions: List<RecordedAction>): List<RecordedAction> =
+        actions.filter { action ->
+            if (action !is RecordedAction.ScrollUntilVisible) return@filter true
+            !MaestroSelectorHeuristics.isStructuralContainerViewId(action.visibleId)
+        }
+
+    private fun isWaitLike(action: RecordedAction): Boolean =
+        action is RecordedAction.Wait ||
+            action is RecordedAction.WaitForAnimation ||
+            action is RecordedAction.HideKeyboard
+
+    private fun sameLogicalTap(a: RecordedAction.Tap, b: RecordedAction.Tap): Boolean {
+        val textA = a.text?.trim()?.lowercase().orEmpty()
+        val textB = b.text?.trim()?.lowercase().orEmpty()
+        if (textA.isNotBlank() && textA == textB) return true
+        val idA = MaestroSelectorHeuristics.shortViewId(a.viewId)
+        val idB = MaestroSelectorHeuristics.shortViewId(b.viewId)
+        if (!idA.isNullOrBlank() && idA == idB && textA == textB) return true
+        return false
+    }
+
     private fun isForeignOrChromeTap(action: RecordedAction.Tap, appId: String): Boolean =
         MaestroSelectorHeuristics.isSystemChromeTap(
             action.packageName,
@@ -176,6 +290,7 @@ object NoiseActionFilter {
         ) || !packageOk(action.packageName, appId)
 
     private fun packageOk(packageName: String, appId: String): Boolean {
+        if (MaestroSelectorHeuristics.isCaptureDialogPackage(packageName)) return true
         if (MaestroSelectorHeuristics.isForeignUiPackage(packageName)) return false
         if (appId.isBlank() || packageName.isBlank()) return true
         return packageName == appId

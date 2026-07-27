@@ -15,7 +15,7 @@
 | **M1** A3 round-trip + compat | fatto | `MaestroYamlRoundTripTest`, `docs/MAESTRO_COMPAT.md` |
 | **M1** A4 Maestro CLI | fatto (script) | `tools/verify_yaml_with_maestro_cli.sh` (manuale) |
 | **M1** B1 telemetria gate | fatto | `ReportHelper.confidenceGateStats` + sezione reliability MD |
-| **M2+** | pending | fallback chain, wait adattivi, editor drag, … |
+| **M2+** | in progress | A5 chain + A6 ghost + A7 autofix + A8 vault + Validate (27 luglio); restano editor drag / telemetria fail-rate |
 
 ---
 

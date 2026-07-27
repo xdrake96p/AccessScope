@@ -6,23 +6,34 @@ package dev.accessscope.scanner.recorder
 import android.graphics.Rect
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
+import dev.accessscope.scanner.recorder.model.StepExecutionMode
 import dev.accessscope.scanner.util.AppFileLogger
 import dev.accessscope.scanner.util.DebugSessionLog
 
 /**
- * Fornisce la root della finestra attiva per risolvere nodi quando `event.source` è null.
+ * Fornisce root accessibility per risolvere nodi quando `event.source` è null.
+ *
+ * In registrazione Maestro può esporre più finestre (dialog/sheet oltre alla root attiva).
  */
 fun interface AccessibilityRootProvider {
-    /** @return Root corrente o `null` se non disponibile. */
+    /** @return Root corrente (finestra attiva) o `null`. */
     fun root(): AccessibilityNodeInfo?
+
+    /**
+     * Tutte le root utili (dialog, overlay app, activity), escluse IME.
+     * Default: sola [root].
+     */
+    fun roots(): List<AccessibilityNodeInfo> = listOfNotNull(root())
 }
 
 /**
  * Costruisce azioni Maestro a partire dagli eventi di accessibilità.
  *
  * Preferisce `resource-id`, poi testo/contentDescription, infine coordinate percentuali.
- * Se `event.source` manca, tenta focus input / accessibility focus sulla root.
- * Coalescia input testo e scroll ripetuti; password → `****`.
+ * Se `event.source` manca, cerca il testo evento su **tutte** le root (dialog/sheet).
+ * Non usa FOCUS_ACCESSIBILITY sui click (rompe i tap su popup sopra EditText).
+ * Popup in-app: AssertVisible sul titolo + tap dismiss anche se source è l’editabile sotto.
+ * Coalescia input testo; scroll solo con delta reale; Back da [onBackPressed]; password → `****`.
  */
 class ActionRecorder {
 
@@ -30,6 +41,11 @@ class ActionRecorder {
     private var lastTapAtMs: Long = 0L
     private var pendingText: PendingText? = null
     private var lastScrollAtMs: Long = 0L
+    private var lastBackAtMs: Long = 0L
+    private var lastPopupAssertKey: String? = null
+    private var lastPopupAssertAtMs: Long = 0L
+    /** Dialog aperto senza tap dismiss a11y (es. KYC Compose/Dialog custom). */
+    private var pendingDialog: PendingDialog? = null
 
     private data class PendingText(
         val packageName: String,
@@ -37,6 +53,13 @@ class ActionRecorder {
         val text: String,
         val isPassword: Boolean,
         val timestampMs: Long,
+    )
+
+    private data class PendingDialog(
+        val packageName: String,
+        val title: String?,
+        val dismissLabels: List<String>,
+        val openedAtMs: Long,
     )
 
     /**
@@ -100,6 +123,7 @@ class ActionRecorder {
                     }
                     lastTapKey = key
                     lastTapAtMs = now
+                    clearPendingDialogIfDismiss(tap)
                     out += tap
                     // #region agent log
                     DebugSessionLog.log(
@@ -176,14 +200,46 @@ class ActionRecorder {
                 }
                 // #endregion
                 flushPendingText()?.let(out::add)
+                // Dialog chiuso senza TYPE_VIEW_CLICKED (evidenza KYC AXA): sintetizza dismiss.
+                synthesizeDismissIfDialogClosed(event, packageName, now)?.let(out::add)
+                out += capturePopupOpen(event, packageName, now, rootProvider)
+                if (out.any { it is RecordedAction.AssertVisible }) {
+                    lastPopupAssertAtMs = now
+                }
+            }
+            AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED -> {
+                // Solo se l’evento porta già un titolo “dialog-like” (niente scan root: troppo rumoroso).
+                capturePopupAssert(
+                    event = event,
+                    packageName = packageName,
+                    now = now,
+                    rootProvider = rootProvider,
+                    allowRootScan = false,
+                )?.let { assert ->
+                    lastPopupAssertAtMs = now
+                    out += assert
+                }
             }
             AccessibilityEvent.TYPE_VIEW_SCROLLED -> {
+                // Dopo Back / comparsa popup, scroll di layout non devono diventare step spurî.
+                if (now - lastBackAtMs < SCROLL_SUPPRESS_AFTER_BACK_MS) {
+                    logDiscard(event.eventType, packageName, "scroll_after_back")
+                    return out
+                }
+                if (now - lastPopupAssertAtMs < SCROLL_SUPPRESS_AFTER_POPUP_MS) {
+                    logDiscard(event.eventType, packageName, "scroll_after_popup")
+                    return out
+                }
+                val direction = scrollDirectionOrNull(event) ?: run {
+                    logDiscard(event.eventType, packageName, "scroll_no_delta")
+                    return out
+                }
                 if (now - lastScrollAtMs < SCROLL_DEBOUNCE_MS) return out
                 lastScrollAtMs = now
                 flushPendingText()?.let(out::add)
                 out += RecordedAction.Scroll(
                     packageName = packageName,
-                    direction = ScrollDirection.DOWN,
+                    direction = direction,
                     timestampMs = now,
                 )
             }
@@ -212,11 +268,24 @@ class ActionRecorder {
     /** Scarica eventuale testo in attesa (es. a fine registrazione). */
     fun flush(): List<RecordedAction> = listOfNotNull(flushPendingText())
 
+    /** Notifica pressione Back (hardware/gesture) dal servizio. */
+    fun onBackPressed(packageName: String, now: Long = System.currentTimeMillis()): List<RecordedAction> {
+        lastBackAtMs = now
+        flushPendingText()
+        return listOf(
+            RecordedAction.Back(packageName = packageName, timestampMs = now),
+        )
+    }
+
     fun reset() {
         lastTapKey = null
         lastTapAtMs = 0L
         pendingText = null
         lastScrollAtMs = 0L
+        lastBackAtMs = 0L
+        lastPopupAssertKey = null
+        lastPopupAssertAtMs = 0L
+        pendingDialog = null
     }
 
     /**
@@ -336,31 +405,64 @@ class ActionRecorder {
         longPress: Boolean,
         rootProvider: AccessibilityRootProvider,
     ): RecordedAction? {
-        val resolved = resolveNode(event, rootProvider)
+        val eventLabel = eventLabel(event)
+        val resolved = resolveNode(event, rootProvider, preferFocusFallback = false)
         val node = resolved.node
-        if (node?.isEditable == true && !longPress) {
+
+        // Popup Compose: click su "Non ora" con source=editabile sotto il dialog.
+        val dismissFromEvent = eventLabel != null && MaestroSelectorHeuristics.isPopupDismissLabel(eventLabel)
+        if (node?.isEditable == true && !longPress && !dismissFromEvent) {
+            val rootsForCount = rootProvider.roots()
+            val rootCount = rootsForCount.size
+            rootsForCount.forEach { it.recycle() }
+            val dismissFromUi = findDismissLabelInRoots(rootProvider)
+            // #region agent log
+            DebugSessionLog.log(
+                "C",
+                "ActionRecorder.buildTap",
+                "editable_source_path",
+                mapOf(
+                    "eventLabel" to eventLabel,
+                    "dismissFromEvent" to dismissFromEvent,
+                    "dismissFromUi" to dismissFromUi,
+                    "nodeClass" to node.className?.toString()?.substringAfterLast('.'),
+                    "rootCount" to rootCount,
+                ),
+            )
+            // #endregion
+            if (dismissFromUi != null) {
+                resolved.recycleIfNeeded()
+                AppFileLogger.info(
+                    "ActionRecorder",
+                    "tap_override_editable_with_dismiss text=$dismissFromUi",
+                )
+                return RecordedAction.Tap(
+                    packageName = packageName,
+                    text = dismissFromUi.take(80),
+                    timestampMs = now,
+                    executionMode = StepExecutionMode.Optional,
+                )
+            }
             resolved.recycleIfNeeded()
             logDiscard(event.eventType, packageName, "editable_skip_tap")
             // #region agent log
             DebugSessionLog.log(
-                "R1",
+                "C",
                 "ActionRecorder.buildTap",
                 "editable_skip_tap",
                 mapOf(
                     "pkg" to packageName,
-                    "viewId" to node.viewIdResourceName,
-                    "eventText" to event.text?.firstOrNull()?.toString(),
+                    "eventLabel" to eventLabel,
+                    "sampleClickables" to sampleClickableLabels(rootProvider).take(8).joinToString("|"),
                 ),
             )
             // #endregion
             return null
         }
 
-        // Salita verso parent cliccabile: il testo "CONTINUA" è spesso sul TextView figlio
-        // mentre l’id sta sul Button/parent (id-first per Play stabile).
         val identity = resolveTapIdentity(node, event)
         val viewId = identity.viewId
-        val text = identity.text
+        val text = identity.text ?: eventLabel
         val cd = identity.contentDescription
 
         if (MaestroSelectorHeuristics.isSystemChromeTap(packageName, viewId, text, cd) ||
@@ -386,7 +488,6 @@ class ActionRecorder {
                 py = ((bounds.centerY().toFloat() / screenHeightPx) * 100f).coerceIn(0f, 100f)
             }
         }
-        // Preferisci bounds del parent cliccabile se disponibile.
         identity.clickableBounds?.let { b ->
             if (screenWidthPx > 0 && screenHeightPx > 0 && !b.isEmpty) {
                 px = ((b.centerX().toFloat() / screenWidthPx) * 100f).coerceIn(0f, 100f)
@@ -395,20 +496,48 @@ class ActionRecorder {
         }
         resolved.recycleIfNeeded()
 
-        if (viewId == null && text == null && cd == null && (px == null || py == null)) return null
+        val optional = MaestroSelectorHeuristics.isPopupDismissLabel(text ?: cd ?: eventLabel)
 
-        // #region agent log
-        DebugSessionLog.log(
-            "R3",
-            "ActionRecorder.buildTap",
-            "tap_identity",
-            mapOf(
-                "viewId" to viewId,
-                "text" to text,
-                "hasPoint" to (px != null),
-            ),
-        )
-        // #endregion
+        // Fallback testo evento: Compose dialog senza source ma con label sul click.
+        if (viewId == null && text == null && cd == null && (px == null || py == null)) {
+            if (!eventLabel.isNullOrBlank()) {
+                return RecordedAction.Tap(
+                    packageName = packageName,
+                    text = eventLabel.take(80),
+                    timestampMs = now,
+                    executionMode = if (MaestroSelectorHeuristics.isPopupDismissLabel(eventLabel)) {
+                        StepExecutionMode.Optional
+                    } else {
+                        StepExecutionMode.Required
+                    },
+                )
+            }
+            // Ultima chance: cerca bottone dismiss tipico nelle finestre dialog.
+            val dismiss = findDismissLabelInRoots(rootProvider)
+            // #region agent log
+            DebugSessionLog.log(
+                "D",
+                "ActionRecorder.buildTap",
+                "unresolved_no_selector",
+                mapOf(
+                    "pkg" to packageName,
+                    "eventLabel" to eventLabel,
+                    "dismissHint" to dismiss,
+                    "hasSource" to (node != null),
+                ),
+            )
+            // #endregion
+            if (dismiss != null) {
+                AppFileLogger.info("ActionRecorder", "tap_from_dismiss_hint text=$dismiss")
+                return RecordedAction.Tap(
+                    packageName = packageName,
+                    text = dismiss.take(80),
+                    timestampMs = now,
+                    executionMode = StepExecutionMode.Optional,
+                )
+            }
+            return null
+        }
 
         return if (longPress) {
             RecordedAction.LongPress(
@@ -429,6 +558,7 @@ class ActionRecorder {
                 pointPercentX = px,
                 pointPercentY = py,
                 timestampMs = now,
+                executionMode = if (optional) StepExecutionMode.Optional else StepExecutionMode.Required,
             )
         }
     }
@@ -495,58 +625,418 @@ class ActionRecorder {
     )
 
     /**
-     * Risolve il nodo: source evento → testo evento sulla root → accessibility focus.
-     * Non usa FOCUS_INPUT (campo password ancora focusato → scarta CONTINUA come editable).
+     * Risolve il nodo: source evento → testo evento su **tutte** le root (dialog),
+     * senza fallback FOCUS_ACCESSIBILITY (rompe i tap su popup sopra EditText).
      */
     private fun resolveNode(
         event: AccessibilityEvent,
         rootProvider: AccessibilityRootProvider,
+        preferFocusFallback: Boolean = false,
     ): ResolvedNode {
         val source = runCatching { event.source }.getOrNull()
         if (source != null) return ResolvedNode(source, owned = true)
 
-        val root = rootProvider.root() ?: return ResolvedNode(null, owned = false)
-        val eventLabel = event.text?.firstOrNull()?.toString()?.trim()?.takeIf { it.isNotBlank() }
-            ?: event.contentDescription?.toString()?.trim()?.takeIf { it.isNotBlank() }
+        val eventLabel = eventLabel(event)
+        val roots = rootProvider.roots().ifEmpty { listOfNotNull(rootProvider.root()) }
+        if (roots.isEmpty()) return ResolvedNode(null, owned = false)
 
-        if (!eventLabel.isNullOrBlank()) {
-            val list = runCatching { root.findAccessibilityNodeInfosByText(eventLabel) }.getOrNull()
-            val match = list?.firstOrNull { node ->
-                val t = node.text?.toString()
-                val cd = node.contentDescription?.toString()
-                t.equals(eventLabel, ignoreCase = true) ||
-                    cd.equals(eventLabel, ignoreCase = true) ||
-                    (node.isClickable && (
-                        t?.contains(eventLabel, ignoreCase = true) == true ||
-                            cd?.contains(eventLabel, ignoreCase = true) == true
-                        ))
+        try {
+            if (!eventLabel.isNullOrBlank()) {
+                for (root in roots) {
+                    val list = runCatching { root.findAccessibilityNodeInfosByText(eventLabel) }.getOrNull()
+                    val match = list?.firstOrNull { node ->
+                        val t = node.text?.toString()
+                        val cd = node.contentDescription?.toString()
+                        t.equals(eventLabel, ignoreCase = true) ||
+                            cd.equals(eventLabel, ignoreCase = true) ||
+                            (node.isClickable && (
+                                t?.contains(eventLabel, ignoreCase = true) == true ||
+                                    cd?.contains(eventLabel, ignoreCase = true) == true
+                                ))
+                    }
+                    if (match != null) {
+                        val keep = AccessibilityNodeInfo.obtain(match)
+                        list.forEach { it.recycle() }
+                        return ResolvedNode(keep, owned = true)
+                    }
+                    list?.forEach { it.recycle() }
+                }
             }
-            if (match != null) {
-                val keep = AccessibilityNodeInfo.obtain(match)
-                list.forEach { it.recycle() }
-                root.recycle()
-                // #region agent log
-                DebugSessionLog.log(
-                    "R1",
-                    "ActionRecorder.resolveNode",
-                    "resolved_by_event_text",
-                    mapOf("label" to eventLabel, "viewId" to keep.viewIdResourceName),
-                )
-                // #endregion
-                return ResolvedNode(keep, owned = true)
+
+            if (preferFocusFallback) {
+                for (root in roots) {
+                    val a11yFocus = runCatching {
+                        root.findFocus(AccessibilityNodeInfo.FOCUS_ACCESSIBILITY)
+                    }.getOrNull()
+                    if (a11yFocus != null) return ResolvedNode(a11yFocus, owned = true)
+                }
             }
-            list?.forEach { it.recycle() }
+            return ResolvedNode(null, owned = false)
+        } finally {
+            roots.forEach { it.recycle() }
+        }
+    }
+
+    private fun eventLabel(event: AccessibilityEvent): String? {
+        val items = eventTextItems(event)
+        if (items.isNotEmpty()) return items.joinToString(" ")
+        return event.contentDescription?.toString()?.trim()?.takeIf { it.isNotBlank() }
+    }
+
+    /** Singole stringhe in `event.text` (non concatenate: possono superare 120 char). */
+    private fun eventTextItems(event: AccessibilityEvent): List<String> =
+        event.text
+            ?.mapNotNull { it?.toString()?.trim()?.takeIf { s -> s.isNotBlank() } }
+            .orEmpty()
+
+    /**
+     * All’apertura dialog: AssertVisible sul titolo + memorizza label dismiss per sintesi se manca CLICKED.
+     */
+    private fun capturePopupOpen(
+        event: AccessibilityEvent,
+        packageName: String,
+        now: Long,
+        rootProvider: AccessibilityRootProvider,
+    ): List<RecordedAction> {
+        val className = event.className?.toString().orEmpty()
+        val items = eventTextItems(event)
+        val title = pickPopupTitle(items, className)
+            ?: if (isDialogClass(className)) findPopupTitleInRoots(rootProvider) else null
+        val dismissFromEvent = items.filter { MaestroSelectorHeuristics.isPopupDismissLabel(it) }
+        val dismissFromRoots = if (isDialogClass(className) || title != null) {
+            listOfNotNull(findDismissLabelInRoots(rootProvider))
+        } else {
+            emptyList()
+        }
+        val dismissLabels = (dismissFromEvent + dismissFromRoots)
+            .distinctBy { it.lowercase() }
+        val isDialog = isDialogClass(className) || title != null || dismissLabels.isNotEmpty()
+
+        // #region agent log
+        DebugSessionLog.log(
+            "E",
+            "ActionRecorder.capturePopupOpen",
+            if (isDialog) "popup_open" else "popup_assert_miss",
+            mapOf(
+                "className" to className.substringAfterLast('.').take(48),
+                "itemCount" to items.size,
+                "items" to items.joinToString("|") { it.take(40) }.take(160),
+                "title" to title?.take(80),
+                "dismiss" to dismissLabels.joinToString("|").take(80),
+            ),
+        )
+        // #endregion
+
+        if (!isDialog) return emptyList()
+
+        if (dismissLabels.isNotEmpty() || title != null) {
+            pendingDialog = PendingDialog(
+                packageName = packageName,
+                title = title,
+                dismissLabels = dismissLabels.ifEmpty {
+                    listOf("Non ora", "chiudi")
+                },
+                openedAtMs = now,
+            )
         }
 
-        val a11yFocus = runCatching {
-            root.findFocus(AccessibilityNodeInfo.FOCUS_ACCESSIBILITY)
-        }.getOrNull()
-        if (a11yFocus != null) {
-            root.recycle()
-            return ResolvedNode(a11yFocus, owned = true)
+        if (title == null) return emptyList()
+        val key = "$packageName|$title"
+        if (key == lastPopupAssertKey && now - lastPopupAssertAtMs < POPUP_ASSERT_DEBOUNCE_MS) {
+            return emptyList()
         }
-        root.recycle()
-        return ResolvedNode(null, owned = false)
+        lastPopupAssertKey = key
+        return listOf(
+            RecordedAction.AssertVisible(
+                packageName = packageName,
+                text = title.take(80),
+                timestampMs = now,
+            ),
+        )
+    }
+
+    /**
+     * Se un dialog era aperto e la finestra cambia senza tap dismiss, registra tap optional.
+     */
+    private fun synthesizeDismissIfDialogClosed(
+        event: AccessibilityEvent,
+        packageName: String,
+        now: Long,
+    ): RecordedAction.Tap? {
+        val pending = pendingDialog ?: return null
+        val className = event.className?.toString().orEmpty()
+        if (isDialogClass(className)) return null
+        // Stesso dialog ri-notificato: non chiudere.
+        val items = eventTextItems(event)
+        val titleAgain = pickPopupTitle(items, className)
+        if (titleAgain != null && titleAgain == pending.title) return null
+        if (now - pending.openedAtMs < 250L) return null
+
+        val label = preferDismissLabel(pending.dismissLabels) ?: return null
+        pendingDialog = null
+        // #region agent log
+        DebugSessionLog.log(
+            "B",
+            "ActionRecorder.synthesizeDismiss",
+            "dismiss_synthesized",
+            mapOf(
+                "label" to label,
+                "title" to pending.title?.take(60),
+                "pkg" to packageName,
+                "gapMs" to (now - pending.openedAtMs),
+            ),
+        )
+        // #endregion
+        return RecordedAction.Tap(
+            packageName = pending.packageName.ifBlank { packageName },
+            text = label.take(80),
+            timestampMs = now,
+            executionMode = StepExecutionMode.Optional,
+        )
+    }
+
+    private fun preferDismissLabel(labels: List<String>): String? {
+        if (labels.isEmpty()) return null
+        val preferred = listOf("non ora", "not now", "chiudi", "close", "annulla", "skip", "later")
+        for (p in preferred) {
+            labels.firstOrNull { it.equals(p, true) || it.contains(p, true) }?.let { return it }
+        }
+        return labels.firstOrNull()
+    }
+
+    private fun clearPendingDialogIfDismiss(action: RecordedAction) {
+        val pending = pendingDialog ?: return
+        val text = when (action) {
+            is RecordedAction.Tap -> action.text ?: action.contentDescription
+            else -> null
+        } ?: return
+        if (MaestroSelectorHeuristics.isPopupDismissLabel(text) ||
+            pending.dismissLabels.any { text.contains(it, ignoreCase = true) }
+        ) {
+            pendingDialog = null
+        }
+    }
+
+    private fun pickPopupTitle(items: List<String>, className: String): String? {
+        val candidates = items.filter { it.length in 8..120 }
+        candidates.firstOrNull { looksLikePopupTitle(it, className) }?.let { return it }
+        if (isDialogClass(className)) {
+            return candidates.firstOrNull { !MaestroSelectorHeuristics.isPopupDismissLabel(it) }
+        }
+        return null
+    }
+
+    private fun isDialogClass(className: String): Boolean =
+        className.contains("Dialog", ignoreCase = true) ||
+            className.contains("Popup", ignoreCase = true) ||
+            className.contains("BottomSheet", ignoreCase = true) ||
+            className.contains("AlertDialog", ignoreCase = true)
+
+    /**
+     * AssertVisible su CONTENT_CHANGED solo se l’evento porta già un titolo dialog-like.
+     */
+    private fun capturePopupAssert(
+        event: AccessibilityEvent,
+        packageName: String,
+        now: Long,
+        rootProvider: AccessibilityRootProvider,
+        allowRootScan: Boolean,
+    ): RecordedAction.AssertVisible? {
+        val className = event.className?.toString().orEmpty()
+        val items = eventTextItems(event)
+        val eventTitle = pickPopupTitle(items, className)
+        val title = when {
+            eventTitle != null -> eventTitle
+            allowRootScan -> findPopupTitleInRoots(rootProvider)
+            else -> null
+        }
+        // #region agent log
+        if (allowRootScan || eventTitle != null || items.isNotEmpty()) {
+            DebugSessionLog.log(
+                "E",
+                "ActionRecorder.capturePopupAssert",
+                if (title != null) "popup_assert_candidate" else "popup_assert_miss",
+                mapOf(
+                    "allowRootScan" to allowRootScan,
+                    "className" to className.substringAfterLast('.').take(40),
+                    "eventTitle" to eventTitle?.take(80),
+                    "title" to title?.take(80),
+                    "itemCount" to items.size,
+                ),
+            )
+        }
+        // #endregion
+        if (title == null) return null
+        val key = "$packageName|$title"
+        if (key == lastPopupAssertKey && now - lastPopupAssertAtMs < POPUP_ASSERT_DEBOUNCE_MS) return null
+        lastPopupAssertKey = key
+        return RecordedAction.AssertVisible(
+            packageName = packageName,
+            text = title.take(80),
+            timestampMs = now,
+        )
+    }
+
+    private fun looksLikePopupTitle(title: String, className: String): Boolean {
+        if (isDialogClass(className)) return true
+        val lower = title.lowercase().replace('\n', ' ')
+        return POPUP_TITLE_HINTS.any { lower.contains(it) } ||
+            (title.split(Regex("\\s+")).size >= 3 && title.length >= 18)
+    }
+
+    /**
+     * Titolo dialog vicino a un bottone dismiss tipico (es. «Non ora»).
+     */
+    private fun findPopupTitleInRoots(rootProvider: AccessibilityRootProvider): String? {
+        val roots = rootProvider.roots().ifEmpty { listOfNotNull(rootProvider.root()) }
+        if (roots.isEmpty()) return null
+        try {
+            for (root in roots) {
+                for (hint in MaestroSelectorHeuristics.POPUP_DISMISS_LABELS) {
+                    val list = runCatching { root.findAccessibilityNodeInfosByText(hint) }.getOrNull()
+                        ?: continue
+                    try {
+                        val dismiss = list.firstOrNull { node ->
+                            val t = node.text?.toString()?.trim().orEmpty()
+                            val cd = node.contentDescription?.toString()?.trim().orEmpty()
+                            (t.equals(hint, true) || cd.equals(hint, true) ||
+                                t.contains(hint, true) || cd.contains(hint, true)) &&
+                                (node.isClickable || node.parent?.isClickable == true)
+                        } ?: continue
+                        val title = findNearbyTitleText(dismiss) ?: continue
+                        if (looksLikePopupTitle(title, "")) return title.take(80)
+                    } finally {
+                        list.forEach { it.recycle() }
+                    }
+                }
+            }
+        } finally {
+            roots.forEach { it.recycle() }
+        }
+        return null
+    }
+
+    /** Salendo dall’azione dismiss, cerca un testo lungo da usare come titolo dialog. */
+    private fun findNearbyTitleText(from: AccessibilityNodeInfo): String? {
+        var parent = from.parent
+        var depth = 0
+        while (parent != null && depth < 6) {
+            val childCount = parent.childCount
+            for (i in 0 until childCount) {
+                val child = parent.getChild(i) ?: continue
+                try {
+                    if (child.isClickable) continue
+                    val t = child.text?.toString()?.trim().orEmpty()
+                    if (t.length in 12..120 && !MaestroSelectorHeuristics.isPopupDismissLabel(t)) {
+                        return t
+                    }
+                } finally {
+                    child.recycle()
+                }
+            }
+            val next = parent.parent
+            parent.recycle()
+            parent = next
+            depth++
+        }
+        parent?.recycle()
+        return null
+    }
+
+    private fun scrollDirectionOrNull(event: AccessibilityEvent): ScrollDirection? {
+        val dy = if (android.os.Build.VERSION.SDK_INT >= 28) {
+            event.scrollDeltaY
+        } else {
+            0
+        }
+        val dx = if (android.os.Build.VERSION.SDK_INT >= 28) {
+            event.scrollDeltaX
+        } else {
+            0
+        }
+        val indexChanged = event.fromIndex >= 0 &&
+            event.toIndex >= 0 &&
+            event.fromIndex != event.toIndex
+        // Soglia più alta: micro-delta da layout/dialog → non sono scroll utente.
+        if (kotlin.math.abs(dy) < SCROLL_MIN_DELTA_PX &&
+            kotlin.math.abs(dx) < SCROLL_MIN_DELTA_PX &&
+            !indexChanged
+        ) {
+            return null
+        }
+        return when {
+            kotlin.math.abs(dy) >= kotlin.math.abs(dx) ->
+                if (dy < 0) ScrollDirection.UP else ScrollDirection.DOWN
+            dx < 0 -> ScrollDirection.LEFT
+            else -> ScrollDirection.RIGHT
+        }
+    }
+
+    /**
+     * Cerca etichette dismiss tipiche nelle root (dialog sopra la UI).
+     */
+    private fun findDismissLabelInRoots(rootProvider: AccessibilityRootProvider): String? {
+        val roots = rootProvider.roots().ifEmpty { listOfNotNull(rootProvider.root()) }
+        if (roots.isEmpty()) return null
+        try {
+            for (hint in MaestroSelectorHeuristics.POPUP_DISMISS_LABELS) {
+                for (root in roots) {
+                    val list = runCatching { root.findAccessibilityNodeInfosByText(hint) }.getOrNull()
+                        ?: continue
+                    var label: String? = null
+                    for (node in list) {
+                        val t = node.text?.toString()?.trim().orEmpty()
+                        val cd = node.contentDescription?.toString()?.trim().orEmpty()
+                        val match = t.equals(hint, true) || cd.equals(hint, true) ||
+                            t.contains(hint, true) || cd.contains(hint, true)
+                        val actionable = node.isClickable || node.isEnabled ||
+                            node.parent?.isClickable == true
+                        if (match && actionable) {
+                            label = t.takeIf { it.isNotBlank() }
+                                ?: cd.takeIf { it.isNotBlank() }
+                                ?: hint
+                            break
+                        }
+                    }
+                    list.forEach { it.recycle() }
+                    if (label != null) return label
+                }
+            }
+        } finally {
+            roots.forEach { it.recycle() }
+        }
+        return null
+    }
+
+    /**
+     * Campione etichette cliccabili nelle root (solo debug).
+     */
+    private fun sampleClickableLabels(rootProvider: AccessibilityRootProvider): List<String> {
+        val roots = rootProvider.roots().ifEmpty { listOfNotNull(rootProvider.root()) }
+        if (roots.isEmpty()) return emptyList()
+        val out = mutableListOf<String>()
+        try {
+            fun walk(n: AccessibilityNodeInfo, depth: Int) {
+                if (out.size >= 12 || depth > 8) return
+                val t = n.text?.toString()?.trim().orEmpty()
+                val cd = n.contentDescription?.toString()?.trim().orEmpty()
+                if (n.isClickable && (t.isNotBlank() || cd.isNotBlank())) {
+                    out += (t.ifBlank { cd }).take(40)
+                }
+                for (i in 0 until n.childCount) {
+                    val c = n.getChild(i) ?: continue
+                    try {
+                        walk(c, depth + 1)
+                    } finally {
+                        c.recycle()
+                    }
+                }
+            }
+            roots.forEach { walk(it, 0) }
+        } finally {
+            roots.forEach { it.recycle() }
+        }
+        return out
     }
 
     private fun logDiscard(eventType: Int, packageName: String, reason: String) {
@@ -576,5 +1066,22 @@ class ActionRecorder {
     companion object {
         private const val TAP_DEBOUNCE_MS = 150L
         private const val SCROLL_DEBOUNCE_MS = 600L
+        private const val SCROLL_SUPPRESS_AFTER_BACK_MS = 700L
+        private const val SCROLL_SUPPRESS_AFTER_POPUP_MS = 900L
+        private const val SCROLL_MIN_DELTA_PX = 12
+        private const val POPUP_ASSERT_DEBOUNCE_MS = 1_500L
+        private val POPUP_TITLE_HINTS = listOf(
+            "caricamento",
+            "documento",
+            "procedi",
+            "permesso",
+            "consenti",
+            "privacy",
+            "cookie",
+            "aggiornamento",
+            "notifica",
+            "abilitare",
+            "accedere",
+        )
     }
 }

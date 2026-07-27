@@ -6,15 +6,18 @@ package dev.accessscope.scanner.recorder.optimization
 import dev.accessscope.scanner.recorder.MaestroSelectorHeuristics
 import dev.accessscope.scanner.recorder.RecordedAction
 import dev.accessscope.scanner.recorder.model.OptimizationContext
+import dev.accessscope.scanner.recorder.optimization.AssertPlanner
 import dev.accessscope.scanner.recorder.optimization.conditional.OptionalStepPolicy
+import dev.accessscope.scanner.recorder.optimization.lint.FlowLintAutoFix
 import dev.accessscope.scanner.recorder.optimization.noise.NoiseActionFilter
 import dev.accessscope.scanner.recorder.optimization.scroll.ScrollCoalescer
 import dev.accessscope.scanner.recorder.optimization.selector.SelectorNormalizer
+import dev.accessscope.scanner.recorder.optimization.selector.SelectorRanker
 import dev.accessscope.scanner.recorder.optimization.timing.WaitPlanner
 import dev.accessscope.scanner.util.DebugSessionLog
 
 /**
- * Pipeline: coalesce → dedupe → noise → normalize → wait → optional.
+ * Pipeline: coalesce → dedupe → noise → wait → assert schermata → optional → lint → chain.
  */
 object FlowOptimizationPipeline {
 
@@ -24,41 +27,49 @@ object FlowOptimizationPipeline {
 
     /**
      * Ottimizza azioni con contesto telemetria/scan.
-     *
-     * @param actions Azioni grezze.
-     * @param context Contesto intelligence.
-     * @return Azioni pronte per export/play/store.
      */
     fun optimize(actions: List<RecordedAction>, context: OptimizationContext): List<RecordedAction> {
         if (actions.isEmpty()) return actions
         val appId = context.appId.ifBlank {
             actions.firstNotNullOfOrNull { it.packageName.takeIf { it.isNotBlank() } }.orEmpty()
         }
-        val cleaned = SelectorNormalizer.normalizeViewIds(
-            NoiseActionFilter.dropNoiseWaits(
-                OptionalStepPolicy.apply(
-                    WaitPlanner.enrich(
-                        ScrollCoalescer.coalesce(
-                            NoiseActionFilter.dropFocusTapsBeforeInput(
-                                NoiseActionFilter.dropNoiseTaps(
-                                    NoiseActionFilter.dropForeignUiActions(
-                                        NoiseActionFilter.dropNoiseScrolls(
-                                            dedupeTaps(coalesceInputText(actions)),
+        val cleaned = SelectorRanker.attachChains(
+            FlowLintAutoFix.apply(
+                SelectorNormalizer.normalizeViewIds(
+                    NoiseActionFilter.dropNoiseWaits(
+                        OptionalStepPolicy.apply(
+                            AssertPlanner.enrich(
+                                WaitPlanner.enrich(
+                                    ScrollCoalescer.coalesce(
+                                        NoiseActionFilter.dropGhostTapsAfterScrollOrIme(
+                                            NoiseActionFilter.dropFocusTapsBeforeInput(
+                                                NoiseActionFilter.dropNoiseTaps(
+                                                    NoiseActionFilter.dropForeignUiActions(
+                                                        NoiseActionFilter.dropNoiseScrolls(
+                                                            dedupeTaps(coalesceInputText(actions)),
+                                                        ),
+                                                        appId,
+                                                    ),
+                                                ),
+                                            ),
                                         ),
-                                        appId,
                                     ),
+                                    appId,
+                                    context.telemetry,
+                                    context.scanIntel,
                                 ),
+                                context.telemetry,
                             ),
+                            context.telemetry,
+                            context.scanIntel,
                         ),
-                        appId,
-                        context.telemetry,
-                        context.scanIntel,
                     ),
-                    context.telemetry,
-                    context.scanIntel,
+                    appId,
                 ),
+                appId,
             ),
-            appId,
+            context.scanIntel,
+            context.telemetry,
         )
         return cleaned
     }
@@ -74,9 +85,15 @@ object FlowOptimizationPipeline {
         }
         val afterForeign = NoiseActionFilter.dropForeignUiActions(actions, pkg)
         val afterNoiseTaps = NoiseActionFilter.dropPlaybackNoiseTaps(afterForeign)
-        val afterNoiseWaits = NoiseActionFilter.dropNoiseWaits(afterNoiseTaps)
+        val afterGhost = NoiseActionFilter.dropGhostTapsAfterScrollOrIme(afterNoiseTaps)
+        val afterDupTaps = NoiseActionFilter.dropDuplicateTapsAcrossWaits(afterGhost)
+        val afterStructScroll = NoiseActionFilter.dropStructuralScrollUntilVisible(afterDupTaps)
+        val afterNoiseScrolls = NoiseActionFilter.dropNoiseScrolls(afterStructScroll)
+        val afterNoiseWaits = NoiseActionFilter.dropNoiseWaits(afterNoiseScrolls)
         val withWaitTargets = WaitPlanner.attachBlindWaitsToNextTarget(afterNoiseWaits, pkg)
-        val normalized = SelectorNormalizer.normalizeViewIds(withWaitTargets, pkg)
+        val withAnim = WaitPlanner.ensureAnimationWaits(withWaitTargets, pkg)
+        val normalized = SelectorNormalizer.normalizeViewIds(withAnim, pkg)
+        val withChains = SelectorRanker.attachChains(normalized, null, null)
         // #region agent log
         DebugSessionLog.log(
             "H7",
@@ -84,17 +101,17 @@ object FlowOptimizationPipeline {
             "sanitize_counts",
             mapOf(
                 "in" to actions.size,
-                "out" to normalized.size,
-                "dropped" to (actions.size - normalized.size),
+                "out" to withChains.size,
+                "dropped" to (actions.size - withChains.size),
                 "inTypes" to actions.joinToString(",") { it::class.simpleName.orEmpty() },
-                "outTypes" to normalized.joinToString(",") { it::class.simpleName.orEmpty() },
-                "blindWaitsAttached" to normalized.count {
+                "outTypes" to withChains.joinToString(",") { it::class.simpleName.orEmpty() },
+                "blindWaitsAttached" to withChains.count {
                     it is RecordedAction.Wait && !it.visibleId.isNullOrBlank()
                 },
             ),
         )
         // #endregion
-        return normalized
+        return withChains
     }
 
     /**

@@ -6,6 +6,7 @@ package dev.accessscope.scanner.recorder
 import android.content.Context
 import dev.accessscope.scanner.recorder.model.OptimizationContext
 import dev.accessscope.scanner.recorder.model.FlowTelemetry
+import dev.accessscope.scanner.recorder.optimization.selector.SelectorRanker
 import dev.accessscope.scanner.recorder.telemetry.FlowTelemetryCodec
 import dev.accessscope.scanner.util.DebugSessionLog
 import org.json.JSONArray
@@ -116,6 +117,39 @@ class FlowStore(context: Context) {
         )
         writeIndex(current.map { if (it.id == id) updated.copy(hasActionsJson = false) else it })
         return updated
+    }
+
+    /**
+     * Promuove i selettori vincenti della catena a campi primari e riscrive artifacts.
+     *
+     * @param id Id flusso.
+     * @param wins Selettori che hanno funzionato a Play (chainIndex > 0).
+     * @return Flusso aggiornato o `null`.
+     */
+    fun applySelectorWins(id: String, wins: List<dev.accessscope.scanner.recorder.model.SelectorWin>): SavedFlow? {
+        if (wins.isEmpty()) return null
+        val actions = readActions(id) ?: return null
+        val updated = actions.map { action ->
+            if (action !is RecordedAction.Tap) return@map action
+            val win = wins.firstOrNull { w ->
+                w.chainIndex > 0 &&
+                    w.originalViewId == action.viewId &&
+                    w.originalText == action.text
+            } ?: return@map action
+            val c = win.candidate
+            val promoted = action.copy(
+                viewId = c.viewId ?: action.viewId,
+                text = c.text ?: action.text,
+                contentDescription = c.contentDescription ?: action.contentDescription,
+                pointPercentX = c.pointPercentX,
+                pointPercentY = c.pointPercentY,
+                selectorChain = emptyList(),
+            )
+            promoted.copy(
+                selectorChain = SelectorRanker.buildChain(promoted, actions),
+            )
+        }
+        return updateFlow(id, updated, optimize = false)
     }
 
     /** Legge il contenuto YAML di un flusso. */

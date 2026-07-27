@@ -56,8 +56,25 @@ data class RecordedTransition(
  *
  * @param snapshots Snapshot per indice azione.
  * @param transitions Transizioni derivate da snapshot e timestamp.
+ * @param quiescenceGaps Quiet period tra azioni (da WINDOW_CONTENT_CHANGED).
  */
 data class FlowTelemetry(
     val snapshots: List<ScreenSnapshot> = emptyList(),
     val transitions: List<RecordedTransition> = emptyList(),
+    val quiescenceGaps: List<QuiescenceGap> = emptyList(),
+)
+
+/**
+ * Quiet window osservata dopo un’azione (loader finito → UI stabile).
+ *
+ * @param afterActionIndex Indice azione dopo cui attendere.
+ * @param quietMs Ms senza CONTENT_CHANGED prima dell’azione successiva.
+ * @param contentBurstMs Durata burst di aggiornamenti UI tra le due azioni.
+ * @param contentChangeCount Numero eventi CONTENT_CHANGED nel intervallo.
+ */
+data class QuiescenceGap(
+    val afterActionIndex: Int,
+    val quietMs: Long,
+    val contentBurstMs: Long = 0L,
+    val contentChangeCount: Int = 0,
 )
