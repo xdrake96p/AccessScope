@@ -86,7 +86,8 @@ class MaestroYamlExporterTest {
                 ),
             ),
         )
-        assertTrue(yaml.contains("point: \"50.0%,25.0%\""))
+        // Percentuali intere: Maestro non parsa i decimali su swipe/point (verificato con `maestro check-syntax`).
+        assertTrue(yaml.contains("point: \"50%,25%\""))
     }
 
     @Test
@@ -109,16 +110,96 @@ class MaestroYamlExporterTest {
             ),
         )
         assertTrue(yaml.contains("- doubleTapOn: \"Zoom\""))
-        assertTrue(yaml.contains("- eraseText:"))
+        // eraseText su un campo specifico è tapOn(id) + eraseText bare — eraseText non
+        // accetta `id:` in Maestro reale (verificato con `maestro check-syntax`).
         assertTrue(yaml.contains("id: \"username\""))
+        assertTrue(yaml.contains("- eraseText"))
         assertTrue(yaml.contains("- swipe:"))
-        assertTrue(yaml.contains("start: \"50.0%,80.0%\""))
+        assertTrue(yaml.contains("start: \"50%,80%\""))
         assertTrue(yaml.contains("- pressKey: Enter"))
         assertTrue(yaml.contains("- assertVisible:"))
         assertTrue(yaml.contains("- assertNotVisible: \"Loading\""))
         assertTrue(yaml.contains("- scrollUntilVisible:"))
+        assertTrue(yaml.contains("    element:"))
         assertTrue(yaml.contains("- openLink: \"https://example.com\""))
         assertTrue(yaml.contains("- stopApp"))
         assertTrue(yaml.contains("- copyTextFrom: \"src\""))
+    }
+
+    @Test
+    fun export_escapesRegexMetacharsInTapText() {
+        // Bug: Maestro tratta text/id come regex full-match — un'etichetta con parentesi
+        // falliva il match a runtime senza errore di parsing (rottura silenziosa).
+        val yaml = MaestroYamlExporter.export(
+            appId = "com.example",
+            flowName = "Regex",
+            actions = listOf(
+                RecordedAction.LaunchApp("com.example"),
+                RecordedAction.Tap(packageName = "com.example", text = "Accedi (Beta)"),
+            ),
+        )
+        assertTrue(yaml.contains("- tapOn: \"Accedi \\\\(Beta\\\\)\""))
+    }
+
+    @Test
+    fun export_scrollUntilVisible_nestsSelectorUnderElement() {
+        // Bug: Maestro richiede id/text annidati sotto `element:` per scrollUntilVisible,
+        // non direttamente — verificato con `maestro check-syntax` (parse failure altrimenti).
+        val yaml = MaestroYamlExporter.export(
+            appId = "com.example",
+            flowName = "Scroll",
+            actions = listOf(
+                RecordedAction.LaunchApp("com.example"),
+                RecordedAction.ScrollUntilVisible("com.example", visibleId = "com.example:id/btn_pay"),
+            ),
+        )
+        assertTrue(yaml.contains("- scrollUntilVisible:"))
+        assertTrue(yaml.contains("    element:"))
+        assertTrue(yaml.contains("      id: \"btn_pay\""))
+    }
+
+    @Test
+    fun export_eraseTextWithViewId_isTapOnPlusBareEraseText() {
+        // Bug: `eraseText: {id: ...}` non è sintassi Maestro valida (Unknown Property: id).
+        val yaml = MaestroYamlExporter.export(
+            appId = "com.example",
+            flowName = "Erase",
+            actions = listOf(
+                RecordedAction.LaunchApp("com.example"),
+                RecordedAction.EraseText("com.example", viewId = "com.example:id/username"),
+            ),
+        )
+        assertTrue(yaml.contains("- tapOn:\n    id: \"username\"\n- eraseText"))
+    }
+
+    @Test
+    fun export_addsEnvHeader_whenSecretsPresent() {
+        val yaml = MaestroYamlExporter.export(
+            appId = "com.example",
+            flowName = "Secret",
+            actions = listOf(
+                RecordedAction.LaunchApp("com.example"),
+                RecordedAction.InputText("com.example", text = "1234", isPassword = false, viewId = "com.example:id/pin"),
+            ),
+        )
+        // isPinLikeField riconosce l'id "pin" -> placeholder ${PIN} + header env: dichiarato.
+        assertTrue(yaml.contains("\${PIN}"))
+        assertTrue(yaml.contains("env:"))
+        assertTrue(yaml.contains("PIN:"))
+    }
+
+    @Test
+    fun export_neverEmitsUnknownPlaceholder() {
+        // Bug: un selettore assente produceva `"unknown"`, un letterale che fallisce a
+        // runtime in modo confuso. Ora uno step senza selettore diventa un commento inerte.
+        val yaml = MaestroYamlExporter.export(
+            appId = "com.example",
+            flowName = "Empty",
+            actions = listOf(
+                RecordedAction.LaunchApp("com.example"),
+                RecordedAction.AssertVisible("com.example"),
+            ),
+        )
+        assertTrue(!yaml.contains("\"unknown\""))
     }
 }

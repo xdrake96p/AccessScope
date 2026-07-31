@@ -113,6 +113,23 @@ class MaestroYamlRoundTripTest {
     }
 
     @Test
+    fun regexMetacharsInLabel_surviveExportImportExport() {
+        // Il label originale ("Accedi (Beta)") deve tornare identico dopo import, non
+        // "Accedi \(Beta\)" — l'unescape in MaestroYamlImporter deve essere simmetrico
+        // all'escape regex applicato in export.
+        val actions = listOf(
+            RecordedAction.LaunchApp("com.example.app"),
+            RecordedAction.Tap(packageName = "com.example.app", text = "Accedi (Beta)"),
+        )
+        val yaml = MaestroYamlExporter.export("com.example.app", "Regex", actions)
+        val imported = MaestroYamlImporter.parse(yaml) as MaestroImportResult.Success
+        assertTrue(imported.actions.any { it is RecordedAction.Tap && it.text == "Accedi (Beta)" })
+
+        val reExported = MaestroYamlExporter.export(imported.appId, imported.name, imported.actions)
+        assertEquals(yaml.substringAfter("---"), reExported.substringAfter("---"))
+    }
+
+    @Test
     fun importThenExport_preservesStepCount() {
         val actions = sampleActions()
         val yaml = MaestroYamlExporter.export("com.example.app", "Count", actions)

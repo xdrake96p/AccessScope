@@ -6,7 +6,52 @@
 **Package:** `dev.accessscope.scanner`  
 **Branch principale sviluppo:** `develop`  
 **Branch release stabile:** `main`  
-**Ultimo aggiornamento:** 31 luglio 2026 (P0 stabilità pre-presentazione: scan off-main-thread, leak HardwareBuffer, OOM report, deadlock plugin)
+**Ultimo aggiornamento:** 31 luglio 2026 (Settimana 2 piano pre-mortem: Maestro "CLI-truth" — YAML esportato validato contro `maestro check-syntax` reale)
+
+### Settimana 2 — Maestro "CLI-truth" (31 luglio 2026)
+
+Verificato con Maestro CLI 2.6.1 installato in locale (`maestro check-syntax`, nessun device
+richiesto) che lo YAML esportato **falliva davvero** il parsing su alcuni comandi generati
+attivamente dalla pipeline. Corretto, verificato di nuovo con la stessa CLI:
+
+- **`scrollUntilVisible`**: richiede id/text annidati sotto `element:` — senza, `maestro
+  check-syntax` dava `Config Field Required: element`. Fix in `formatScrollUntilVisible`.
+- **`eraseText` con `viewId`**: `eraseText: {id: ...}` non è sintassi valida (`Unknown
+  Property: id`). Ora due comandi: `tapOn: {id}` + `eraseText` bare — sia in export
+  (`MaestroYamlExporter`) sia in import (nuovo merge in `MaestroYamlImporter`, simmetrico
+  a quello già esistente per `tapOn`+`inputText`).
+- **Percentuali `swipe.start/end`**: `"50.0%,80.0%"` (decimale) dava `Parsing Failed`;
+  `"50%,80%"` (intero) è `OK`. `fmtPercent` ora arrotonda a intero (era `fmt` con `%.1f`).
+- **Selettori come regex**: Maestro tratta `text:`/`id:` come regex full-match — un'etichetta
+  con parentesi (`"Accedi (Beta)"`) falliva il match **a runtime senza errore di parsing**,
+  la rottura più subdola per chi riusa lo YAML. Nuovo `escapeMaestroText` in export (tutti i
+  testi/id usati come selettore, mai su `inputText` che è letterale) + `unescapeMaestroText`
+  simmetrico in import, per non rompere il round-trip.
+  Test: `MaestroYamlRoundTripTest.regexMetacharsInLabel_surviveExportImportExport`.
+- **`pressKey`** validato contro l'enum reale (Enter/Backspace/Back/Home/Lock/Volume
+  Up/Volume Down/Recent Apps/Power/Tab, tutti verificati con `check-syntax`); chiave
+  sconosciuta → fallback `Enter` + commento invece di un valore non validato.
+- **Placeholder `"unknown"` eliminato**: uno step senza selettore (id/text/cd/point) produceva
+  `- comando: "unknown"`, un letterale che fallisce a runtime in modo confuso. Ora diventa un
+  commento inerte (`# SKIPPED ...`) — mai un comando eseguibile rotto.
+- **Header `env:`**: se il flusso usa `${PIN}`/`${PASSWORD}`, l'header ora dichiara `env:` con
+  valori d'esempio + promemoria `maestro test -e PIN=... -e PASSWORD=...`.
+- **Fix collaterale**: `extendedWaitUntil` esportava l'id completo (`package:id/name`) invece
+  del solo nome corto come tutti gli altri comandi — con l'escape regex diventava illeggibile
+  (punti nel package escapati). Ora usa `shortViewId` come il resto dell'exporter.
+- **`docs/MAESTRO_COMPAT.md`** corretto: la voce "import raw YAML: sì (frammento)" era falsa
+  (l'importer fallisce su comandi non riconosciuti, nessun passthrough); documentato anche che
+  `when:`/`conditionVisibleId`/`conditionVisibleText` non sono ancora esportati (richiede
+  wrapping `runFlow` + supporto import per blocchi annidati — rimandato).
+- **Non fatto in questo giro** (per rischio/ampiezza, documentato come backlog): export
+  `when:`/`runFlow` dai campi `conditionVisible*` già presenti nel modello ma mai usati;
+  unificazione completa `optimize()`/`sanitizeForPlay()` in un'unica pipeline.
+
+Verifica: 254 test JVM verdi (nuovi test su escaping/element/eraseText/env/skip-comment);
+YAML generato da un flusso complesso (18 step, tutti i tipi di comando) validato con
+`maestro check-syntax` reale — `OK`; reinstallato su Galaxy S10.
+
+### P0 Stabilità (Settimana 1 piano pre-mortem, 31 luglio 2026)
 
 ### P0 Stabilità (Settimana 1 piano pre-mortem, 31 luglio 2026)
 

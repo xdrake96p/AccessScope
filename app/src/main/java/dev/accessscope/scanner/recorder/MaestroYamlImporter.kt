@@ -145,7 +145,7 @@ object MaestroYamlImporter {
                             cmd.startsWith("longPressOn:")) &&
                             cmd.substringAfter(":").trim().isNotEmpty()
                         if (hasInlineValue) {
-                            val value = unquote(cmd.substringAfter(":").trim())
+                            val value = unquoteSelector(cmd.substringAfter(":").trim())
                             actions += when (kind) {
                                 "double" -> RecordedAction.DoubleTap(pkg, text = value)
                                 "long" -> RecordedAction.LongPress(pkg, text = value)
@@ -154,9 +154,9 @@ object MaestroYamlImporter {
                             i++
                         } else {
                             val (block, next) = readBlock(lines, i)
-                            val id = block["id"]?.let { unquote(it) }
+                            val id = block["id"]?.let { unquoteSelector(it) }
                             val point = block["point"]?.let { unquote(it) }
-                            val text = block["text"]?.let { unquote(it) }
+                            val text = block["text"]?.let { unquoteSelector(it) }
                             val optional = block["optional"]?.trim()?.equals("true", ignoreCase = true) == true
                             val (px, py) = parsePoint(point)
 
@@ -173,6 +173,14 @@ object MaestroYamlImporter {
                                         viewId = id,
                                         isPassword = value == "****",
                                     )
+                                    i = j + 1
+                                    continue@parseLoop
+                                }
+                                // Round-trip exporter: `- tapOn: {id}` seguito da bare `- eraseText`
+                                // è la forma a due comandi di UNA sola EraseText(viewId) → merge
+                                // (eraseText non accetta `id:` in Maestro reale).
+                                if (j < lines.size && lines[j].trim() == "- eraseText") {
+                                    actions += RecordedAction.EraseText(packageName = pkg, viewId = id)
                                     i = j + 1
                                     continue@parseLoop
                                 }
@@ -215,7 +223,7 @@ object MaestroYamlImporter {
                         val hasInline = cmd.contains(":") &&
                             cmd.substringAfter(":").trim().isNotEmpty()
                         if (hasInline) {
-                            val value = unquote(cmd.substringAfter(":").trim())
+                            val value = unquoteSelector(cmd.substringAfter(":").trim())
                             actions += if (notVisible) {
                                 RecordedAction.AssertNotVisible(pkg, text = value)
                             } else {
@@ -224,8 +232,8 @@ object MaestroYamlImporter {
                             i++
                         } else {
                             val (block, next) = readBlock(lines, i)
-                            val id = block["id"]?.let { unquote(it) }
-                            val text = block["text"]?.let { unquote(it) }
+                            val id = block["id"]?.let { unquoteSelector(it) }
+                            val text = block["text"]?.let { unquoteSelector(it) }
                             actions += if (notVisible) {
                                 RecordedAction.AssertNotVisible(pkg, viewId = id, text = text)
                             } else {
@@ -243,8 +251,8 @@ object MaestroYamlImporter {
                         }.getOrDefault(ScrollDirection.DOWN)
                         actions += RecordedAction.ScrollUntilVisible(
                             packageName = pkg,
-                            visibleId = block["id"]?.let { unquote(it) },
-                            visibleText = block["text"]?.let { unquote(it) },
+                            visibleId = block["id"]?.let { unquoteSelector(it) },
+                            visibleText = block["text"]?.let { unquoteSelector(it) },
                             direction = direction,
                         )
                         i = next
@@ -265,8 +273,8 @@ object MaestroYamlImporter {
                     cmd.startsWith("extendedWaitUntil:") || cmd == "extendedWaitUntil" -> {
                         val (block, next) = readBlock(lines, i)
                         val timeout = block["timeout"]?.toLongOrNull() ?: 10_000L
-                        val visibleId = block["id"]?.let { unquote(it) }
-                        val visibleText = block["text"]?.let { unquote(it) }
+                        val visibleId = block["id"]?.let { unquoteSelector(it) }
+                        val visibleText = block["text"]?.let { unquoteSelector(it) }
                         actions += RecordedAction.Wait(
                             packageName = pkg,
                             timeoutMs = timeout,
@@ -348,4 +356,30 @@ object MaestroYamlImporter {
         }
         return v
     }
+
+    private val MAESTRO_REGEX_METACHARS = "\\.^$*+?()[]{}|".toCharArray()
+
+    /**
+     * Rimuove l'escape regex applicato in export ([MaestroYamlExporter.escapeMaestroText])
+     * dai selettori id/text — NON va usato su valori letterali come `inputText`, mai
+     * regex-escaped in export.
+     */
+    private fun unescapeMaestroText(value: String): String {
+        val sb = StringBuilder()
+        var i = 0
+        while (i < value.length) {
+            val c = value[i]
+            if (c == '\\' && i + 1 < value.length && value[i + 1] in MAESTRO_REGEX_METACHARS) {
+                sb.append(value[i + 1])
+                i += 2
+            } else {
+                sb.append(c)
+                i++
+            }
+        }
+        return sb.toString()
+    }
+
+    /** `unquote` + rimozione escape regex, per id/text usati come selettore (non letterali). */
+    private fun unquoteSelector(value: String): String = unescapeMaestroText(unquote(value))
 }
