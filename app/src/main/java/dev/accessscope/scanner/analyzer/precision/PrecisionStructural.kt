@@ -283,7 +283,7 @@ internal object PrecisionStructural {
                 cls.contains("recyclerview") ||
                 cls.contains("viewpager") ||
                 cls.contains("horizontalscroll") ||
-                id in setOf("scrollview_port", "scroll", "card_home", "content")
+                id in setOf("scrollview_port", "scroll", "content")
             )
     }
 

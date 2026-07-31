@@ -54,7 +54,7 @@ internal object PrecisionTouch {
     /**
      * Determina se il controllo di spacing touch va saltato tra due nodi.
      *
-     * Esclude nodi drawer, controlli top bar e coppie di elementi nella fascia top bar Nexi,
+     * Esclude nodi drawer, controlli top bar e coppie di elementi nella fascia top bar,
      * dove lo spacing affiancato è intenzionale per design.
      *
      * @param a Primo snapshot del nodo da valutare.
