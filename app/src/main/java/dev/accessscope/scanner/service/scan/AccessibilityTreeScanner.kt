@@ -59,7 +59,11 @@ internal class AccessibilityTreeScanner(
             return
         }
         val screenTitle = ScreenTitleResolver.resolve(root, event)
-        val fingerprint = ScreenFingerprint.compute(root, packageName, screenTitle)
+        val rawFingerprint = ScreenFingerprint.compute(root, packageName, screenTitle)
+        // Ricondotto a un fingerprint già visto se la differenza è solo chrome transitorio
+        // (es. collapsing toolbar apparsa/scomparsa per lo scroll) — altrimenti la stessa
+        // schermata logica si frammenta in più "schermate" fasulle nel report.
+        val fingerprint = ScreenFingerprint.canonicalize(rawFingerprint, seenFingerprintsThisSession)
         val assessment = SecureScreenDetector.assess(root, screenTitle, packageName, capture)
         val contrastBitmap = if (assessment.allowContrast) capture?.bitmap else null
         val result = analyzer.analyzeTree(root, packageName, screenTitle, contrastBitmap, fingerprint)

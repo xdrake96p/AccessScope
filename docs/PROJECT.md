@@ -6,7 +6,37 @@
 **Package:** `dev.accessscope.scanner`  
 **Branch principale sviluppo:** `develop`  
 **Branch release stabile:** `main`  
-**Ultimo aggiornamento:** 1 agosto 2026 (Settimana 3 piano pre-mortem: plugin UX — lingua unica, report VS Code theme-aware, tabella risultati AS)
+**Ultimo aggiornamento:** 1 agosto 2026 (Settimana 4 piano pre-mortem: fingerprint stabile, dedup chrome transitorio)
+
+### Settimana 4 — Fingerprint stabile: dedup chrome transitorio (1 agosto 2026)
+
+Bug in memoria (`screen_fingerprint_instability`): confrontando i golden capture v1.3.0/v1.3.1
+la stessa schermata "Home" produceva **3 fingerprint diversi** nella stessa sessione, a seconda
+di quali elementi di chrome strutturale (collapsing toolbar, bottom nav) erano effettivamente
+presenti nell'albero al momento esatto della cattura — non un flag di visibilità, il nodo
+letteralmente scompare/riappare dall'albero durante scroll/animazioni. Ogni fingerprint diverso
+frammentava il report in una "schermata" fasulla in più.
+
+- Nuovo `ScreenFingerprint.canonicalize(candidate, knownFingerprints)`: riconduce un fingerprint
+  a uno già visto in sessione quando ha lo stesso prefisso `package::titolo` e la differenza di
+  chrome-id è al massimo 1 elemento (`MAX_TRANSIENT_CHROME_DIFF`) — copre sia il caso "toolbar
+  appare" sia "toolbar scompare". **Non** unifica mai fingerprint con un tab (`tab:...`) diverso:
+  quello è un cambio di contenuto reale (vedi test `tabLabel_inChromeSeparatesFingerprint` già
+  esistente), non chrome transitorio.
+- Wired in `AccessibilityTreeScanner.scanRoot`: il fingerprint viene canonicalizzato **prima**
+  di essere passato a `analyzer.analyzeTree` e a tutte le chiamate `repository.add*`/
+  `registerUniqueScreen` — un solo punto di canonicalizzazione per passata di scan, quindi
+  violazioni/checkSummaries/screenReaderFindings e la lista schermate visitate restano coerenti
+  sullo stesso fingerprint canonico (nessuna disallineamento tra "conteggio schermate" e
+  "attribuzione violazioni" nel report dinamico).
+- Confronto fatto contro `seenFingerprintsThisSession` (già esistente, `ConcurrentHashMap`
+  key-set thread-safe dal fix P0 Settimana 1) — nessuno stato nuovo da gestire.
+- 7 test nuovi in `ScreenFingerprintCanonicalizeTest.kt` (logica pura su stringhe, nessun
+  Robolectric necessario): merge toolbar-appare/scompare, tab diverso mai unificato, titolo
+  diverso mai unificato, più di una differenza di chrome trattata come schermata genuinamente
+  diversa, match esatto, insieme vuoto.
+
+Verifica: `./gradlew :app:testDebugUnitTest :app:assembleDebug` verde.
 
 ### Settimana 3 — Plugin UX: lingua unica, report theme-aware, tabella AS + progress (1 agosto 2026)
 

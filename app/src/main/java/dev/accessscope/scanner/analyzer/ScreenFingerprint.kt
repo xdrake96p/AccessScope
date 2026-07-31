@@ -50,6 +50,53 @@ object ScreenFingerprint {
     }
 
     /**
+     * Riconduce un fingerprint "quasi duplicato" a uno già visto in sessione, quando la
+     * differenza è solo un piccolo sottoinsieme di chrome transitorio (es. una collapsing
+     * toolbar comparsa/scomparsa per via dello scroll) — senza questo, la stessa schermata
+     * logica produce N fingerprint diversi e frammenta il report in N "schermate" fasulle
+     * (osservato: 3 fingerprint diversi tutti col titolo "Home" nella stessa sessione).
+     *
+     * Non tocca fingerprint con un tab esplicito diverso (`tab:...`): quello è un cambio di
+     * contenuto reale, non chrome transitorio, e deve restare una schermata distinta.
+     *
+     * @param candidate Fingerprint appena calcolato da [compute].
+     * @param knownFingerprints Fingerprint già registrati in questa sessione di scansione.
+     * @return Un fingerprint di [knownFingerprints] se [candidate] ne è una variante transitoria,
+     * altrimenti [candidate] invariato.
+     */
+    fun canonicalize(candidate: String, knownFingerprints: Set<String>): String {
+        if (candidate in knownFingerprints) return candidate
+        val prefix = titlePrefixOf(candidate) ?: return candidate
+        val candidateChrome = chromeSetOf(candidate)
+        return knownFingerprints.firstOrNull { existing ->
+            existing.startsWith(prefix) && isTransientChromeVariant(candidateChrome, chromeSetOf(existing))
+        } ?: candidate
+    }
+
+    private fun titlePrefixOf(fingerprint: String): String? {
+        val parts = fingerprint.split("::")
+        if (parts.size < 2) return null
+        return "${parts[0]}::${parts[1]}"
+    }
+
+    private fun chromeSetOf(fingerprint: String): Set<String> {
+        val parts = fingerprint.split("::")
+        if (parts.size < 3) return emptySet()
+        return parts[2].split("|").filter { it.isNotBlank() }.toSet()
+    }
+
+    private fun isTransientChromeVariant(candidate: Set<String>, existing: Set<String>): Boolean {
+        if (candidate == existing) return true
+        val candidateTabs = candidate.filterTo(mutableSetOf()) { it.startsWith("tab:") }
+        val existingTabs = existing.filterTo(mutableSetOf()) { it.startsWith("tab:") }
+        if (candidateTabs != existingTabs) return false
+        val symmetricDiff = (candidate - existing).size + (existing - candidate).size
+        return symmetricDiff <= MAX_TRANSIENT_CHROME_DIFF
+    }
+
+    private const val MAX_TRANSIENT_CHROME_DIFF = 1
+
+    /**
      * Raccoglie viewId di chrome UI stabile (toolbar, tab, bottom nav) — generico multi-app.
      */
     private fun collectStructuralChromeIds(
