@@ -23,6 +23,23 @@ internal object NodeSingleNodeCheckSupport {
         return NON_DESCRIPTIVE_LINKS.any { n == it || n.matches(Regex("^$it\\W*")) }
     }
 
+    /** Parole chiave IT/EN che indicano un messaggio di errore visivo nel testo di un campo. */
+    private val VISUAL_ERROR_KEYWORDS = setOf(
+        "error", "invalid", "required field",
+        "errore", "non valido", "non valida", "obbligatorio", "campo richiesto",
+    )
+
+    /**
+     * Verifica se il testo del nodo sembra un messaggio di errore visivo (IT/EN), non solo inglese.
+     *
+     * @param text Testo del nodo da valutare.
+     * @return `true` se il testo contiene una keyword di errore nota.
+     */
+    fun looksLikeVisualErrorText(text: String): Boolean {
+        val t = text.lowercase()
+        return VISUAL_ERROR_KEYWORDS.any { t.contains(it) }
+    }
+
     fun estimateScreenArea(snapshots: List<NodeSnapshot>): Int {
         if (snapshots.isEmpty()) return 0
         var maxRight = 0

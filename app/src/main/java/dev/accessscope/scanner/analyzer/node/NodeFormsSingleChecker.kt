@@ -31,7 +31,7 @@ internal object NodeFormsSingleChecker {
                 }
         
                 if (includes(ViolationArea.FORMS) && snap.isEditable && snap.errorText.isNullOrBlank() &&
-                    snap.text?.contains("error", true) == true
+                    snap.text?.let { NodeSingleNodeCheckSupport.looksLikeVisualErrorText(it) } == true
                 ) {
                     violations += ViolationBuilder.v(
                         screenFingerprint,

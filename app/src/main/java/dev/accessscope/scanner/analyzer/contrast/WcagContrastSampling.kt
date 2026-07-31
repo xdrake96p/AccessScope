@@ -72,10 +72,16 @@ internal object WcagContrastSampling {
             return WcagContrastMath.compositeOverWhite(sampled)
         }
 
-        internal fun resolveEffectiveForeground(sampled: Int): Int {
+        /**
+         * Risolve il colore effettivo del testo (foreground), compositando i pixel
+         * semi-trasparenti sullo sfondo realmente campionato — non su bianco fisso, altrimenti
+         * il contrasto risulterebbe sbagliato per testo semi-trasparente su superfici scure.
+         *
+         * @param sampled Colore campionato dal foreground.
+         * @param background Colore di sfondo già risolto (vedi [resolveEffectiveBackground]).
+         */
+        internal fun resolveEffectiveForeground(sampled: Int, background: Int): Int {
             if (Color.alpha(sampled) >= 250) return sampled
-            // Per il foreground (testo) semi-trasparente, compositiamo su bianco: è il caso più comune
-            // nelle UI; questa scelta riduce FP su testi disabilitati (alpha) su superfici chiare.
-            return WcagContrastMath.compositeOverWhite(sampled, base = Color.WHITE)
+            return WcagContrastMath.compositeOverWhite(sampled, base = background)
         }
 }

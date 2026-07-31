@@ -30,8 +30,8 @@ internal object WcagContrastMeasurement {
             val bgSamples = WcagContrastSampling.sampleBackgroundRing(bitmap, bounds)
             if (bgSamples.isEmpty()) return null
 
-            val fg = WcagContrastSampling.resolveEffectiveForeground(WcagContrastSampling.percentileColorByLuminance(fgSamples, percentile = 0.25))
             val bg = WcagContrastSampling.resolveEffectiveBackground(WcagContrastSampling.percentileColorByLuminance(bgSamples, percentile = 0.75))
+            val fg = WcagContrastSampling.resolveEffectiveForeground(WcagContrastSampling.percentileColorByLuminance(fgSamples, percentile = 0.25), bg)
             val ratio = WcagContrastMath.contrastRatio(fg, bg)
 
             val separation = abs(WcagContrastMath.relativeLuminance(fg) - WcagContrastMath.relativeLuminance(bg))
@@ -63,8 +63,8 @@ internal object WcagContrastMeasurement {
             val bgSamples = WcagContrastSampling.sampleGrid(bitmap, bounds, grid = 4, insetPercent = 0.28f)
             if (bgSamples.isEmpty()) return null
 
-            val fg = WcagContrastSampling.resolveEffectiveForeground(WcagContrastSampling.percentileColorByLuminance(fgSamples, percentile = 0.25))
             val bg = WcagContrastSampling.resolveEffectiveBackground(WcagContrastSampling.percentileColorByLuminance(bgSamples, percentile = 0.75))
+            val fg = WcagContrastSampling.resolveEffectiveForeground(WcagContrastSampling.percentileColorByLuminance(fgSamples, percentile = 0.25), bg)
             val ratio = WcagContrastMath.contrastRatio(fg, bg)
 
             val separation = abs(WcagContrastMath.relativeLuminance(fg) - WcagContrastMath.relativeLuminance(bg))
@@ -93,8 +93,8 @@ internal object WcagContrastMeasurement {
             val fgSamples = WcagContrastSampling.sampleGrid(bitmap, bounds, grid = 3, insetPercent = 0.2f)
             val bgSamples = WcagContrastSampling.sampleBackgroundRing(bitmap, bounds)
             if (fgSamples.isEmpty() || bgSamples.isEmpty()) return null
-            val fg = WcagContrastSampling.resolveEffectiveForeground(WcagContrastSampling.percentileColorByLuminance(fgSamples, percentile = 0.25))
             val bg = WcagContrastSampling.resolveEffectiveBackground(WcagContrastSampling.percentileColorByLuminance(bgSamples, percentile = 0.75))
+            val fg = WcagContrastSampling.resolveEffectiveForeground(WcagContrastSampling.percentileColorByLuminance(fgSamples, percentile = 0.25), bg)
             val separation = abs(WcagContrastMath.relativeLuminance(fg) - WcagContrastMath.relativeLuminance(bg))
             val confidence = (0.60f + separation.coerceIn(0.0, 0.35).toFloat()).coerceAtMost(0.90f)
             return WcagContrastTypes.ContrastResult(

@@ -3,6 +3,8 @@ package dev.accessscope.scanner.analyzer
 import android.graphics.Bitmap
 import android.graphics.Color
 import android.graphics.Rect
+import dev.accessscope.scanner.analyzer.contrast.WcagContrastMath
+import dev.accessscope.scanner.analyzer.contrast.WcagContrastSampling
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -27,6 +29,21 @@ class WcagContrastRegressionTest {
     val fg = Color.parseColor("#058943")
     val ratio = WcagContrast.contrastRatio(fg, effective)
     assertTrue("Composited bg ratio ~3.94:1", ratio in 3.7..4.2)
+  }
+
+  @Test
+  fun semiTransparentDarkText_onDarkBackground_compositesOverRealBackground() {
+    // Bug: il foreground semi-trasparente veniva sempre compositato su bianco fisso, anche su
+    // sfondi scuri — un testo scuro semi-trasparente su sfondo scuro (basso contrasto reale)
+    // risultava erroneamente ad alto contrasto perché "schiarito" dal bianco fittizio.
+    val darkBackground = Color.rgb(32, 32, 32)
+    val semiTransparentDarkText = Color.argb(128, 51, 51, 51)
+
+    val resolvedBg = WcagContrastSampling.resolveEffectiveBackground(darkBackground)
+    val resolvedFg = WcagContrastSampling.resolveEffectiveForeground(semiTransparentDarkText, resolvedBg)
+    val ratio = WcagContrastMath.contrastRatio(resolvedFg, resolvedBg)
+
+    assertTrue("Testo scuro semi-trasparente su sfondo scuro deve restare basso contrasto, era $ratio", ratio < 2.0)
   }
 
   @Test

@@ -53,6 +53,47 @@ class ZeroEditGateTest {
     }
 
     @Test
+    fun structuralIdWithoutFallback_isBlockingError() {
+        // Rafforzamento del gate: un id strutturale come UNICO riferimento (nessun testo/cd,
+        // nessuna alternativa nella chain) non garantisce zero-edit — deve bloccare il save,
+        // non restare un semplice warning che pubblica comunque un YAML fragile.
+        val actions = listOf(
+            RecordedAction.LaunchApp("com.demo"),
+            RecordedAction.Tap(
+                packageName = "com.demo",
+                viewId = "com.demo:id/drawer_layout",
+            ),
+        )
+        val report = ZeroEditGate.evaluate(actions, healFirst = true)
+        assertTrue(report.hasErrors)
+        assertTrue(
+            report.issues.any {
+                it.stepIndex == 1 && it.code == "STRUCTURAL_SELECTOR" && it.severity == ZeroEditSeverity.Error
+            },
+        )
+    }
+
+    @Test
+    fun structuralIdWithFallbackText_staysWarningOnly() {
+        // Se esiste un testo di fallback, il warning strutturale resta informativo:
+        // il selettore esportato userà comunque il testo, non l'id fragile.
+        val actions = listOf(
+            RecordedAction.LaunchApp("com.demo"),
+            RecordedAction.Tap(
+                packageName = "com.demo",
+                viewId = "com.demo:id/drawer_layout",
+                text = "Apri menu",
+            ),
+        )
+        val report = ZeroEditGate.evaluate(actions, healFirst = true)
+        assertFalse(
+            report.issues.any {
+                it.stepIndex == 1 && it.code == "STRUCTURAL_SELECTOR" && it.severity == ZeroEditSeverity.Error
+            },
+        )
+    }
+
+    @Test
     fun textTap_isPublishable() {
         val actions = listOf(
             RecordedAction.LaunchApp("com.demo"),

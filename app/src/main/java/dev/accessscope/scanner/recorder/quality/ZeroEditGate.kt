@@ -53,7 +53,38 @@ object ZeroEditGate {
             }
         }
 
+        escalateUnrecoverableStructuralOrNoiseSelectors(healed, issues)
+
         return ZeroEditReport(issues = issues, actions = healed)
+    }
+
+    /**
+     * Promuove a Error i lint STRUCTURAL_SELECTOR/NOISE_SELECTOR quando lo step, dopo l'heal,
+     * non ha nessun selettore semantico alternativo (testo/content description).
+     *
+     * Un id strutturale o di rumore come *unico* riferimento non garantisce "zero editing":
+     * se healed prometto un fallback testo/cd il warning resta informativo, altrimenti va
+     * trattato come le altre segnalazioni bloccanti — l'utente deve ripetere il PICK.
+     *
+     * @param healed Azioni dopo [StaticSelectorHealer.heal].
+     * @param issues Lista mutabile di issue da aggiornare in place.
+     */
+    private fun escalateUnrecoverableStructuralOrNoiseSelectors(
+        healed: List<RecordedAction>,
+        issues: MutableList<ZeroEditIssue>,
+    ) {
+        val escalatableCodes = setOf("STRUCTURAL_SELECTOR", "NOISE_SELECTOR")
+        for (i in issues.indices) {
+            val issue = issues[i]
+            if (issue.code !in escalatableCodes || issue.severity != ZeroEditSeverity.Warning) continue
+            val action = healed.getOrNull(issue.stepIndex) as? RecordedAction.Tap ?: continue
+            val hasSemanticFallback = !action.text.isNullOrBlank() || !action.contentDescription.isNullOrBlank()
+            if (hasSemanticFallback) continue
+            issues[i] = issue.copy(
+                severity = ZeroEditSeverity.Error,
+                message = "${issue.message} Nessun testo/descrizione di fallback: ripeti PICK sull'elemento.",
+            )
+        }
     }
 
     /**

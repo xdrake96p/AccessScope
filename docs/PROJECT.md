@@ -81,7 +81,37 @@ tipo `ViewGroup`/classe Android generica.
 - Verifica: `./gradlew :app:testDebugUnitTest :app:assembleDebug` verde; reinstallato su device
   fisico (Galaxy S10) per riverifica manuale.
 
-**Verifica complessiva:** `./gradlew :app:testDebugUnitTest :app:assembleDebug` verde (250 test JVM).
+### Chiusura Fase 1: contrasto e rilevamento errori form (31 luglio 2026)
+
+- **Contrasto:** `WcagContrastSampling.resolveEffectiveForeground` compositava il testo
+  semi-trasparente sempre su bianco fisso, anche su sfondi scuri — un testo scuro semi-trasparente
+  su sfondo scuro risultava artificialmente "schiarito" e quindi ad alto contrasto (falso negativo).
+  Ora compositi sullo sfondo realmente campionato (`resolveEffectiveBackground`, calcolato prima).
+  Test: `WcagContrastRegressionTest.semiTransparentDarkText_onDarkBackground_compositesOverRealBackground`.
+- **Errori form:** `NodeFormsSingleChecker` cercava solo la parola inglese "error" nel testo del
+  campo — non intercettava mai un messaggio italiano ("Errore: campo obbligatorio"), ironico per
+  un'app italiana. Nuovo `NodeSingleNodeCheckSupport.looksLikeVisualErrorText` con keyword IT/EN.
+  Test: `NodeSingleNodeCheckSupportTest`.
+
+### Fase 2 (Maestro zero-edit): stato reale del backlog M2/M3 (31 luglio 2026)
+
+Verifica del backlog `docs/PIANO_MAESTRO_E_SCANSIONE.md` prima di aggiungere lavoro nuovo:
+
+- **A9 (riordino step)** e **A11 (learning-loop fail-rate)** erano **già implementati** (pulsanti
+  su/giù per riordino in `FlowEditScreen`/`StepRow`; `SelectorFailRateStore`/`SelectorChainHealer`
+  promuovono già il ramo alternativo della catena dopo 2 fallimenti). I badge inline per-step delle
+  issue ZeroEdit (⛔/⚠/ℹ) erano **già presenti** in `StepRow` — non serviva nessun lavoro UX aggiuntivo lì.
+- **Rafforzato** il contratto ZeroEdit come da piano: `ZeroEditGate` ora promuove a **Error**
+  (bloccante) i lint `STRUCTURAL_SELECTOR`/`NOISE_SELECTOR` quando lo step, dopo l'heal statico,
+  non ha nessun fallback testo/content-description — prima restavano solo `WARNING` e il flusso
+  poteva comunque essere salvato con un selettore fragile come unico riferimento.
+  Test: `ZeroEditGateTest.structuralIdWithoutFallback_isBlockingError` (+ controprova
+  `structuralIdWithFallbackText_staysWarningOnly`).
+- **Ancora da fare (backlog reale, non iniziato):** A10 (thumbnail per step nell'editor — richiede
+  wiring cattura schermo), A12 (Scan+Flusso combinato — resta "da valutare" come da piano, non un
+  task di build).
+
+**Verifica complessiva:** `./gradlew :app:testDebugUnitTest :app:assembleDebug` verde (248 test JVM).
 Nessuna verifica ancora su device/benchmark reale con app terze: da fare a fine lavoro come da
 richiesta esplicita (i punteggi su Nexi/AXA in `reports/golden/` cambieranno rispetto alle baseline
 v1.3.0/v1.3.1 — atteso, dato che quelle app non ricevono più trattamento speciale).
