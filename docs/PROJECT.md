@@ -6,7 +6,31 @@
 **Package:** `dev.accessscope.scanner`  
 **Branch principale sviluppo:** `develop`  
 **Branch release stabile:** `main`  
-**Ultimo aggiornamento:** 1 agosto 2026 (Settimana 4 piano pre-mortem: evidenze coerenti, screenshot solo alla prima visita)
+**Ultimo aggiornamento:** 1 agosto 2026 (Settimana 4 piano pre-mortem: B2, finestre di attribuzione fingerprint)
+
+### Settimana 4 — B2: finestre di attribuzione fingerprint (1 agosto 2026)
+
+Backlog M2 mai chiuso (`docs/PIANO_MAESTRO_E_SCANSIONE.md`): "casi residui in
+`DynamicReportHelper` (TalkBack/passed assegnati al frame sbagliato in scroll veloce)". Con lo
+scan live di oggi ogni violazione/finding/summary porta quasi sempre il proprio
+`screenFingerprint`, quindi il percorso "senza fingerprint" in `buildFrames` è per lo più dati
+legacy — ma quando si attiva, restava un bug reale: quando **due o più** visite condividevano lo
+stesso titolo e avevano **entrambe** violazioni proprie per fingerprint, il bucket TalkBack/passed
+senza fingerprint veniva attribuito a **ciascuna** di esse (la condizione era solo
+`titleViolations.isNotEmpty()`, vera per tutte), duplicando lo stesso conteggio su più frame.
+
+- Nuova `attributionOwnerByTitle`: tra le visite che condividono un titolo, se **esattamente
+  una** ha violazioni proprie per fingerprint resta l'unico proprietario (comportamento storico,
+  già testato); se sono **zero o più di una** (ambiguo), il proprietario diventa la prima visita
+  per `visitIndex` — mai più una duplicazione su frame multipli.
+- Stessa regola applicata in modo uniforme a violazioni, TalkBack e passed count senza
+  fingerprint (prima ognuno aveva la propria variante della stessa euristica ambigua).
+- Nuovo test di regressione `buildFrames_multipleQualifyingVisitsSameTitle_doesNotDuplicateUnfingerprintedBucket`:
+  3 visite stesso titolo, 2 con violazioni proprie, un finding TalkBack senza fingerprint —
+  verifica che il totale attraverso i frame sia 1 (non duplicato) e attribuito deterministicamente
+  alla prima visita. I test esistenti sul caso "un solo proprietario" restano verdi invariati.
+
+Verifica: `./gradlew :app:testDebugUnitTest :app:assembleDebug` verde.
 
 ### Settimana 4 — Evidence/marker coerenti: screenshot solo alla prima visita (1 agosto 2026)
 

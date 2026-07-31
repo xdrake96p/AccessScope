@@ -81,22 +81,39 @@ object DynamicReportHelper {
             .groupBy { it.screenTitle }
             .mapValues { (_, items) -> items.sumOf { it.passedCount } }
 
-        val titleVisitCount = visitedScreens.groupingBy { it.title }.eachCount()
+        val visitsByTitle = visitedScreens.groupBy { it.title }
+        // B2 (finestre di attribuzione fingerprint): tra le visite che condividono un titolo,
+        // il bucket senza fingerprint (dati legacy, o TalkBack/passed non attribuibili) andava
+        // all'unico proprietario quando esattamente una visita aveva violazioni proprie per
+        // fingerprint — comportamento corretto e testato. Ma con zero o più di una visita
+        // "qualificante" l'attribuzione era ambigua e il codice duplicava lo stesso bucket su
+        // OGNI frame idoneo invece di sceglierne uno solo (bug residuo in "scroll veloce": più
+        // visite con lo stesso titolo, conteggi gonfiati). Ora l'ambiguità risolve sempre a un
+        // solo proprietario: quello con violazioni proprie se è unico, altrimenti la prima
+        // visita per visitIndex — mai una duplicazione.
+        val attributionOwnerByTitle = visitsByTitle.mapValues { (_, visits) ->
+            val qualifying = visits.filter { !violationsByFingerprint[it.fingerprint].isNullOrEmpty() }
+            (if (qualifying.size == 1) qualifying.single() else visits.minByOrNull { it.visitIndex })
+                ?.fingerprint
+        }
 
         val framesFromVisits = visitedScreens.map { screen ->
             val screenViolations = violationsByFingerprint[screen.fingerprint].orEmpty()
-            val titleViolations = if (screenViolations.isEmpty()) {
-                violationsByTitle[screen.title].orEmpty()
-            } else {
-                screenViolations
+            val shareTitle = (visitsByTitle[screen.title]?.size ?: 1) > 1
+            val isAttributionOwner = attributionOwnerByTitle[screen.title] == screen.fingerprint
+
+            val titleViolations = when {
+                screenViolations.isNotEmpty() -> screenViolations
+                !shareTitle -> violationsByTitle[screen.title].orEmpty()
+                isAttributionOwner -> violationsByTitle[screen.title].orEmpty()
+                else -> emptyList()
             }
-            val shareTitle = (titleVisitCount[screen.title] ?: 1) > 1
 
             val talkBackFp = talkBackByFingerprint[screen.fingerprint].orEmpty()
             val talkBackForFrame = when {
                 talkBackFp.isNotEmpty() -> talkBackFp
                 !shareTitle -> talkBackByTitle[screen.title].orEmpty()
-                titleViolations.isNotEmpty() -> talkBackByTitle[screen.title].orEmpty()
+                isAttributionOwner -> talkBackByTitle[screen.title].orEmpty()
                 else -> emptyList()
             }
 
@@ -104,7 +121,7 @@ object DynamicReportHelper {
             val passedForFrame = when {
                 passedFp != null -> passedFp
                 !shareTitle -> passedByTitle[screen.title] ?: 0
-                titleViolations.isNotEmpty() -> passedByTitle[screen.title] ?: 0
+                isAttributionOwner -> passedByTitle[screen.title] ?: 0
                 else -> 0
             }
 

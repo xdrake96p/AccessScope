@@ -158,6 +158,47 @@ class DynamicReportHelperTest {
     }
 
     @Test
+    fun buildFrames_multipleQualifyingVisitsSameTitle_doesNotDuplicateUnfingerprintedBucket() {
+        // Bug B2 residuo: con 2+ visite che condividono un titolo e hanno TUTTE violazioni
+        // proprie per fingerprint, il vecchio codice attribuiva il bucket TalkBack senza
+        // fingerprint (dati legacy) a OGNUNA di esse ("titleViolations.isNotEmpty()" era vero
+        // per entrambe) invece di sceglierne una sola — conteggio duplicato in "scroll veloce".
+        val visited = listOf(
+            VisitedScreen("fp-home-a", "Home", 0),
+            VisitedScreen("fp-home-b", "Home", 1),
+            VisitedScreen("fp-home-c", "Home", 2),
+        )
+        val violations = listOf(
+            violation(screenTitle = "Home", fingerprint = "fp-home-a"),
+            violation(screenTitle = "Home", fingerprint = "fp-home-b", type = ViolationType.SMALL_TOUCH_TARGET),
+        )
+        val talkBack = listOf(
+            ScreenReaderFinding(
+                packageName = "com.example",
+                screenTitle = "Home",
+                nodeClassName = "Button",
+                announcedText = "OK",
+                issue = "Annuncio incompleto",
+            ),
+        )
+
+        val frames = DynamicReportHelper.buildFrames(
+            visitedScreens = visited,
+            violations = violations,
+            talkBackFindings = talkBack,
+            checkSummaries = emptyList(),
+        )
+
+        val totalTalkBackAcrossFrames = frames.sumOf { it.talkBackFindings.size }
+        assertEquals(1, totalTalkBackAcrossFrames)
+        // Attribuito deterministicamente alla prima visita (visitIndex 0), non a entrambe le
+        // visite "qualificanti" (fp-home-a e fp-home-b hanno entrambe violazioni proprie).
+        assertEquals(1, frames[0].talkBackFindings.size)
+        assertEquals(0, frames[1].talkBackFindings.size)
+        assertEquals(0, frames[2].talkBackFindings.size)
+    }
+
+    @Test
     fun filterFrameViolations_filtersBySeverity() {
         val frame = DynamicScreenFrame(
             fingerprint = "fp",
