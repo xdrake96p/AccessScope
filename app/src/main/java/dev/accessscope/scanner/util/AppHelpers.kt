@@ -69,9 +69,29 @@ object PackageHelper {
 }
 
 /**
+ * Stato di bind del servizio di accessibilità AccessScope.
+ *
+ * Su Samsung/OEM, dopo `force-stop` o alcuni update APK il toggle può restare ON
+ * ([EnabledUnbound]) senza `onServiceConnected` — nessun evento ricevuto.
+ */
+enum class AccessibilityBindState {
+    /** Non presente in `enabled_accessibility_services`. */
+    Disabled,
+
+    /** Toggle ON ma istanza non viva (tipico post force-stop). */
+    EnabledUnbound,
+
+    /** Servizio bound: [AccessScopeAccessibilityService.instance] non null. */
+    Connected,
+}
+
+/**
  * Utility per verificare permessi di sistema e aprire le relative schermate impostazioni.
  */
 object PermissionHelper {
+
+    private const val ACTION_ACCESSIBILITY_DETAILS_SETTINGS =
+        "android.settings.ACCESSIBILITY_DETAILS_SETTINGS"
 
     /**
      * Verifica se un servizio di accessibilità è abilitato nelle impostazioni di sistema.
@@ -112,24 +132,46 @@ object PermissionHelper {
      * Non basta il toggle nelle impostazioni: dopo force-stop/install il toggle può
      * restare ON senza `onServiceConnected` (nessun evento ricevuto).
      *
-     * @param context Contesto Android.
-     * @param serviceClass Classe del servizio di accessibilità.
+     * @param context Contesto Android (non usato; tenuto per API simmetrica).
+     * @param serviceClass Classe del servizio di accessibilità (non usata; simmetria API).
      * @return `true` solo se [AccessScopeAccessibilityService.instance] è non null.
      */
+    @Suppress("UNUSED_PARAMETER")
     fun isAccessibilityServiceConnected(
         context: Context,
         serviceClass: Class<*>,
     ): Boolean = AccessScopeAccessibilityService.instance != null
 
     /**
-     * Verifica se il servizio di accessibilità è abilitato e pronto all'uso.
+     * Stato completo toggle+bind del servizio.
      *
      * @param context Contesto Android.
      * @param serviceClass Classe del servizio di accessibilità.
-     * @return `true` se il servizio è abilitato nelle impostazioni di sistema.
+     * @return [AccessibilityBindState] corrente.
+     */
+    fun accessibilityBindState(
+        context: Context,
+        serviceClass: Class<*>,
+    ): AccessibilityBindState {
+        val connected = isAccessibilityServiceConnected(context, serviceClass)
+        if (connected) return AccessibilityBindState.Connected
+        val enabled = isAccessibilityServiceEnabled(context, serviceClass)
+        return if (enabled) {
+            AccessibilityBindState.EnabledUnbound
+        } else {
+            AccessibilityBindState.Disabled
+        }
+    }
+
+    /**
+     * Verifica se il servizio è abilitato **e** collegato (pronto a ricevere eventi).
+     *
+     * @param context Contesto Android.
+     * @param serviceClass Classe del servizio di accessibilità.
+     * @return `true` solo in stato [AccessibilityBindState.Connected].
      */
     fun isAccessibilityServiceReady(context: Context, serviceClass: Class<*>): Boolean =
-        isAccessibilityServiceEnabled(context, serviceClass)
+        accessibilityBindState(context, serviceClass) == AccessibilityBindState.Connected
 
     /**
      * Verifica se l'app ha il permesso di disegnare sopra le altre applicazioni.
@@ -139,16 +181,11 @@ object PermissionHelper {
      */
     fun canDrawOverlays(context: Context): Boolean = Settings.canDrawOverlays(context)
 
-  private const val ACTION_ACCESSIBILITY_DETAILS_SETTINGS =
-        "android.settings.ACCESSIBILITY_DETAILS_SETTINGS"
-
     /**
      * Crea un intent per aprire le impostazioni del servizio di accessibilità.
      *
-     * Su Android 14+ (API 34) apre il dettaglio del servizio (richiede
-     * [android.permission.OPEN_ACCESSIBILITY_DETAILS_SETTINGS] nel manifest).
-     * Su Android 13 (API 33) usa lo stesso intent senza quel permesso.
-     * Su versioni precedenti apre la lista generale dei servizi.
+     * Su API 33+ prova il dettaglio servizio (`ACCESSIBILITY_DETAILS_SETTINGS`) solo se
+     * l’activity risolve; altrimenti (Samsung e OEM) apre la lista generale.
      *
      * @param context Contesto Android.
      * @param serviceClass Classe del servizio di accessibilità.
@@ -156,12 +193,15 @@ object PermissionHelper {
      */
     fun accessibilityServiceIntent(context: Context, serviceClass: Class<*>): Intent {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            return Intent(ACTION_ACCESSIBILITY_DETAILS_SETTINGS).apply {
+            val details = Intent(ACTION_ACCESSIBILITY_DETAILS_SETTINGS).apply {
                 putExtra(
                     Intent.EXTRA_COMPONENT_NAME,
                     ComponentName(context, serviceClass).flattenToString(),
                 )
                 flags = Intent.FLAG_ACTIVITY_NEW_TASK
+            }
+            if (details.resolveActivity(context.packageManager) != null) {
+                return details
             }
         }
         return generalAccessibilitySettingsIntent()
@@ -178,6 +218,8 @@ object PermissionHelper {
     /**
      * Avvia un intent impostazioni con fallback sicuro per evitare crash su OEM custom.
      *
+     * Se [primary] non risolve (activity assente), usa subito [fallback] senza crash.
+     *
      * @param context Contesto Android.
      * @param primary Intent principale da tentare per primo.
      * @param fallback Intent alternativo se il primario fallisce.
@@ -190,6 +232,9 @@ object PermissionHelper {
         fallback: Intent = generalAccessibilitySettingsIntent(),
         fallbackToast: String? = "Aperta lista accessibilità generale",
     ): Boolean {
+        if (primary.resolveActivity(context.packageManager) == null) {
+            return startFallback(context, fallback, fallbackToast)
+        }
         return try {
             context.startActivity(primary)
             true

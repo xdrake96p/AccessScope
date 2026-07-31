@@ -27,7 +27,7 @@ internal object NodeLabelsSingleChecker {
         fun includes(area: ViolationArea): Boolean = scanScope.includes(area)
                 if (includes(ViolationArea.LABELS)) {
                     val missingLabel = !inMaterialCalendar &&
-                        (snap.isInteractiveClickable() || PrecisionRules.shouldReportMissingTopBarLabel(snap, all)) &&
+                        snap.isInteractiveClickable() &&
                         !snap.hasAccessibleName() &&
                         !PrecisionRules.isIconInsideLabeledButton(snap, all) &&
                         !PrecisionRules.shouldSkipContainerLabelCheck(snap, all, packageName)
@@ -41,12 +41,6 @@ internal object NodeLabelsSingleChecker {
                         checkCollector.recordPass(
                             ViolationArea.LABELS, screenTitle, packageName,
                             "Etichetta accessibile presente", snap, ViolationType.MISSING_LABEL.wcagRef,
-                            screenFingerprint = screenFingerprint,
-                        )
-                    } else if (PrecisionRules.shouldReportMissingTopBarLabel(snap, all) && snap.hasAccessibleName()) {
-                        checkCollector.recordPass(
-                            ViolationArea.LABELS, screenTitle, packageName,
-                            "Icona toolbar con descrizione", snap, ViolationType.MISSING_LABEL.wcagRef,
                             screenFingerprint = screenFingerprint,
                         )
                     }
@@ -94,9 +88,7 @@ internal object NodeLabelsSingleChecker {
                     !snap.hasAccessibleName() && !snap.hasStandardRole() &&
                     !inMaterialCalendar &&
                     !PrecisionRules.shouldSkipContainerLabelCheck(snap, all, packageName) &&
-                    !PrecisionRules.isCarouselContentContainer(snap, all, packageName) &&
-                    !PrecisionRules.shouldSkipHomeWidgetAnalysis(snap, all, packageName) &&
-                    !(PrecisionRules.isCtaContainer(snap, packageName) && PrecisionRules.hasTvCustomDescendant(snap, all))
+                    !PrecisionRules.isCarouselContentContainer(snap, all, packageName)
                 ) {
                     violations += ViolationBuilder.v(
                         screenFingerprint,

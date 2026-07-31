@@ -2,8 +2,8 @@
  * Risoluzione del titolo di schermata a partire dall'albero di accessibilità Android.
  *
  * Questo modulo analizza [AccessibilityNodeInfo] e [AccessibilityEvent] per produrre
- * un'etichetta leggibile della schermata corrente, con euristiche specifiche per l'app Nexi
- * (sezioni bancarie, PIN, drawer, overlay transitori). I titoli risolti possono essere
+ * un'etichetta leggibile della schermata corrente, con euristiche generiche (pane title,
+ * schermata PIN, modali, top bar, heading, nome activity). I titoli risolti possono essere
  * memorizzati in cache per pacchetto e riutilizzati quando l'albero non espone un titolo
  * esplicito.
  */
@@ -17,21 +17,20 @@ import dev.accessscope.scanner.analyzer.title.TitleCandidate
 import dev.accessscope.scanner.analyzer.title.TitleCandidateLogic
 import dev.accessscope.scanner.analyzer.title.TitleScreenDetection
 import dev.accessscope.scanner.analyzer.title.TitleTreeWalker
-import dev.accessscope.scanner.analyzer.title.NexiTitleHeuristics
 import dev.accessscope.scanner.util.AppFileLogger
 
 /**
  * Risolve titoli di schermata umanamente leggibili dall'albero di accessibilità.
  *
  * Applica una catena di strategie in ordine di priorità: testo dell'evento, pane title,
- * schermata PIN, modali, top bar (stabile in scroll), titoli di sezione, profilo Nexi opzionale,
- * heading prominenti, descrizione contenuto, nome activity e infine cache per pacchetto.
+ * schermata PIN, modali, top bar (stabile in scroll), titoli di sezione, heading prominenti,
+ * descrizione contenuto, nome activity e infine cache per pacchetto.
  * Espone anche helper per distinguere drawer, overlay transitori e schermate PIN.
  */
 object ScreenTitleResolver {
 
     private val STABLE_TITLE_SOURCES = setOf(
-        "content_markers", "distinctive_ids", "section_title", "nexi_text", "pin", "modal", "pane_title",
+        "section_title", "pin", "modal", "pane_title",
     )
 
     /**
@@ -71,25 +70,12 @@ object ScreenTitleResolver {
         TitleTreeWalker.findPinScreen(root)?.let { candidates += TitleCandidate(it, 96, "pin") }
         TitleTreeWalker.findModalTitle(root)?.let { candidates += TitleCandidate(it, 88, "modal") }
 
-        TitleCandidateLogic.inferTitleFromContentMarkers(rootIds)?.let {
-            candidates += TitleCandidate(it, 100, "content_markers")
-        }
-
-        NexiTitleHeuristics.findByDistinctiveIds(root)?.let {
-            candidates += TitleCandidate(it, 82, "distinctive_ids")
-        }
-
         TitleTreeWalker.findTopBarTitle(root)?.let { toolbar ->
-            val weight = when {
-                !TitleCandidateLogic.isToolbarConsistentWithContent(toolbar, rootIds) -> 20
-                rootIds.count { it.startsWith("nav_") } >= 3 -> 45
-                else -> 72
-            }
+            val weight = if (rootIds.count { it.startsWith("nav_") } >= 3) 45 else 72
             candidates += TitleCandidate(toolbar, weight, "toolbar")
         }
 
         TitleTreeWalker.findSectionTitle(root)?.let { candidates += TitleCandidate(it, 74, "section_title") }
-        NexiTitleHeuristics.findKnownNexiTitles(root)?.let { candidates += TitleCandidate(it, 76, "nexi_text") }
         TitleTreeWalker.findProminentHeading(root)?.let { candidates += TitleCandidate(it, 58, "heading") }
 
         event.contentDescription?.toString()?.trim()?.takeIf { it.isNotBlank() }?.let {
@@ -98,10 +84,16 @@ object ScreenTitleResolver {
             }
         }
 
-        val activityName = event.className?.toString()?.substringAfterLast('.').orEmpty()
-        if (activityName.isNotBlank() && !activityName.equals("View", ignoreCase = true)) {
-            val activityWeight = if (TitleCandidateLogic.isGenericActivityName(activityName)) 28 else 64
-            candidates += TitleCandidate(TitleCandidateLogic.humanizeActivityName(activityName), activityWeight, "activity")
+        // `event.className` riflette l'Activity/Dialog solo su TYPE_WINDOW_STATE_CHANGED.
+        // Su TYPE_WINDOW_CONTENT_CHANGED è la classe del nodo sorgente che è cambiato
+        // (spesso un ViewGroup/RecyclerView qualunque): usarla come titolo produrrebbe
+        // fingerprint diversi ad ogni scroll, frammentando le schermate del report.
+        if (event.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) {
+            val activityName = event.className?.toString()?.substringAfterLast('.').orEmpty()
+            if (activityName.isNotBlank() && !TitleCandidateLogic.isAndroidFrameworkViewClassName(activityName)) {
+                val activityWeight = if (TitleCandidateLogic.isGenericActivityName(activityName)) 28 else 64
+                candidates += TitleCandidate(TitleCandidateLogic.humanizeActivityName(activityName), activityWeight, "activity")
+            }
         }
 
         if (packageKey.isNotBlank()) {
@@ -138,16 +130,6 @@ object ScreenTitleResolver {
 
         return "Schermata"
     }
-
-    /**
-     * Inferisce il titolo schermata dai viewId del contenuto visibile (generico multi-app).
-     */
-    internal fun inferTitleFromContentMarkers(ids: Set<String>): String? =
-        TitleCandidateLogic.inferTitleFromContentMarkers(ids)
-
-    /** Toolbar coerente col fingerprint del contenuto (evita tab host fuorviante). */
-    internal fun isToolbarConsistentWithContent(toolbarTitle: String, ids: Set<String>): Boolean =
-        TitleCandidateLogic.isToolbarConsistentWithContent(toolbarTitle, ids)
 
     internal fun pickBestTitle(candidates: List<TitleCandidate>, ids: Set<String>): String? =
         TitleCandidateLogic.pickBestTitle(candidates, ids)

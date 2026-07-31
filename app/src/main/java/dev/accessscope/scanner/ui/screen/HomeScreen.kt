@@ -39,6 +39,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.accessscope.scanner.report.ReportHelper
 import dev.accessscope.scanner.ui.components.AppListRow
@@ -78,6 +80,11 @@ fun HomeScreen(
     val scanUi by viewModel.scanDashboardUiState.collectAsStateWithLifecycle()
     val snackbarHost = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
+
+    // Tornando da Impostazioni accessibilità, aggiorna bind senza tap su «Aggiorna».
+    LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
+        viewModel.refreshPermissions()
+    }
     var query by remember { mutableStateOf("") }
     var debouncedQuery by remember { mutableStateOf("") }
     val listState = rememberLazyListState()

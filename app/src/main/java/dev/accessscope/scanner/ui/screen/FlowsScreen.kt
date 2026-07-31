@@ -30,6 +30,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.outlined.Delete
+import androidx.compose.material.icons.outlined.Download
 import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.FiberManualRecord
 import androidx.compose.material.icons.outlined.Share
@@ -69,6 +70,7 @@ import dev.accessscope.scanner.recorder.SavedFlow
 import dev.accessscope.scanner.ui.components.AccessScopeCard
 import dev.accessscope.scanner.ui.components.AccessScopeTopBar
 import dev.accessscope.scanner.ui.components.AppSearchField
+import dev.accessscope.scanner.ui.maestro.YamlDownloadHelper
 import dev.accessscope.scanner.ui.theme.CardShape
 import dev.accessscope.scanner.ui.theme.CodeTextStyle
 import dev.accessscope.scanner.ui.theme.JetBrainsMonoFamily
@@ -354,6 +356,18 @@ fun FlowsScreen(
                         }
                         context.startActivity(Intent.createChooser(share, "Condividi YAML Maestro"))
                     },
+                    onDownload = {
+                        val result = YamlDownloadHelper.downloadOrShare(context, app.flowStore, flow)
+                        when {
+                            result == null -> Toast.makeText(context, "YAML non disponibile", Toast.LENGTH_SHORT).show()
+                            result.usedShareFallback -> Unit
+                            else -> Toast.makeText(
+                                context,
+                                "Scaricato: ${result.displayPath}",
+                                Toast.LENGTH_LONG,
+                            ).show()
+                        }
+                    },
                     onDelete = {
                         app.flowStore.deleteFlow(flow.id)
                         refresh()
@@ -602,6 +616,7 @@ private fun FlowListCard(
     onScanWithFlow: () -> Unit,
     onPreview: () -> Unit,
     onShare: () -> Unit,
+    onDownload: () -> Unit,
     onDelete: () -> Unit,
 ) {
     val date = remember(flow.createdAtMs) {
@@ -660,6 +675,9 @@ private fun FlowListCard(
                 )
             }
             TextButton(onClick = onPreview) { Text("YAML") }
+            IconButton(onClick = onDownload) {
+                Icon(Icons.Outlined.Download, contentDescription = "Scarica YAML")
+            }
             IconButton(onClick = onShare) {
                 Icon(Icons.Outlined.Share, contentDescription = "Condividi")
             }

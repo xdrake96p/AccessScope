@@ -3,7 +3,6 @@ package dev.accessscope.scanner.analyzer
 import android.graphics.Bitmap
 import android.graphics.Color
 import android.graphics.Rect
-import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -11,13 +10,14 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 
 /**
- * Matrice di regressione derivata da mps-accessibility-verification.md (Nexi BFF).
+ * Regressione generica per il calcolo di contrasto WCAG e per lo skip di overlap strutturali
+ * (contenuto/scroll, tab strip), indipendente da qualunque app specifica.
  */
 @RunWith(RobolectricTestRunner::class)
 @Config(manifest = Config.NONE, sdk = [28])
-class MpsVerificationRegressionTest {
+class WcagContrastRegressionTest {
 
-  private val packageName = "it.nexi.bff"
+  private val packageName = "com.example.app"
   private val density = 3f
 
   @Test
@@ -42,66 +42,6 @@ class MpsVerificationRegressionTest {
   }
 
   @Test
-  fun largeTextImportPositive_skipsContrastOnHome() {
-    val importPositive = snap(
-      id = "import_positive",
-      text = "12.345,67",
-      bounds = Rect(100, 200, 400, 350),
-      className = "it.utils.AutoResizeTextView",
-    )
-    val container = snap(
-      id = "entrate_home",
-      bounds = Rect(50, 150, 500, 400),
-      className = "android.widget.LinearLayout",
-    )
-    val home = snap(id = "card_home", bounds = Rect(0, 0, 1080, 2400))
-    val all = listOf(importPositive, container, home, scrollPort())
-    assertTrue(PrecisionRules.isHomeChartDecorativeText(importPositive, all, packageName))
-  }
-
-  @Test
-  fun last30_onHome_isNotSkippedAsDecorative() {
-    val last30 = snap(
-      id = "last_30",
-      text = "ultimi 30 gg",
-      bounds = Rect(100, 200, 400, 250),
-    )
-    val container = snap(id = "entrate_home", bounds = Rect(50, 150, 500, 400))
-    val home = snap(id = "card_home", bounds = Rect(0, 0, 1080, 2400))
-    val all = listOf(last30, container, home, scrollPort())
-    assertFalse(PrecisionRules.isHomeChartDecorativeText(last30, all, packageName))
-  }
-
-  @Test
-  fun carouselCurrency_skipsContrast() {
-    val currency = snap(id = "currency", text = "€", bounds = Rect(10, 10, 40, 40))
-    val item = snap(
-      id = "content",
-      bounds = Rect(0, 0, 900, 200),
-      className = "android.widget.RelativeLayout",
-    )
-    val recycler = snap(
-      id = "recycler_effetti",
-      bounds = Rect(0, 500, 1080, 900),
-      className = "androidx.recyclerview.widget.RecyclerView",
-    )
-    val all = listOf(currency, item, recycler)
-    assertTrue(PrecisionRules.shouldSkipContrastCheck(currency, all, packageName))
-  }
-
-  @Test
-  fun vopInfo_withCausale_skipsUiContrastOnly() {
-    val vop = snap(
-      id = "vop_info",
-      bounds = Rect(800, 100, 860, 160),
-      className = "android.widget.ImageView",
-    )
-    val causale = snap(id = "causale", text = "Pagamento fornitore", bounds = Rect(100, 80, 900, 180))
-    val all = listOf(vop, causale)
-    assertTrue(PrecisionRules.shouldSkipUiContrastCheck(vop, all, packageName))
-  }
-
-  @Test
   fun contentAndScroll_overlapSkipped() {
     val content = snap(
       id = "content",
@@ -118,10 +58,9 @@ class MpsVerificationRegressionTest {
 
   @Test
   fun tabStrip_overlapSkipped() {
-    val tabA = snap(id = "tv_tab", text = "DISTINTE (3)", bounds = Rect(0, 800, 540, 900), clickable = true)
-    val tabB = snap(id = "tv_tab", text = "BONIFICI (2)", bounds = Rect(540, 800, 1080, 900), clickable = true)
-    val card = snap(id = "card_effetti", bounds = Rect(0, 750, 1080, 950))
-    val all = listOf(tabA, tabB, card)
+    val tabA = snap(id = "tv_tab", text = "TAB UNO", bounds = Rect(0, 800, 540, 900), clickable = true)
+    val tabB = snap(id = "tv_tab", text = "TAB DUE", bounds = Rect(540, 800, 1080, 900), clickable = true)
+    val all = listOf(tabA, tabB)
     assertTrue(PrecisionRules.shouldSkipOverlapBetween(tabA, tabB, all, packageName, 1080))
   }
 
@@ -133,12 +72,6 @@ class MpsVerificationRegressionTest {
     val result = WcagContrast.measureTextContrast(bitmap, bounds, isLargeText = false)
     requireNotNull(result)
     assertTrue(result.ratio >= 10.0)
-  }
-
-  @Test
-  fun isLargeText_usesKnownIds() {
-    val snap = snap(id = "import_positive", bounds = Rect(0, 0, 100, 80))
-    assertTrue(WcagContrast.isLargeText(snap, density, AppPrecisionProfiles.largeTextViewIds(packageName)))
   }
 
   private fun scrollPort(clickable: Boolean = false) = snap(
@@ -159,7 +92,7 @@ class MpsVerificationRegressionTest {
   ) = NodeSnapshot(
     className = className,
     bounds = bounds,
-    viewId = "it.nexi.bff:id/$id",
+    viewId = "$packageName:id/$id",
     text = text,
     contentDescription = null,
     hintText = null,

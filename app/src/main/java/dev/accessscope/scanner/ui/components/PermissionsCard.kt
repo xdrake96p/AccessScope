@@ -1,30 +1,32 @@
 /**
  * Card permessi con icone di stato professionali e raggruppamento chiaro.
+ *
+ * Tratta lo stato «toggle ON ma servizio non collegato» (post force-stop Samsung)
+ * come non pronto: badge warning + CTA di recovery OFF→ON.
  */
 package dev.accessscope.scanner.ui.components
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.OpenInNew
 import androidx.compose.material.icons.outlined.Accessibility
 import androidx.compose.material.icons.outlined.Cancel
 import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material.icons.outlined.Layers
 import androidx.compose.material.icons.outlined.Refresh
-import androidx.compose.material.icons.automirrored.outlined.OpenInNew
+import androidx.compose.material.icons.outlined.Warning
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
@@ -36,21 +38,46 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import dev.accessscope.scanner.service.AccessScopeAccessibilityService
 import dev.accessscope.scanner.ui.accessibility.asSectionHeading
 import dev.accessscope.scanner.ui.theme.BrandPrimary
-import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.semantics
 import dev.accessscope.scanner.ui.theme.ControlShape
 import dev.accessscope.scanner.ui.theme.Danger
 import dev.accessscope.scanner.ui.theme.Success
+import dev.accessscope.scanner.ui.theme.Warning
 import dev.accessscope.scanner.ui.theme.contentSecondary
 import dev.accessscope.scanner.util.PermissionHelper
 
+/**
+ * Stato visuale di una riga permesso.
+ */
+private enum class PermissionVisualStatus {
+    /** Pronto all’uso. */
+    Ok,
+
+    /** Toggle ON ma servizio unbound — recovery OFF→ON. */
+    Warning,
+
+    /** Da concedere. */
+    Missing,
+}
+
+/**
+ * Card Home con stato accessibilità (incluso unbound) e overlay.
+ *
+ * @param accessibilityGranted Toggle accessibilità ON nelle Settings.
+ * @param accessibilityConnected Istanza servizio viva (`onServiceConnected`).
+ * @param overlayGranted Permesso «mostra sopra altre app».
+ * @param onRefresh Ricarica lo stato permessi.
+ * @param modifier Modifier Compose.
+ */
 @Composable
 fun PermissionsCard(
     accessibilityGranted: Boolean,
@@ -60,7 +87,13 @@ fun PermissionsCard(
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
-    val grantedCount = listOf(accessibilityGranted, overlayGranted).count { it }
+    val a11yReady = accessibilityGranted && accessibilityConnected
+    val a11yStatus = when {
+        a11yReady -> PermissionVisualStatus.Ok
+        accessibilityGranted -> PermissionVisualStatus.Warning
+        else -> PermissionVisualStatus.Missing
+    }
+    val readyCount = listOf(a11yReady, overlayGranted).count { it }
 
     AccessScopeCard(modifier = modifier.fillMaxWidth()) {
         Row(
@@ -69,22 +102,27 @@ fun PermissionsCard(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Column {
-                Text("Permessi richiesti", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, modifier = Modifier.asSectionHeading())
+                Text(
+                    "Permessi richiesti",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier.asSectionHeading(),
+                )
                 Text(
                     "Necessari per analizzare altre app",
                     style = MaterialTheme.typography.bodySmall,
                     color = contentSecondary(),
                 )
             }
-            PermissionStatusBadge(ok = grantedCount == 2, label = "$grantedCount/2")
+            PermissionStatusBadge(ok = readyCount == 2, label = "$readyCount/2")
         }
 
         LinearProgressIndicator(
-            progress = { grantedCount / 2f },
+            progress = { readyCount / 2f },
             modifier = Modifier
                 .fillMaxWidth()
                 .semantics {
-                    contentDescription = "Permessi concessi: $grantedCount su 2"
+                    contentDescription = "Permessi pronti: $readyCount su 2"
                 },
             color = MaterialTheme.colorScheme.primary,
             trackColor = MaterialTheme.colorScheme.surfaceVariant,
@@ -92,14 +130,19 @@ fun PermissionsCard(
 
         PermissionItemCard(
             title = "Servizio di accessibilità",
-            subtitle = when {
-                accessibilityGranted && accessibilityConnected -> "Attivo e connesso"
-                accessibilityGranted -> "Attivo — in attesa connessione"
-                else -> "Da attivare nelle impostazioni"
+            subtitle = when (a11yStatus) {
+                PermissionVisualStatus.Ok -> "Attivo e connesso"
+                PermissionVisualStatus.Warning ->
+                    "ON ma non collegato (tipico dopo update) — OFF → attendi → ON"
+                PermissionVisualStatus.Missing -> "Da attivare nelle impostazioni"
             },
-            granted = accessibilityGranted,
+            status = a11yStatus,
             icon = Icons.Outlined.Accessibility,
-            actionLabel = "Apri impostazioni AccessScope",
+            actionLabel = if (a11yStatus == PermissionVisualStatus.Warning) {
+                "Ripristina collegamento"
+            } else {
+                "Apri impostazioni AccessScope"
+            },
             onAction = {
                 PermissionHelper.safeStartSettingsIntent(
                     context,
@@ -109,13 +152,29 @@ fun PermissionsCard(
                     ),
                 )
             },
-            showSteps = !accessibilityGranted,
+            steps = when (a11yStatus) {
+                PermissionVisualStatus.Missing -> listOf(
+                    "Tocca il pulsante qui sotto",
+                    "Cerca «AccessScope» nella lista",
+                    "Attiva e conferma con Consenti",
+                )
+                PermissionVisualStatus.Warning -> listOf(
+                    "Tocca «Ripristina collegamento»",
+                    "Disattiva AccessScope e attendi 2 secondi",
+                    "Riattiva e tocca Consenti, poi torna qui",
+                )
+                PermissionVisualStatus.Ok -> emptyList()
+            },
         )
 
         PermissionItemCard(
             title = "Mostra sopra altre app",
-            subtitle = if (overlayGranted) "Overlay STOP disponibile" else "Per il pulsante STOP in scansione",
-            granted = overlayGranted,
+            subtitle = if (overlayGranted) {
+                "Overlay STOP disponibile"
+            } else {
+                "Per il pulsante STOP in scansione"
+            },
+            status = if (overlayGranted) PermissionVisualStatus.Ok else PermissionVisualStatus.Missing,
             icon = Icons.Outlined.Layers,
             actionLabel = "Apri impostazioni overlay",
             onAction = {
@@ -165,21 +224,44 @@ private fun PermissionStatusBadge(ok: Boolean, label: String) {
 private fun PermissionItemCard(
     title: String,
     subtitle: String,
-    granted: Boolean,
+    status: PermissionVisualStatus,
     icon: ImageVector,
     actionLabel: String,
     onAction: () -> Unit,
-    showSteps: Boolean = false,
+    steps: List<String> = emptyList(),
 ) {
-    val borderColor = if (granted) Success.copy(alpha = 0.35f) else MaterialTheme.colorScheme.outlineVariant
+    val accent: Color = when (status) {
+        PermissionVisualStatus.Ok -> Success
+        PermissionVisualStatus.Warning -> Warning
+        PermissionVisualStatus.Missing -> MaterialTheme.colorScheme.outlineVariant
+    }
+    val statusIcon = when (status) {
+        PermissionVisualStatus.Ok -> Icons.Outlined.CheckCircle
+        PermissionVisualStatus.Warning -> Icons.Outlined.Warning
+        PermissionVisualStatus.Missing -> Icons.Outlined.Cancel
+    }
+    val statusTint = when (status) {
+        PermissionVisualStatus.Ok -> Success
+        PermissionVisualStatus.Warning -> Warning
+        PermissionVisualStatus.Missing -> Danger
+    }
+    val statusCd = when (status) {
+        PermissionVisualStatus.Ok -> "$title concesso"
+        PermissionVisualStatus.Warning -> "$title non collegato"
+        PermissionVisualStatus.Missing -> "$title non concesso"
+    }
     Column(
         modifier = Modifier
             .fillMaxWidth()
             .clip(ControlShape)
-            .border(1.dp, borderColor, ControlShape)
+            .border(1.dp, accent.copy(alpha = 0.45f), ControlShape)
             .background(
-                if (granted) Success.copy(alpha = 0.06f)
-                else MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.12f),
+                when (status) {
+                    PermissionVisualStatus.Ok -> Success.copy(alpha = 0.06f)
+                    PermissionVisualStatus.Warning -> Warning.copy(alpha = 0.10f)
+                    PermissionVisualStatus.Missing ->
+                        MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.12f)
+                },
             )
             .padding(14.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp),
@@ -200,27 +282,31 @@ private fun PermissionItemCard(
                 Text(subtitle, style = MaterialTheme.typography.bodySmall, color = contentSecondary())
             }
             Icon(
-                imageVector = if (granted) Icons.Outlined.CheckCircle else Icons.Outlined.Cancel,
-                contentDescription = if (granted) "$title concesso" else "$title non concesso",
-                tint = if (granted) Success else Danger,
+                imageVector = statusIcon,
+                contentDescription = statusCd,
+                tint = statusTint,
                 modifier = Modifier.size(22.dp),
             )
         }
-        AnimatedVisibility(showSteps) {
+        AnimatedVisibility(steps.isNotEmpty()) {
             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                InstructionStep(1, "Tocca il pulsante qui sotto")
-                InstructionStep(2, "Cerca «AccessScope» nella lista")
-                InstructionStep(3, "Attiva «Usa AccessScope» e conferma")
+                steps.forEachIndexed { index, text ->
+                    InstructionStep(index + 1, text)
+                }
             }
         }
-        if (!granted) {
+        if (status != PermissionVisualStatus.Ok) {
             Button(
                 onClick = onAction,
                 modifier = Modifier.fillMaxWidth(),
                 shape = ControlShape,
                 colors = ButtonDefaults.buttonColors(containerColor = BrandPrimary),
             ) {
-                Icon(Icons.AutoMirrored.Outlined.OpenInNew, contentDescription = null, modifier = Modifier.size(18.dp))
+                Icon(
+                    Icons.AutoMirrored.Outlined.OpenInNew,
+                    contentDescription = null,
+                    modifier = Modifier.size(18.dp),
+                )
                 Spacer(Modifier.width(8.dp))
                 Text(actionLabel)
             }

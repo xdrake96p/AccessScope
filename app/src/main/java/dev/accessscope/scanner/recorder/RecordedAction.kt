@@ -31,9 +31,15 @@ sealed class RecordedAction {
         val conditionVisibleText: String? = null,
         /**
          * Catena ordinata di selettori (id → cd → text → point).
-         * Se vuota, Play usa i campi primari; la pipeline la popola in optimize.
+         * Popolata a REC da [dev.accessscope.scanner.recorder.capture.TapIdentityResolver]
+         * e raffinata in optimize da [dev.accessscope.scanner.recorder.optimization.selector.SelectorRanker].
          */
         val selectorChain: List<SelectorCandidate> = emptyList(),
+        /**
+         * `true` se a REC non c’era id/testo/cd utilizzabile (solo point o vuoto).
+         * Il gate ZeroEdit tratta questi step come Error finché non si usa PICK.
+         */
+        val weakSelector: Boolean = false,
         override val timestampMs: Long = System.currentTimeMillis(),
     ) : RecordedAction()
 

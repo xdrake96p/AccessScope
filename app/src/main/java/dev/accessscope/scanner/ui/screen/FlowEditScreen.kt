@@ -1,5 +1,8 @@
 /**
  * Editor step di un flusso Maestro (Beta): modifica, riordina, aggiungi azioni.
+ *
+ * UI: lista + dialog categorizzato [InsertStepDialog]; download via [YamlDownloadHelper].
+ * Persistenza: [dev.accessscope.scanner.recorder.FlowStore] (optimize opzionale al save).
  */
 package dev.accessscope.scanner.ui.screen
 
@@ -14,9 +17,12 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.outlined.Add
@@ -24,11 +30,10 @@ import androidx.compose.material.icons.outlined.ArrowDownward
 import androidx.compose.material.icons.outlined.ArrowUpward
 import androidx.compose.material.icons.outlined.ContentCopy
 import androidx.compose.material.icons.outlined.Delete
+import androidx.compose.material.icons.outlined.Download
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Checkbox
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -56,11 +61,14 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import dev.accessscope.scanner.recorder.RecordedAction
+import dev.accessscope.scanner.recorder.ScrollDirection
 import dev.accessscope.scanner.recorder.model.StepExecutionMode
 import dev.accessscope.scanner.recorder.optimization.lint.FlowLintIssue
 import dev.accessscope.scanner.recorder.optimization.lint.FlowLinter
 import dev.accessscope.scanner.recorder.optimization.lint.LintSeverity
 import dev.accessscope.scanner.ui.components.AccessScopeCard
+import dev.accessscope.scanner.ui.maestro.InsertStepDialog
+import dev.accessscope.scanner.ui.maestro.YamlDownloadHelper
 import dev.accessscope.scanner.ui.theme.CodeTextStyle
 import dev.accessscope.scanner.ui.theme.PillShape
 import dev.accessscope.scanner.ui.theme.contentSecondary
@@ -86,7 +94,8 @@ fun FlowEditScreen(
     var showVaultDialog by remember { mutableStateOf(false) }
     var vaultPin by remember { mutableStateOf("") }
     var vaultPassword by remember { mutableStateOf("") }
-    var addMenuExpanded by remember { mutableStateOf(false) }
+    var showInsertDialog by remember { mutableStateOf(false) }
+    var dirty by remember { mutableStateOf(false) }
     var editIndex by remember { mutableStateOf<Int?>(null) }
     var selectedIndex by remember { mutableStateOf<Int?>(null) }
 
@@ -104,13 +113,12 @@ fun FlowEditScreen(
         actions.clear()
         actions.addAll(loaded)
         flowName = flow.name
-        // Seleziona il primo step dopo launchApp così «+» non appende sempre in coda.
+        dirty = false
         selectedIndex = loaded.indexOfFirst { it !is RecordedAction.LaunchApp }
             .takeIf { it >= 0 }
             ?: loaded.lastIndex.takeIf { it >= 0 }
     }
 
-    // Lint statico del flusso (piano M1-A1): ricalcolato ad ogni modifica degli step.
     val lintReport = remember(actions.toList()) { FlowLinter.lint(actions.toList()) }
     val lintByStep = remember(lintReport) { lintReport.byStep() }
 
@@ -122,13 +130,14 @@ fun FlowEditScreen(
                 "Seleziona prima uno step: i nuovi vanno subito dopo",
                 Toast.LENGTH_SHORT,
             ).show()
-            addMenuExpanded = false
+            showInsertDialog = false
             return
         }
-        val insertAt = (sel + 1).coerceIn(1, actions.size) // mai prima di launchApp (indice 0)
+        val insertAt = (sel + 1).coerceIn(1, actions.size)
         actions.add(insertAt, action)
         selectedIndex = insertAt
-        addMenuExpanded = false
+        dirty = true
+        showInsertDialog = false
         Toast.makeText(
             context,
             "Inserito dopo lo step ${sel + 1} (posizione ${insertAt + 1})",
@@ -143,7 +152,57 @@ fun FlowEditScreen(
         val insertAt = (index + 1).coerceAtMost(actions.size)
         actions.add(insertAt, copy)
         selectedIndex = insertAt
+        dirty = true
         Toast.makeText(context, "Step duplicato", Toast.LENGTH_SHORT).show()
+    }
+
+    fun saveFlow(optimize: Boolean, thenDownload: Boolean = false) {
+        val updated = app.flowStore.updateFlow(
+            id = flowId,
+            actions = actions.toList(),
+            name = flowName,
+            optimize = optimize,
+            enforceZeroEdit = optimize,
+        )
+        if (updated != null) {
+            dirty = false
+            val zeroMsg = app.flowStore.lastZeroEditReport?.userSummary()
+            val base = "Flusso salvato (${updated.stepCount} step)"
+            Toast.makeText(
+                context,
+                if (zeroMsg != null) "$base · $zeroMsg" else base,
+                Toast.LENGTH_LONG,
+            ).show()
+            if (thenDownload) {
+                val result = YamlDownloadHelper.downloadOrShare(context, app.flowStore, updated)
+                if (result != null) {
+                    val msg = if (result.usedShareFallback) {
+                        "Condivisione YAML (fallback)"
+                    } else {
+                        "Scaricato: ${result.displayPath}"
+                    }
+                    Toast.makeText(context, msg, Toast.LENGTH_LONG).show()
+                }
+            } else {
+                onBack()
+            }
+        } else {
+            Toast.makeText(context, "Salvataggio fallito", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    fun downloadYaml() {
+        val f = flow ?: return
+        if (dirty) {
+            saveFlow(optimize = false, thenDownload = true)
+            return
+        }
+        val result = YamlDownloadHelper.downloadOrShare(context, app.flowStore, f)
+        if (result == null) {
+            Toast.makeText(context, "YAML non disponibile", Toast.LENGTH_SHORT).show()
+        } else if (!result.usedShareFallback) {
+            Toast.makeText(context, "Scaricato: ${result.displayPath}", Toast.LENGTH_LONG).show()
+        }
     }
 
     Scaffold(
@@ -161,114 +220,11 @@ fun FlowEditScreen(
                     }
                 },
                 actions = {
-                    IconButton(onClick = { addMenuExpanded = true }) {
-                        Icon(Icons.Outlined.Add, contentDescription = "Aggiungi step")
+                    IconButton(onClick = { downloadYaml() }) {
+                        Icon(Icons.Outlined.Download, contentDescription = "Scarica YAML")
                     }
-                    DropdownMenu(
-                        expanded = addMenuExpanded,
-                        onDismissRequest = { addMenuExpanded = false },
-                    ) {
-                        val pkg = flow?.appId.orEmpty()
-                        fun add(action: RecordedAction) = insertAction(action)
-                        // Interazione
-                        DropdownMenuItem(
-                            text = { Text("tapOn (id)") },
-                            onClick = { add(RecordedAction.Tap(pkg, viewId = "button")) },
-                        )
-                        DropdownMenuItem(
-                            text = { Text("tapOn (testo)") },
-                            onClick = { add(RecordedAction.Tap(pkg, text = "OK")) },
-                        )
-                        DropdownMenuItem(
-                            text = { Text("doubleTapOn") },
-                            onClick = { add(RecordedAction.DoubleTap(pkg, text = "OK")) },
-                        )
-                        DropdownMenuItem(
-                            text = { Text("longPressOn") },
-                            onClick = { add(RecordedAction.LongPress(pkg, text = "OK")) },
-                        )
-                        DropdownMenuItem(
-                            text = { Text("swipe") },
-                            onClick = {
-                                add(
-                                    RecordedAction.Swipe(
-                                        pkg,
-                                        startPercentX = 50f,
-                                        startPercentY = 80f,
-                                        endPercentX = 50f,
-                                        endPercentY = 20f,
-                                    ),
-                                )
-                            },
-                        )
-                        DropdownMenuItem(
-                            text = { Text("scroll") },
-                            onClick = { add(RecordedAction.Scroll(pkg)) },
-                        )
-                        DropdownMenuItem(
-                            text = { Text("scrollUntilVisible") },
-                            onClick = {
-                                add(RecordedAction.ScrollUntilVisible(pkg, visibleText = "OK"))
-                            },
-                        )
-                        // Testo / tastiera
-                        DropdownMenuItem(
-                            text = { Text("inputText") },
-                            onClick = { add(RecordedAction.InputText(pkg, text = "")) },
-                        )
-                        DropdownMenuItem(
-                            text = { Text("eraseText") },
-                            onClick = { add(RecordedAction.EraseText(pkg)) },
-                        )
-                        DropdownMenuItem(
-                            text = { Text("hideKeyboard") },
-                            onClick = { add(RecordedAction.HideKeyboard(pkg)) },
-                        )
-                        DropdownMenuItem(
-                            text = { Text("pressKey") },
-                            onClick = { add(RecordedAction.PressKey(pkg, key = "Enter")) },
-                        )
-                        DropdownMenuItem(
-                            text = { Text("back") },
-                            onClick = { add(RecordedAction.Back(pkg)) },
-                        )
-                        // Assert / wait
-                        DropdownMenuItem(
-                            text = { Text("assertVisible") },
-                            onClick = { add(RecordedAction.AssertVisible(pkg, text = "OK")) },
-                        )
-                        DropdownMenuItem(
-                            text = { Text("assertNotVisible") },
-                            onClick = { add(RecordedAction.AssertNotVisible(pkg, text = "OK")) },
-                        )
-                        DropdownMenuItem(
-                            text = { Text("wait") },
-                            onClick = { add(RecordedAction.Wait(pkg, timeoutMs = 1_000L)) },
-                        )
-                        DropdownMenuItem(
-                            text = { Text("waitForAnimation") },
-                            onClick = { add(RecordedAction.WaitForAnimation(pkg)) },
-                        )
-                        // App / link / raw
-                        DropdownMenuItem(
-                            text = { Text("openLink") },
-                            onClick = { add(RecordedAction.OpenLink(pkg, url = "https://")) },
-                        )
-                        DropdownMenuItem(
-                            text = { Text("stopApp") },
-                            onClick = { add(RecordedAction.StopApp(pkg)) },
-                        )
-                        DropdownMenuItem(
-                            text = { Text("Raw YAML") },
-                            onClick = {
-                                add(
-                                    RecordedAction.RawMaestroYaml(
-                                        pkg,
-                                        yamlLines = "- tapOn: \"OK\"",
-                                    ),
-                                )
-                            },
-                        )
+                    IconButton(onClick = { showInsertDialog = true }) {
+                        Icon(Icons.Outlined.Add, contentDescription = "Aggiungi step")
                     }
                 },
             )
@@ -282,7 +238,10 @@ fun FlowEditScreen(
         ) {
             OutlinedTextField(
                 value = flowName,
-                onValueChange = { flowName = it },
+                onValueChange = {
+                    flowName = it
+                    dirty = true
+                },
                 label = { Text("Nome flusso") },
                 modifier = Modifier.fillMaxWidth(),
                 singleLine = true,
@@ -296,19 +255,29 @@ fun FlowEditScreen(
             Spacer(Modifier.height(6.dp))
             Text(
                 if (selectedIndex != null) {
-                    "Nuovi step: dopo #${(selectedIndex ?: 0) + 1}. Tocca un’altra riga per cambiare punto."
+                    "Nuovi step: dopo #${(selectedIndex ?: 0) + 1}. Tocca + per scegliere il tipo."
                 } else {
-                    "Tocca uno step per selezionarlo — i nuovi si inseriscono subito dopo."
+                    "Tocca uno step per selezionarlo — poi + per inserire sotto."
                 },
                 style = MaterialTheme.typography.labelMedium,
                 color = contentSecondary(),
             )
-            if (lintReport.warningCount > 0) {
+            if (lintReport.errorCount > 0 || lintReport.warningCount > 0) {
                 Spacer(Modifier.height(8.dp))
                 Text(
-                    "⚠ ${lintReport.warningCount} avvisi robustezza (lint)",
+                    buildString {
+                        if (lintReport.errorCount > 0) append("⛔ ${lintReport.errorCount} errori")
+                        if (lintReport.warningCount > 0) {
+                            if (isNotEmpty()) append(" · ")
+                            append("⚠ ${lintReport.warningCount} avvisi")
+                        }
+                    },
                     style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.tertiary,
+                    color = if (lintReport.errorCount > 0) {
+                        MaterialTheme.colorScheme.error
+                    } else {
+                        MaterialTheme.colorScheme.tertiary
+                    },
                 )
             }
             Spacer(Modifier.height(12.dp))
@@ -317,7 +286,10 @@ fun FlowEditScreen(
                 verticalArrangement = Arrangement.spacedBy(8.dp),
                 contentPadding = PaddingValues(bottom = 16.dp),
             ) {
-                itemsIndexed(actions, key = { index, a -> "$index-${a::class.simpleName}-${a.timestampMs}" }) { index, action ->
+                itemsIndexed(
+                    actions,
+                    key = { index, a -> "$index-${a::class.simpleName}-${a.timestampMs}" },
+                ) { index, action ->
                     val isLaunch = action is RecordedAction.LaunchApp
                     val selected = selectedIndex == index
                     StepRow(
@@ -335,16 +307,12 @@ fun FlowEditScreen(
                         onDuplicate = { duplicateAction(index) },
                         onInsertBelow = {
                             selectedIndex = index
-                            insertAction(
-                                RecordedAction.Wait(
-                                    packageName = flow?.appId.orEmpty(),
-                                    timeoutMs = 1_000L,
-                                ),
-                            )
+                            showInsertDialog = true
                         },
                         onDelete = {
                             if (!isLaunch) {
                                 actions.removeAt(index)
+                                dirty = true
                                 selectedIndex = when {
                                     selectedIndex == null -> null
                                     selectedIndex == index -> null
@@ -360,6 +328,7 @@ fun FlowEditScreen(
                             actions[index] = actions[index - 1]
                             actions[index - 1] = tmp
                             selectedIndex = index - 1
+                            dirty = true
                         },
                         onMoveDown = {
                             if (isLaunch || index >= actions.lastIndex) return@StepRow
@@ -367,6 +336,7 @@ fun FlowEditScreen(
                             actions[index] = actions[index + 1]
                             actions[index + 1] = tmp
                             selectedIndex = index + 1
+                            dirty = true
                         },
                     )
                 }
@@ -401,21 +371,14 @@ fun FlowEditScreen(
                 TextButton(onClick = onBack, modifier = Modifier.weight(1f)) {
                     Text("Annulla")
                 }
+                TextButton(
+                    onClick = { saveFlow(optimize = true) },
+                    modifier = Modifier.weight(1f),
+                ) {
+                    Text("Ottimizza")
+                }
                 Button(
-                    onClick = {
-                        val updated = app.flowStore.updateFlow(
-                            id = flowId,
-                            actions = actions.toList(),
-                            name = flowName,
-                            optimize = false,
-                        )
-                        if (updated != null) {
-                            Toast.makeText(context, "Flusso salvato (${updated.stepCount} step)", Toast.LENGTH_SHORT).show()
-                            onBack()
-                        } else {
-                            Toast.makeText(context, "Salvataggio fallito", Toast.LENGTH_SHORT).show()
-                        }
-                    },
+                    onClick = { saveFlow(optimize = false) },
                     modifier = Modifier.weight(1f),
                     shape = PillShape,
                 ) {
@@ -423,6 +386,14 @@ fun FlowEditScreen(
                 }
             }
         }
+    }
+
+    if (showInsertDialog) {
+        InsertStepDialog(
+            packageName = flow?.appId.orEmpty(),
+            onDismiss = { showInsertDialog = false },
+            onPick = { insertAction(it) },
+        )
     }
 
     if (showVaultDialog) {
@@ -476,6 +447,7 @@ fun FlowEditScreen(
             onDismiss = { editIndex = null },
             onConfirm = { updated ->
                 actions[idx] = updated
+                dirty = true
                 editIndex = null
             },
         )
@@ -527,27 +499,32 @@ private fun StepRow(
                     fontWeight = FontWeight.Medium,
                 )
                 lintIssues.forEach { issue ->
-                    val isWarning = issue.severity == LintSeverity.WARNING
+                    val color = when (issue.severity) {
+                        LintSeverity.ERROR -> MaterialTheme.colorScheme.error
+                        LintSeverity.WARNING -> MaterialTheme.colorScheme.tertiary
+                        LintSeverity.INFO -> contentSecondary()
+                    }
+                    val prefix = when (issue.severity) {
+                        LintSeverity.ERROR -> "⛔ "
+                        LintSeverity.WARNING -> "⚠ "
+                        LintSeverity.INFO -> "ℹ "
+                    }
                     Text(
-                        (if (isWarning) "⚠ " else "ℹ ") + issue.message,
+                        prefix + issue.message,
                         style = MaterialTheme.typography.labelSmall,
-                        color = if (isWarning) {
-                            MaterialTheme.colorScheme.tertiary
-                        } else {
-                            contentSecondary()
-                        },
+                        color = color,
                     )
                 }
                 if (selected) {
                     Text(
-                        "Selezionato · + inserisce sotto",
+                        "Selezionato · + apre scelta tipo step",
                         style = MaterialTheme.typography.labelSmall,
                         color = contentSecondary(),
                     )
                 }
             }
             IconButton(onClick = onInsertBelow, enabled = canDuplicate) {
-                Icon(Icons.Outlined.Add, contentDescription = "Inserisci sotto")
+                Icon(Icons.Outlined.Add, contentDescription = "Inserisci step sotto")
             }
             IconButton(onClick = onDuplicate, enabled = canDuplicate) {
                 Icon(Icons.Outlined.ContentCopy, contentDescription = "Duplica step")
@@ -567,6 +544,10 @@ private fun StepRow(
 
 /**
  * Copia un’azione con nuovo timestamp (per duplica in editor).
+ *
+ * @param action Azione sorgente.
+ * @param now Timestamp ms.
+ * @return Copia con timestamp aggiornato.
  */
 fun copyActionWithNewTimestamp(action: RecordedAction, now: Long = System.currentTimeMillis()): RecordedAction =
     when (action) {
@@ -591,6 +572,11 @@ fun copyActionWithNewTimestamp(action: RecordedAction, now: Long = System.curren
         is RecordedAction.RawMaestroYaml -> action.copy(timestampMs = now)
     }
 
+/**
+ * Dialog di modifica campi per un singolo [RecordedAction].
+ *
+ * Completo sui tipi principali (optional, direction, contentDescription, point).
+ */
 @Composable
 private fun StepEditDialog(
     action: RecordedAction,
@@ -627,8 +613,29 @@ private fun StepEditDialog(
                 is RecordedAction.PressKey -> action.key
                 is RecordedAction.OpenLink -> action.url
                 is RecordedAction.RawMaestroYaml -> action.yamlLines
-                is RecordedAction.Swipe ->
-                    "${action.startPercentX},${action.startPercentY} → ${action.endPercentX},${action.endPercentY}"
+                else -> ""
+            },
+        )
+    }
+    var contentDescription by remember {
+        mutableStateOf(
+            when (action) {
+                is RecordedAction.Tap -> action.contentDescription.orEmpty()
+                is RecordedAction.DoubleTap -> action.contentDescription.orEmpty()
+                is RecordedAction.LongPress -> action.contentDescription.orEmpty()
+                else -> ""
+            },
+        )
+    }
+    var pointXy by remember {
+        mutableStateOf(
+            when (action) {
+                is RecordedAction.Tap ->
+                    if (action.pointPercentX != null && action.pointPercentY != null) {
+                        "${action.pointPercentX},${action.pointPercentY}"
+                    } else {
+                        ""
+                    }
                 else -> ""
             },
         )
@@ -642,6 +649,15 @@ private fun StepEditDialog(
                 is RecordedAction.AssertNotVisible -> action.timeoutMs.toString()
                 is RecordedAction.ScrollUntilVisible -> action.timeoutMs.toString()
                 else -> "1000"
+            },
+        )
+    }
+    var direction by remember {
+        mutableStateOf(
+            when (action) {
+                is RecordedAction.Scroll -> action.direction.name
+                is RecordedAction.ScrollUntilVisible -> action.direction.name
+                else -> ScrollDirection.DOWN.name
             },
         )
     }
@@ -665,7 +681,11 @@ private fun StepEditDialog(
     }
     var optional by remember {
         mutableStateOf(
-            action is RecordedAction.Tap && action.executionMode == StepExecutionMode.Optional,
+            when (action) {
+                is RecordedAction.Tap -> action.executionMode == StepExecutionMode.Optional
+                is RecordedAction.AssertVisible -> action.executionMode == StepExecutionMode.Optional
+                else -> false
+            },
         )
     }
 
@@ -673,71 +693,95 @@ private fun StepEditDialog(
         onDismissRequest = onDismiss,
         title = { Text("Modifica ${action::class.simpleName}") },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Column(
+                modifier = Modifier
+                    .heightIn(max = 440.dp)
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
                 when (action) {
                     is RecordedAction.LaunchApp -> Text("launchApp non modificabile")
                     is RecordedAction.Tap,
                     is RecordedAction.DoubleTap,
                     is RecordedAction.LongPress,
                     -> {
-                        OutlinedTextField(viewId, { viewId = it }, label = { Text("id") }, singleLine = true)
-                        OutlinedTextField(text, { text = it }, label = { Text("text") }, singleLine = true)
+                        OutlinedTextField(viewId, { viewId = it }, label = { Text("id") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                        OutlinedTextField(text, { text = it }, label = { Text("text") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                        OutlinedTextField(
+                            contentDescription,
+                            { contentDescription = it },
+                            label = { Text("contentDescription") },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth(),
+                        )
                         if (action is RecordedAction.Tap) {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clickable { optional = !optional },
-                            ) {
-                                Checkbox(checked = optional, onCheckedChange = { optional = it })
-                                Text(
-                                    "Opzionale (optional: true) — es. popup «Non ora»",
-                                    style = MaterialTheme.typography.bodyMedium,
-                                )
-                            }
+                            OutlinedTextField(
+                                pointXy,
+                                { pointXy = it },
+                                label = { Text("point x,y % (opz.)") },
+                                singleLine = true,
+                                modifier = Modifier.fillMaxWidth(),
+                            )
+                            OptionalCheckbox(optional) { optional = it }
                         }
                     }
                     is RecordedAction.InputText -> {
-                        OutlinedTextField(viewId, { viewId = it }, label = { Text("id campo") }, singleLine = true)
-                        OutlinedTextField(text, { text = it }, label = { Text("testo") }, singleLine = true)
+                        OutlinedTextField(viewId, { viewId = it }, label = { Text("id campo") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                        OutlinedTextField(text, { text = it }, label = { Text("testo") }, singleLine = true, modifier = Modifier.fillMaxWidth())
                     }
                     is RecordedAction.EraseText -> {
-                        OutlinedTextField(viewId, { viewId = it }, label = { Text("id campo (opz.)") }, singleLine = true)
+                        OutlinedTextField(viewId, { viewId = it }, label = { Text("id campo (opz.)") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                    }
+                    is RecordedAction.Scroll -> {
+                        OutlinedTextField(
+                            direction,
+                            { direction = it.uppercase() },
+                            label = { Text("direction UP/DOWN/LEFT/RIGHT") },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth(),
+                        )
                     }
                     is RecordedAction.Wait,
                     is RecordedAction.ScrollUntilVisible,
                     -> {
-                        OutlinedTextField(viewId, { viewId = it }, label = { Text("visible id") }, singleLine = true)
-                        OutlinedTextField(text, { text = it }, label = { Text("visible text") }, singleLine = true)
-                        OutlinedTextField(timeout, { timeout = it }, label = { Text("timeout ms") }, singleLine = true)
+                        OutlinedTextField(viewId, { viewId = it }, label = { Text("visible id") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                        OutlinedTextField(text, { text = it }, label = { Text("visible text") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                        OutlinedTextField(timeout, { timeout = it }, label = { Text("timeout ms") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                        if (action is RecordedAction.ScrollUntilVisible) {
+                            OutlinedTextField(
+                                direction,
+                                { direction = it.uppercase() },
+                                label = { Text("direction UP/DOWN/LEFT/RIGHT") },
+                                singleLine = true,
+                                modifier = Modifier.fillMaxWidth(),
+                            )
+                        }
                     }
                     is RecordedAction.AssertVisible,
                     is RecordedAction.AssertNotVisible,
                     -> {
-                        OutlinedTextField(viewId, { viewId = it }, label = { Text("id") }, singleLine = true)
-                        OutlinedTextField(text, { text = it }, label = { Text("text") }, singleLine = true)
-                        OutlinedTextField(timeout, { timeout = it }, label = { Text("timeout ms") }, singleLine = true)
+                        OutlinedTextField(viewId, { viewId = it }, label = { Text("id") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                        OutlinedTextField(text, { text = it }, label = { Text("text") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                        OutlinedTextField(timeout, { timeout = it }, label = { Text("timeout ms") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                        if (action is RecordedAction.AssertVisible) {
+                            OptionalCheckbox(optional) { optional = it }
+                        }
                     }
                     is RecordedAction.WaitForAnimation -> {
-                        OutlinedTextField(timeout, { timeout = it }, label = { Text("timeout ms (opz.)") }, singleLine = true)
+                        OutlinedTextField(timeout, { timeout = it }, label = { Text("timeout ms (opz.)") }, singleLine = true, modifier = Modifier.fillMaxWidth())
                     }
                     is RecordedAction.PressKey -> {
-                        OutlinedTextField(text, { text = it }, label = { Text("key (Enter/Back/Home)") }, singleLine = true)
+                        OutlinedTextField(text, { text = it }, label = { Text("key (Enter/Back/Home)") }, singleLine = true, modifier = Modifier.fillMaxWidth())
                     }
                     is RecordedAction.OpenLink -> {
-                        OutlinedTextField(text, { text = it }, label = { Text("url") }, singleLine = true)
+                        OutlinedTextField(text, { text = it }, label = { Text("url") }, singleLine = true, modifier = Modifier.fillMaxWidth())
                     }
                     is RecordedAction.Swipe -> {
-                        OutlinedTextField(swipeStart, { swipeStart = it }, label = { Text("start x,y %") }, singleLine = true)
-                        OutlinedTextField(swipeEnd, { swipeEnd = it }, label = { Text("end x,y %") }, singleLine = true)
+                        OutlinedTextField(swipeStart, { swipeStart = it }, label = { Text("start x,y %") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                        OutlinedTextField(swipeEnd, { swipeEnd = it }, label = { Text("end x,y %") }, singleLine = true, modifier = Modifier.fillMaxWidth())
                     }
                     is RecordedAction.RawMaestroYaml -> {
-                        OutlinedTextField(
-                            text,
-                            { text = it },
-                            label = { Text("YAML grezzo") },
-                            minLines = 3,
-                        )
+                        OutlinedTextField(text, { text = it }, label = { Text("YAML grezzo") }, minLines = 3, modifier = Modifier.fillMaxWidth())
                     }
                     else -> Text(stepSummary(action))
                 }
@@ -752,33 +796,45 @@ private fun StepEditDialog(
                         val y = parts.getOrNull(1)?.toFloatOrNull() ?: fallbackY
                         return x to y
                     }
+                    fun parsePoint(raw: String): Pair<Float?, Float?> {
+                        if (raw.isBlank()) return null to null
+                        val parts = raw.split(",").map { it.trim().removeSuffix("%") }
+                        return parts.getOrNull(0)?.toFloatOrNull() to parts.getOrNull(1)?.toFloatOrNull()
+                    }
+                    fun parseDir(raw: String, fallback: ScrollDirection): ScrollDirection =
+                        runCatching { ScrollDirection.valueOf(raw.trim().uppercase()) }.getOrDefault(fallback)
+
+                    val mode = if (optional) StepExecutionMode.Optional else StepExecutionMode.Required
                     val updated = when (action) {
-                        is RecordedAction.Tap -> action.copy(
-                            viewId = viewId.ifBlank { null },
-                            text = text.ifBlank { null },
-                            executionMode = if (optional) {
-                                StepExecutionMode.Optional
-                            } else {
-                                StepExecutionMode.Required
-                            },
-                        )
+                        is RecordedAction.Tap -> {
+                            val (px, py) = parsePoint(pointXy)
+                            action.copy(
+                                viewId = viewId.ifBlank { null },
+                                text = text.ifBlank { null },
+                                contentDescription = contentDescription.ifBlank { null },
+                                pointPercentX = px,
+                                pointPercentY = py,
+                                executionMode = mode,
+                                weakSelector = viewId.isBlank() && text.isBlank() && contentDescription.isBlank(),
+                            )
+                        }
                         is RecordedAction.DoubleTap -> action.copy(
                             viewId = viewId.ifBlank { null },
                             text = text.ifBlank { null },
+                            contentDescription = contentDescription.ifBlank { null },
                         )
                         is RecordedAction.LongPress -> action.copy(
                             viewId = viewId.ifBlank { null },
                             text = text.ifBlank { null },
+                            contentDescription = contentDescription.ifBlank { null },
                         )
                         is RecordedAction.InputText -> action.copy(
                             viewId = viewId.ifBlank { null },
                             text = text,
-                            // Se l’utente sostituisce **** con testo reale, abilita scrittura in Play.
                             isPassword = text == "****",
                         )
-                        is RecordedAction.EraseText -> action.copy(
-                            viewId = viewId.ifBlank { null },
-                        )
+                        is RecordedAction.EraseText -> action.copy(viewId = viewId.ifBlank { null })
+                        is RecordedAction.Scroll -> action.copy(direction = parseDir(direction, action.direction))
                         is RecordedAction.Wait -> action.copy(
                             visibleId = viewId.ifBlank { null },
                             visibleText = text.ifBlank { null },
@@ -788,20 +844,20 @@ private fun StepEditDialog(
                             visibleId = viewId.ifBlank { null },
                             visibleText = text.ifBlank { null },
                             timeoutMs = timeout.toLongOrNull() ?: action.timeoutMs,
+                            direction = parseDir(direction, action.direction),
                         )
                         is RecordedAction.AssertVisible -> action.copy(
                             viewId = viewId.ifBlank { null },
                             text = text.ifBlank { null },
                             timeoutMs = timeout.toLongOrNull() ?: action.timeoutMs,
+                            executionMode = mode,
                         )
                         is RecordedAction.AssertNotVisible -> action.copy(
                             viewId = viewId.ifBlank { null },
                             text = text.ifBlank { null },
                             timeoutMs = timeout.toLongOrNull() ?: action.timeoutMs,
                         )
-                        is RecordedAction.WaitForAnimation -> action.copy(
-                            timeoutMs = timeout.toLongOrNull(),
-                        )
+                        is RecordedAction.WaitForAnimation -> action.copy(timeoutMs = timeout.toLongOrNull())
                         is RecordedAction.PressKey -> action.copy(key = text.ifBlank { "Enter" })
                         is RecordedAction.OpenLink -> action.copy(url = text)
                         is RecordedAction.Swipe -> {
@@ -827,8 +883,27 @@ private fun StepEditDialog(
     )
 }
 
+@Composable
+private fun OptionalCheckbox(checked: Boolean, onChange: (Boolean) -> Unit) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { onChange(!checked) },
+    ) {
+        Checkbox(checked = checked, onCheckedChange = onChange)
+        Text(
+            "Opzionale (optional: true) — popup/permission non bloccano il test",
+            style = MaterialTheme.typography.bodyMedium,
+        )
+    }
+}
+
 /**
  * Riepilogo leggibile di uno step per lista editor.
+ *
+ * @param action Step da riassumere.
+ * @return Stringa corta per la riga.
  */
 fun stepSummary(action: RecordedAction): String = when (action) {
     is RecordedAction.LaunchApp -> "launchApp"
@@ -837,10 +912,15 @@ fun stepSummary(action: RecordedAction): String = when (action) {
         val base = when {
             !id.isNullOrBlank() -> "tapOn id=$id"
             !action.text.isNullOrBlank() -> "tapOn \"${action.text}\""
+            !action.contentDescription.isNullOrBlank() -> "tapOn cd=\"${action.contentDescription}\""
             action.pointPercentX != null -> "tapOn point"
             else -> "tapOn"
         }
-        if (action.executionMode == StepExecutionMode.Optional) "$base · optional" else base
+        buildString {
+            append(base)
+            if (action.executionMode == StepExecutionMode.Optional) append(" · optional")
+            if (action.weakSelector) append(" · debole")
+        }
     }
     is RecordedAction.DoubleTap -> {
         val id = action.viewId?.substringAfterLast('/')
@@ -859,7 +939,7 @@ fun stepSummary(action: RecordedAction): String = when (action) {
     is RecordedAction.ScrollUntilVisible -> {
         val id = action.visibleId?.substringAfterLast('/')
         when {
-            !id.isNullOrBlank() -> "scrollUntilVisible id=$id"
+            !id.isNullOrBlank() -> "scrollUntilVisible id=$id ${action.direction.name}"
             !action.visibleText.isNullOrBlank() -> "scrollUntilVisible \"${action.visibleText}\""
             else -> "scrollUntilVisible"
         }
@@ -870,11 +950,12 @@ fun stepSummary(action: RecordedAction): String = when (action) {
     is RecordedAction.PressKey -> "pressKey ${action.key}"
     is RecordedAction.AssertVisible -> {
         val id = action.viewId?.substringAfterLast('/')
-        when {
+        val base = when {
             !id.isNullOrBlank() -> "assertVisible id=$id"
             !action.text.isNullOrBlank() -> "assertVisible \"${action.text}\""
             else -> "assertVisible"
         }
+        if (action.executionMode == StepExecutionMode.Optional) "$base · optional" else base
     }
     is RecordedAction.AssertNotVisible -> {
         val id = action.viewId?.substringAfterLast('/')

@@ -7,14 +7,11 @@ internal data class TitleCandidate(val title: String, val weight: Int, val sourc
 internal object TitleCandidateLogic {
 
     private val SOURCE_PRIORITY = mapOf(
-        "content_markers" to 100,
         "pane_title" to 90,
         "pin" to 88,
         "modal" to 85,
-        "distinctive_ids" to 80,
         "toolbar" to 70,
         "section_title" to 65,
-        "nexi_text" to 60,
         "event_text" to 55,
         "activity" to 40,
         "heading" to 35,
@@ -27,51 +24,24 @@ internal object TitleCandidateLogic {
         "flutter", "navigation", "single", "launcher", "root",
     )
 
+    /** Nomi classe framework Android (widget/layout) mai validi come titolo schermata. */
+    private val ANDROID_FRAMEWORK_VIEW_CLASS_NAMES = setOf(
+        "view", "viewgroup", "framelayout", "linearlayout", "relativelayout",
+        "constraintlayout", "coordinatorlayout", "recyclerview", "scrollview",
+        "nestedscrollview", "horizontalscrollview", "viewpager", "viewpager2",
+        "gridview", "listview", "cardview", "textview", "imageview", "button",
+        "webview", "surfaceview", "composeview", "androidcomposeview",
+    )
+
     /**
-     * Inferisce il titolo schermata dai viewId del contenuto visibile (generico multi-app).
+     * `true` se il nome è quello di una classe widget/layout Android generica, mai un titolo
+     * di schermata valido (può capitare se un evento riporta la classe del nodo sorgente
+     * invece dell'Activity/Dialog).
+     *
+     * @param name Nome semplice della classe (senza package), es. `ViewGroup`.
      */
-    fun inferTitleFromContentMarkers(ids: Set<String>): String? {
-        if (ids.isEmpty()) return null
-
-        val landingMarkers = setOf("titlehello", "titlehelp", "buttonaltro", "productslist", "policyname", "policynumber")
-        val documentMarkers = setOf(
-            "label_documents_element_policy_nr", "recycler_documents", "documents_list",
-            "documentcard", "label_documents",
-        )
-        val rubricaMarkers = setOf("labelcontacts", "edt_ragione_sociale", "text_input_ragione_sociale", "iban_account")
-
-        val landingHits = ids.count { it in landingMarkers }
-        val documentHits = ids.count { it in documentMarkers || (it == "name" && ids.contains("numero")) }
-        val rubricaHits = ids.count { it in rubricaMarkers }
-
-        if (landingHits >= 2 && documentHits == 0) return "Home"
-        if (documentHits >= 2 && landingHits == 0) return "I miei documenti"
-        if (rubricaHits >= 2) return "RUBRICA"
-        if (NexiTitleHeuristics.hasHomeMarkers(ids)) return findTopBarTitleFromIds(ids) ?: "Home"
-        return null
-    }
-
-    /** Toolbar coerente col fingerprint del contenuto (evita tab host fuorviante). */
-    fun isToolbarConsistentWithContent(toolbarTitle: String, ids: Set<String>): Boolean {
-        val toolbar = toolbarTitle.lowercase()
-        val contentTitle = inferTitleFromContentMarkers(ids) ?: return true
-
-        if (contentTitle.equals("Home", ignoreCase = true)) {
-            val docToolbar = toolbar.contains("document") || toolbar.contains("documenti")
-            val landingPresent = ids.any { it in setOf("titlehello", "buttonaltro", "productslist", "policyname") }
-            if (docToolbar && landingPresent) return false
-        }
-        if (contentTitle.equals("I miei documenti", ignoreCase = true)) {
-            val landingPresent = ids.any { it in setOf("titlehello", "buttonaltro", "productslist", "policyname") }
-            if (landingPresent) return false
-        }
-        if (contentTitle.equals("RUBRICA", ignoreCase = true) &&
-            !toolbar.contains("rubric")
-        ) {
-            return false
-        }
-        return true
-    }
+    fun isAndroidFrameworkViewClassName(name: String): Boolean =
+        name.lowercase() in ANDROID_FRAMEWORK_VIEW_CLASS_NAMES
 
     fun pickBestTitle(candidates: List<TitleCandidate>, ids: Set<String>): String? {
         if (candidates.isEmpty()) return null
@@ -103,8 +73,6 @@ internal object TitleCandidateLogic {
             .lowercase()
         return simple in GENERIC_ACTIVITY_NAMES || simple.length <= 4
     }
-
-    private fun findTopBarTitleFromIds(ids: Set<String>): String? = null
 
     /**
      * Converte un nome di activity o fragment in un titolo leggibile.

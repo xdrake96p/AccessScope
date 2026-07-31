@@ -245,13 +245,30 @@ object WaitPlanner {
 
     /**
      * Tap tipici di conferma/login che spesso attivano loader.
+     *
+     * Esclude etichette dismiss popup («OK, HO CAPITO», «Non ora», …) anche se
+     * contengono sottostringhe come «ok».
      */
     fun isSubmitLikeTap(action: RecordedAction.Tap): Boolean {
         val label = listOfNotNull(action.text, action.contentDescription)
             .joinToString(" ")
             .lowercase()
-        if (label.isNotBlank() && SUBMIT_LABEL_HINTS.any { label.contains(it) }) return true
+            .trim()
+        if (MaestroSelectorHeuristics.isPopupDismissLabel(label)) return false
+        if (label.contains("ho capito")) return false
+        if (label.isNotBlank() && SUBMIT_LABEL_HINTS.any { hint ->
+                label == hint || label.startsWith("$hint ") || label.endsWith(" $hint") ||
+                    label.contains(" $hint ")
+            }
+        ) {
+            // Evita match troppo larghi: "ok" non deve matchare "ok, ho capito" (già escluso)
+            // né stringhe casuali; richiede uguaglianza o parola intera.
+            return true
+        }
+        // Match esatto su label corta (es. solo "CONTINUA" / "OK" bottone primario non-dismiss).
+        if (label.isNotBlank() && SUBMIT_LABEL_HINTS.any { label == it }) return true
         val id = MaestroSelectorHeuristics.shortViewId(action.viewId)?.lowercase().orEmpty()
+        if (id == "dismiss" || id.endsWith("_dismiss")) return false
         return id.contains("submit") ||
             id.contains("continue") ||
             id.contains("confirm") ||

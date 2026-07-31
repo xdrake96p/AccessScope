@@ -6,6 +6,9 @@ package dev.accessscope.scanner.recorder
 import android.graphics.Rect
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
+import dev.accessscope.scanner.recorder.capture.AlertOverlayResolver
+import dev.accessscope.scanner.recorder.capture.TapIdentityResolver
+import dev.accessscope.scanner.recorder.model.SelectorCandidate
 import dev.accessscope.scanner.recorder.model.StepExecutionMode
 import dev.accessscope.scanner.util.AppFileLogger
 import dev.accessscope.scanner.util.DebugSessionLog
@@ -244,6 +247,15 @@ class ActionRecorder {
                 )
             }
             AccessibilityEvent.TYPE_VIEW_SELECTED -> {
+                // Non trattare SELECTED come click generico (tab/list noise).
+                // Accetta solo se il source è clickable/checkable e non duplica un tap recente.
+                val src = runCatching { event.source }.getOrNull()
+                val actionable = src != null && (src.isClickable || src.isCheckable)
+                src?.recycle()
+                if (!actionable) {
+                    logDiscard(event.eventType, packageName, "selected_not_actionable")
+                    return out
+                }
                 flushPendingText()?.let(out::add)
                 buildTap(
                     event = event,
@@ -255,7 +267,7 @@ class ActionRecorder {
                     rootProvider = rootProvider,
                 )?.let { tap ->
                     val key = tapKey(tap)
-                    if (key == lastTapKey && now - lastTapAtMs < TAP_DEBOUNCE_MS) return out
+                    if (key == lastTapKey && now - lastTapAtMs < TAP_DEBOUNCE_MS * 2) return out
                     lastTapKey = key
                     lastTapAtMs = now
                     out += tap
@@ -306,6 +318,8 @@ class ActionRecorder {
             ?: node?.text?.toString()?.takeIf { it.isNotBlank() }
         val viewId = node?.viewIdResourceName?.takeIf { it.isNotBlank() }
         resolved.recycleIfNeeded()
+        // edit1…edit6 sono EditText reali (OTP SMS / PIN): vanno registrati come inputText.
+        // I tap sul pad (uno/due) restano a parte e in optimize diventano Optional se ridondanti.
         val pinLike = MaestroSelectorHeuristics.isPinLikeField(viewId)
         val loginPassword = MaestroSelectorHeuristics.isLoginPasswordField(viewId, isPassword)
         // Campo svuotato: flush pending (PIN conferma / nuovo ciclo).
@@ -409,58 +423,51 @@ class ActionRecorder {
         val resolved = resolveNode(event, rootProvider, preferFocusFallback = false)
         val node = resolved.node
 
+        // Alert in-app (es. Nexi alert_pop / id/dismiss): il click a11y spesso punta
+        // all’EditText sotto → editable_skip. Risolvi il bottone reale nelle root.
+        val alertDismiss = if (!longPress) AlertOverlayResolver.findDismiss(rootProvider) else null
+        if (alertDismiss != null) {
+            val forceDismiss = node?.isEditable == true ||
+                eventLabel.isNullOrBlank() ||
+                MaestroSelectorHeuristics.isPopupDismissLabel(eventLabel) ||
+                eventLabel.equals(alertDismiss.text, ignoreCase = true) ||
+                (alertDismiss.text != null &&
+                    eventLabel?.contains(alertDismiss.text!!, ignoreCase = true) == true) ||
+                (alertDismiss.viewId != null &&
+                    node?.viewIdResourceName?.endsWith("/dismiss") == true)
+            if (forceDismiss) {
+                resolved.recycleIfNeeded()
+                AppFileLogger.info(
+                    "ActionRecorder",
+                    "tap_alert_dismiss id=${alertDismiss.viewId} text=${alertDismiss.text}",
+                )
+                return AlertOverlayResolver.toOptionalTap(packageName, alertDismiss, now)
+            }
+        }
+
         // Popup Compose: click su "Non ora" con source=editabile sotto il dialog.
         val dismissFromEvent = eventLabel != null && MaestroSelectorHeuristics.isPopupDismissLabel(eventLabel)
         if (node?.isEditable == true && !longPress && !dismissFromEvent) {
-            val rootsForCount = rootProvider.roots()
-            val rootCount = rootsForCount.size
-            rootsForCount.forEach { it.recycle() }
-            val dismissFromUi = findDismissLabelInRoots(rootProvider)
-            // #region agent log
-            DebugSessionLog.log(
-                "C",
-                "ActionRecorder.buildTap",
-                "editable_source_path",
-                mapOf(
-                    "eventLabel" to eventLabel,
-                    "dismissFromEvent" to dismissFromEvent,
-                    "dismissFromUi" to dismissFromUi,
-                    "nodeClass" to node.className?.toString()?.substringAfterLast('.'),
-                    "rootCount" to rootCount,
-                ),
-            )
-            // #endregion
+            val dismissFromUi = alertDismiss?.text
+                ?: findDismissLabelInRoots(rootProvider)
             if (dismissFromUi != null) {
                 resolved.recycleIfNeeded()
                 AppFileLogger.info(
                     "ActionRecorder",
                     "tap_override_editable_with_dismiss text=$dismissFromUi",
                 )
-                return RecordedAction.Tap(
-                    packageName = packageName,
-                    text = dismissFromUi.take(80),
-                    timestampMs = now,
-                    executionMode = StepExecutionMode.Optional,
+                val target = alertDismiss ?: dev.accessscope.scanner.recorder.capture.AlertDismissTarget(
+                    viewId = null,
+                    text = dismissFromUi,
                 )
+                return AlertOverlayResolver.toOptionalTap(packageName, target, now)
             }
             resolved.recycleIfNeeded()
             logDiscard(event.eventType, packageName, "editable_skip_tap")
-            // #region agent log
-            DebugSessionLog.log(
-                "C",
-                "ActionRecorder.buildTap",
-                "editable_skip_tap",
-                mapOf(
-                    "pkg" to packageName,
-                    "eventLabel" to eventLabel,
-                    "sampleClickables" to sampleClickableLabels(rootProvider).take(8).joinToString("|"),
-                ),
-            )
-            // #endregion
             return null
         }
 
-        val identity = resolveTapIdentity(node, event)
+        val identity = TapIdentityResolver.resolve(node, event)
         val viewId = identity.viewId
         val text = identity.text ?: eventLabel
         val cd = identity.contentDescription
@@ -497,36 +504,31 @@ class ActionRecorder {
         resolved.recycleIfNeeded()
 
         val optional = MaestroSelectorHeuristics.isPopupDismissLabel(text ?: cd ?: eventLabel)
+        val chain = buildRecChain(identity.candidates, px, py)
 
         // Fallback testo evento: Compose dialog senza source ma con label sul click.
         if (viewId == null && text == null && cd == null && (px == null || py == null)) {
             if (!eventLabel.isNullOrBlank()) {
+                val opt = MaestroSelectorHeuristics.isPopupDismissLabel(eventLabel)
                 return RecordedAction.Tap(
                     packageName = packageName,
                     text = eventLabel.take(80),
                     timestampMs = now,
-                    executionMode = if (MaestroSelectorHeuristics.isPopupDismissLabel(eventLabel)) {
-                        StepExecutionMode.Optional
-                    } else {
-                        StepExecutionMode.Required
-                    },
+                    executionMode = if (opt) StepExecutionMode.Optional else StepExecutionMode.Required,
+                    selectorChain = listOf(SelectorCandidate(text = eventLabel.take(80))),
+                    weakSelector = false,
                 )
             }
-            // Ultima chance: cerca bottone dismiss tipico nelle finestre dialog.
+            // Ultima chance: alert overlay / bottone dismiss tipico nelle root.
+            val alert = AlertOverlayResolver.findDismiss(rootProvider)
+            if (alert != null) {
+                AppFileLogger.info(
+                    "ActionRecorder",
+                    "tap_from_alert_overlay id=${alert.viewId} text=${alert.text}",
+                )
+                return AlertOverlayResolver.toOptionalTap(packageName, alert, now)
+            }
             val dismiss = findDismissLabelInRoots(rootProvider)
-            // #region agent log
-            DebugSessionLog.log(
-                "D",
-                "ActionRecorder.buildTap",
-                "unresolved_no_selector",
-                mapOf(
-                    "pkg" to packageName,
-                    "eventLabel" to eventLabel,
-                    "dismissHint" to dismiss,
-                    "hasSource" to (node != null),
-                ),
-            )
-            // #endregion
             if (dismiss != null) {
                 AppFileLogger.info("ActionRecorder", "tap_from_dismiss_hint text=$dismiss")
                 return RecordedAction.Tap(
@@ -534,10 +536,15 @@ class ActionRecorder {
                     text = dismiss.take(80),
                     timestampMs = now,
                     executionMode = StepExecutionMode.Optional,
+                    selectorChain = listOf(SelectorCandidate(text = dismiss.take(80))),
+                    weakSelector = false,
                 )
             }
             return null
         }
+
+        // Point-only: registra come weak (gate ZeroEdit / PICK) invece di scartare il gesto.
+        val weak = identity.weak && viewId == null && text == null && cd == null
 
         return if (longPress) {
             RecordedAction.LongPress(
@@ -555,74 +562,30 @@ class ActionRecorder {
                 viewId = viewId,
                 text = text?.take(80),
                 contentDescription = cd?.take(80),
-                pointPercentX = px,
-                pointPercentY = py,
+                pointPercentX = if (weak) px else if (viewId != null || text != null || cd != null) null else px,
+                pointPercentY = if (weak) py else if (viewId != null || text != null || cd != null) null else py,
                 timestampMs = now,
                 executionMode = if (optional) StepExecutionMode.Optional else StepExecutionMode.Required,
+                selectorChain = chain,
+                weakSelector = weak,
             )
         }
     }
 
     /**
-     * Estrae id/testo migliori: sale ai parent cliccabili dove di solito c’è resource-id.
+     * Catena candidati a REC: semantic first, point solo se weak.
      */
-    private fun resolveTapIdentity(
-        node: AccessibilityNodeInfo?,
-        event: AccessibilityEvent,
-    ): TapIdentity {
-        var bestId: String? = null
-        var clickableId: String? = null
-        var bestText: String? = event.text?.firstOrNull()?.toString()?.trim()?.takeIf { it.isNotBlank() }
-            ?: event.contentDescription?.toString()?.trim()?.takeIf { it.isNotBlank() }
-        var bestCd: String? = event.contentDescription?.toString()?.trim()?.takeIf { it.isNotBlank() }
-        var clickableBounds: Rect? = null
-
-        if (node == null) {
-            return TapIdentity(bestId, bestText, bestCd, null)
+    private fun buildRecChain(
+        candidates: List<SelectorCandidate>,
+        px: Float?,
+        py: Float?,
+    ): List<SelectorCandidate> {
+        val out = candidates.toMutableList()
+        if (px != null && py != null && out.none { !it.viewId.isNullOrBlank() || !it.text.isNullOrBlank() || !it.contentDescription.isNullOrBlank() }) {
+            out += SelectorCandidate(pointPercentX = px, pointPercentY = py)
         }
-
-        var current: AccessibilityNodeInfo? = AccessibilityNodeInfo.obtain(node)
-        repeat(8) {
-            val c = current ?: return@repeat
-            val id = c.viewIdResourceName?.takeIf { it.isNotBlank() }
-            if (id != null) {
-                if (bestId == null) bestId = id
-                if (c.isClickable || c.isCheckable) {
-                    clickableId = id
-                    val b = Rect()
-                    c.getBoundsInScreen(b)
-                    if (!b.isEmpty) clickableBounds = Rect(b)
-                }
-            }
-            val t = c.text?.toString()?.trim()?.takeIf { it.isNotBlank() }
-            val cd = c.contentDescription?.toString()?.trim()?.takeIf { it.isNotBlank() }
-            if (bestText == null) bestText = t
-            if (bestCd == null) bestCd = cd
-            if (clickableBounds == null && (c.isClickable || c.isCheckable)) {
-                val b = Rect()
-                c.getBoundsInScreen(b)
-                if (!b.isEmpty) clickableBounds = Rect(b)
-            }
-            val parent = c.parent
-            c.recycle()
-            current = parent
-        }
-        current?.recycle()
-
-        return TapIdentity(
-            viewId = clickableId ?: bestId,
-            text = bestText,
-            contentDescription = bestCd,
-            clickableBounds = clickableBounds,
-        )
+        return out.distinctBy { it.dedupeKey() }
     }
-
-    private data class TapIdentity(
-        val viewId: String?,
-        val text: String?,
-        val contentDescription: String?,
-        val clickableBounds: Rect?,
-    )
 
     /**
      * Risolve il nodo: source evento → testo evento su **tutte** le root (dialog),

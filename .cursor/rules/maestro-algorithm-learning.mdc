@@ -35,9 +35,17 @@ Quando si modifica qualsiasi comportamento della feature **Maestro** (registrazi
 | Pausa REC | `RecordingState.isPaused` + overlay PAUSE/RESUME |
 | Play senza sessione | long-press Play → `clearState` + stopApp + cold launch |
 | Feedback Maestro | drawer → `FeedbackIssueBuilder.buildMaestroUrl` |
-| Selettori deboli (solo testo) | `ActionRecorder.resolveTapIdentity`, `SelectorRanker.buildChain`, exporter |
-| Catena fallback / heal Play | `SelectorRanker.attachChains`, `FlowPlayer` chain, `FlowStore.applySelectorWins` |
-| Ghost tap post-scroll/IME | `NoiseActionFilter.dropGhostTapsAfterScrollOrIme` |
+| Selettori deboli (solo testo) | `TapIdentityResolver`, `SelectorRanker.buildChain`, exporter |
+| Catena fallback / heal Play | `SelectorRanker.attachChains` (merge REC), `FlowPlayer` chain, `FlowStore.applySelectorWins` |
+| Point-only / ZeroEdit gate | `ZeroEditGate` + `StaticSelectorHealer` + `FlowLinter` ERROR `POINT_ONLY_SELECTOR` |
+| Ghost tap post-scroll/IME | `NoiseActionFilter.dropGhostTapsAfterScrollOrIme` (anche testo corto) |
+| Popup optional non bloccanti | `PopupClassifier` / REC `isPopupDismissLabel` (preserve Optional) |
+| Alert in-app (`alert_pop` / `id/dismiss`) | `AlertOverlayResolver` — override editable_skip → tap optional |
+| Dismiss alert dopo input (ordine YAML) | `BlockingOverlayOrderHealer` + `BlockingOverlayWaitPlanner` in pipeline/sanitize |
+| PIN pad `edit1`…`edit6` + tap `uno`/`due` | `normalizePinOrOtpSlotInputs`: un `inputText` su `edit1`; pad Optional; Play fallback SET_TEXT su slot se pad assente |
+| Assert rating Play Store spurio | `dropSpuriousRatingAsserts` |
+| Editor `+` inserisce Wait | `InsertStepDialog` + `InsertStepCatalog` (scelta tipo) |
+| Download YAML | `YamlDownloadHelper` (Downloads/AccessScope) |
 | Wait lint auto-fix | `FlowLintAutoFix` in pipeline dopo WaitPlanner |
 | `${PIN}` / `${PASSWORD}` | `CredentialVault` + exporter placeholder + editor Vault |
 | Validate find-only | `FlowPlayer.validate` + bottone Valida in editor |

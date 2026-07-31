@@ -26,11 +26,11 @@ class FlowLinterTest {
     )
 
     @Test
-    fun weakSelector_pointOnly_isWarning() {
+    fun weakSelector_pointOnly_isError() {
         val report = FlowLinter.lint(listOf(tap(point = true)))
         assertEquals(1, report.issues.size)
-        assertEquals(LintRule.WEAK_SELECTOR, report.issues[0].rule)
-        assertEquals(LintSeverity.WARNING, report.issues[0].severity)
+        assertEquals(LintRule.POINT_ONLY_SELECTOR, report.issues[0].rule)
+        assertEquals(LintSeverity.ERROR, report.issues[0].severity)
     }
 
     @Test

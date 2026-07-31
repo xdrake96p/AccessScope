@@ -115,7 +115,9 @@ object SelectorRanker {
     }
 
     /**
-     * Popola [RecordedAction.Tap.selectorChain] su tutti i tap.
+     * Popola o raffina [RecordedAction.Tap.selectorChain].
+     *
+     * Se la catena REC è già presente, fa merge con il ranking optimize (non la sovrascrive alla cieca).
      */
     fun attachChains(
         actions: List<RecordedAction>,
@@ -124,8 +126,15 @@ object SelectorRanker {
     ): List<RecordedAction> =
         actions.map { action ->
             if (action !is RecordedAction.Tap) return@map action
-            if (action.selectorChain.isNotEmpty()) return@map action
-            action.copy(selectorChain = buildChain(action, actions, intel, telemetry))
+            val ranked = buildChain(action, actions, intel, telemetry)
+            if (action.selectorChain.isEmpty()) {
+                return@map action.copy(selectorChain = ranked)
+            }
+            // Merge: candidati REC prima, poi ranked; dedupe preservando ordine.
+            val merged = (action.selectorChain + ranked)
+                .distinctBy { it.dedupeKey() }
+                .filterNot { it.isBlank() }
+            action.copy(selectorChain = merged)
         }
 
     /**

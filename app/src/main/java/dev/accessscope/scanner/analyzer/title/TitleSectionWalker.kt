@@ -79,8 +79,7 @@ internal object TitleSectionWalker {
             val screenBounds = android.graphics.Rect()
             root.getBoundsInScreen(screenBounds)
             val topThreshold = screenBounds.top + (screenBounds.height() * 0.28f).toInt()
-            val onHome = NexiTitleHeuristics.hasHomeMarkers(TitleTreeWalker.collectViewIdShorts(root))
-    
+
             val queue = ArrayDeque<AccessibilityNodeInfo>()
             queue.add(root)
             var best: Pair<String, Int>? = null
@@ -96,10 +95,6 @@ internal object TitleSectionWalker {
                 node.getBoundsInScreen(bounds)
                 val text = node.text?.toString()?.trim().orEmpty()
                 if (text.isBlank() || TitleCandidateLogic.looksLikeAmount(text)) {
-                    for (i in 0 until node.childCount) node.getChild(i)?.let(queue::add)
-                    continue
-                }
-                if (NexiTitleHeuristics.isHomeInsolutiWidgetTitle(text, viewId, onHome)) {
                     for (i in 0 until node.childCount) node.getChild(i)?.let(queue::add)
                     continue
                 }

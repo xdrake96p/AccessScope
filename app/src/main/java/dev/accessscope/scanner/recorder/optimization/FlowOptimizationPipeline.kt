@@ -1,5 +1,8 @@
 /**
  * Orchestratore pipeline ottimizzazione Maestro intelligente.
+ *
+ * Competenze delegate: noise → scroll → **blocking overlay order** → wait → assert →
+ * optional → lint → selector chain.
  */
 package dev.accessscope.scanner.recorder.optimization
 
@@ -7,17 +10,19 @@ import dev.accessscope.scanner.recorder.MaestroSelectorHeuristics
 import dev.accessscope.scanner.recorder.RecordedAction
 import dev.accessscope.scanner.recorder.model.OptimizationContext
 import dev.accessscope.scanner.recorder.optimization.AssertPlanner
+import dev.accessscope.scanner.recorder.optimization.conditional.BlockingOverlayOrderHealer
 import dev.accessscope.scanner.recorder.optimization.conditional.OptionalStepPolicy
 import dev.accessscope.scanner.recorder.optimization.lint.FlowLintAutoFix
 import dev.accessscope.scanner.recorder.optimization.noise.NoiseActionFilter
 import dev.accessscope.scanner.recorder.optimization.scroll.ScrollCoalescer
 import dev.accessscope.scanner.recorder.optimization.selector.SelectorNormalizer
 import dev.accessscope.scanner.recorder.optimization.selector.SelectorRanker
+import dev.accessscope.scanner.recorder.optimization.timing.BlockingOverlayWaitPlanner
 import dev.accessscope.scanner.recorder.optimization.timing.WaitPlanner
 import dev.accessscope.scanner.util.DebugSessionLog
 
 /**
- * Pipeline: coalesce → dedupe → noise → wait → assert schermata → optional → lint → chain.
+ * Pipeline: coalesce → dedupe → noise → overlay-order → wait → assert → optional → lint → chain.
  */
 object FlowOptimizationPipeline {
 
@@ -33,6 +38,27 @@ object FlowOptimizationPipeline {
         val appId = context.appId.ifBlank {
             actions.firstNotNullOfOrNull { it.packageName.takeIf { it.isNotBlank() } }.orEmpty()
         }
+        val afterNoise = ScrollCoalescer.coalesce(
+            NoiseActionFilter.dropGhostTapsAfterScrollOrIme(
+                NoiseActionFilter.dropFocusTapsBeforeInput(
+                    NoiseActionFilter.dropNoiseTaps(
+                        NoiseActionFilter.dropForeignUiActions(
+                            NoiseActionFilter.dropNoiseScrolls(
+                                NoiseActionFilter.dropSpuriousRatingAsserts(
+                                    NoiseActionFilter.normalizePinOrOtpSlotInputs(
+                                        dedupeTaps(coalesceInputText(actions)),
+                                    ),
+                                ),
+                            ),
+                            appId,
+                        ),
+                    ),
+                ),
+            ),
+        )
+        // Prima dei wait: dismiss alert subito dopo CONTINUA (evita input sotto overlay).
+        val ordered = BlockingOverlayOrderHealer.reorder(afterNoise)
+        val withOverlayWaits = BlockingOverlayWaitPlanner.enrich(ordered, appId)
         val cleaned = SelectorRanker.attachChains(
             FlowLintAutoFix.apply(
                 SelectorNormalizer.normalizeViewIds(
@@ -40,20 +66,7 @@ object FlowOptimizationPipeline {
                         OptionalStepPolicy.apply(
                             AssertPlanner.enrich(
                                 WaitPlanner.enrich(
-                                    ScrollCoalescer.coalesce(
-                                        NoiseActionFilter.dropGhostTapsAfterScrollOrIme(
-                                            NoiseActionFilter.dropFocusTapsBeforeInput(
-                                                NoiseActionFilter.dropNoiseTaps(
-                                                    NoiseActionFilter.dropForeignUiActions(
-                                                        NoiseActionFilter.dropNoiseScrolls(
-                                                            dedupeTaps(coalesceInputText(actions)),
-                                                        ),
-                                                        appId,
-                                                    ),
-                                                ),
-                                            ),
-                                        ),
-                                    ),
+                                    withOverlayWaits,
                                     appId,
                                     context.telemetry,
                                     context.scanIntel,
@@ -71,12 +84,14 @@ object FlowOptimizationPipeline {
             context.scanIntel,
             context.telemetry,
         )
-        return cleaned
+        // Secondo passaggio: wait planner può aver lasciato dismiss dopo nuovi wait.
+        return BlockingOverlayOrderHealer.reorder(cleaned)
     }
 
     /**
      * Sanitize per replay: rimuove solo rumore legacy (SystemUI, progress),
      * **senza** scartare step curati dall’editor (+ wait, hideKeyboard, tap su campi).
+     * Riordina anche overlay bloccanti così Play non fallisce su input sotto alert.
      */
     fun sanitizeForPlay(actions: List<RecordedAction>, appId: String): List<RecordedAction> {
         if (actions.isEmpty()) return actions
@@ -84,16 +99,21 @@ object FlowOptimizationPipeline {
             actions.firstNotNullOfOrNull { it.packageName.takeIf { it.isNotBlank() } }.orEmpty()
         }
         val afterForeign = NoiseActionFilter.dropForeignUiActions(actions, pkg)
-        val afterNoiseTaps = NoiseActionFilter.dropPlaybackNoiseTaps(afterForeign)
+        val afterPinPad = NoiseActionFilter.normalizePinOrOtpSlotInputs(afterForeign)
+        val afterRating = NoiseActionFilter.dropSpuriousRatingAsserts(afterPinPad)
+        val afterNoiseTaps = NoiseActionFilter.dropPlaybackNoiseTaps(afterRating)
         val afterGhost = NoiseActionFilter.dropGhostTapsAfterScrollOrIme(afterNoiseTaps)
         val afterDupTaps = NoiseActionFilter.dropDuplicateTapsAcrossWaits(afterGhost)
         val afterStructScroll = NoiseActionFilter.dropStructuralScrollUntilVisible(afterDupTaps)
         val afterNoiseScrolls = NoiseActionFilter.dropNoiseScrolls(afterStructScroll)
         val afterNoiseWaits = NoiseActionFilter.dropNoiseWaits(afterNoiseScrolls)
-        val withWaitTargets = WaitPlanner.attachBlindWaitsToNextTarget(afterNoiseWaits, pkg)
+        val ordered = BlockingOverlayOrderHealer.reorder(afterNoiseWaits)
+        val withOverlayWaits = BlockingOverlayWaitPlanner.enrich(ordered, pkg)
+        val withWaitTargets = WaitPlanner.attachBlindWaitsToNextTarget(withOverlayWaits, pkg)
         val withAnim = WaitPlanner.ensureAnimationWaits(withWaitTargets, pkg)
         val normalized = SelectorNormalizer.normalizeViewIds(withAnim, pkg)
         val withChains = SelectorRanker.attachChains(normalized, null, null)
+        val finalOrdered = BlockingOverlayOrderHealer.reorder(withChains)
         // #region agent log
         DebugSessionLog.log(
             "H7",
@@ -101,17 +121,17 @@ object FlowOptimizationPipeline {
             "sanitize_counts",
             mapOf(
                 "in" to actions.size,
-                "out" to withChains.size,
-                "dropped" to (actions.size - withChains.size),
+                "out" to finalOrdered.size,
+                "dropped" to (actions.size - finalOrdered.size),
                 "inTypes" to actions.joinToString(",") { it::class.simpleName.orEmpty() },
-                "outTypes" to withChains.joinToString(",") { it::class.simpleName.orEmpty() },
-                "blindWaitsAttached" to withChains.count {
+                "outTypes" to finalOrdered.joinToString(",") { it::class.simpleName.orEmpty() },
+                "blindWaitsAttached" to finalOrdered.count {
                     it is RecordedAction.Wait && !it.visibleId.isNullOrBlank()
                 },
             ),
         )
         // #endregion
-        return withChains
+        return finalOrdered
     }
 
     /**

@@ -38,6 +38,8 @@ class PdfReportExporter(private val context: Context) {
      * @param scanScopeLabel Etichetta testuale dell'ambito di scansione (es. "Completa").
      * @param scannedScreens Titoli delle schermate visitate, in ordine di navigazione.
      * @param checkSummaries Riepiloghi dei controlli superati per area e schermata.
+     * @param includeLowConfidence Se true, include anche i finding sotto soglia (stesso toggle
+     *   del report dinamico), per allineare i conteggi del PDF a quanto visto in scansione.
      * @return [Result] con il percorso del file salvato in caso di successo, o l'eccezione in caso di errore.
      */
     fun export(
@@ -49,8 +51,9 @@ class PdfReportExporter(private val context: Context) {
         scanScopeLabel: String = "Completa",
         scannedScreens: List<String> = emptyList(),
         checkSummaries: List<CheckAreaSummary> = emptyList(),
+        includeLowConfidence: Boolean = false,
     ): Result<String> = runCatching {
-        val filtered = ReportHelper.filterViolations(violations)
+        val filtered = ReportHelper.filterViolations(violations, includeLowConfidence)
         val document = PdfDocument()
         val ctx = PdfContext(document)
         val passedTotal = ReportHelper.totalPassedChecks(checkSummaries)

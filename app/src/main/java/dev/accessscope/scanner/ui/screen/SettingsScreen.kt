@@ -54,15 +54,20 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import android.widget.Toast
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.accessscope.scanner.data.ViolationArea
+import dev.accessscope.scanner.service.AccessScopeAccessibilityService
 import dev.accessscope.scanner.ui.components.AccessScopeTopBar
 import dev.accessscope.scanner.ui.components.SettingsAccordion
 import dev.accessscope.scanner.ui.components.ThemeModeSelector
 import dev.accessscope.scanner.ui.theme.CardShape
 import dev.accessscope.scanner.ui.theme.JetBrainsMonoFamily
+import dev.accessscope.scanner.ui.theme.Warning
 import dev.accessscope.scanner.ui.theme.contentSecondary
 import dev.accessscope.scanner.ui.viewmodel.ScanViewModel
+import dev.accessscope.scanner.util.PermissionHelper
 
 /**
  * Schermata delle impostazioni (tab zona principale) con sezioni espandibili.
@@ -80,6 +85,10 @@ fun SettingsScreen(
     val context = LocalContext.current
     var exportingLogs by remember { mutableStateOf(false) }
     var showClearHistoryDialog by remember { mutableStateOf(false) }
+
+    LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
+        viewModel.refreshPermissions()
+    }
 
     if (showClearHistoryDialog) {
         AlertDialog(
@@ -119,7 +128,8 @@ fun SettingsScreen(
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             // —— Permessi richiesti ——
-            val grantedCount = listOf(uiState.accessibilityGranted, uiState.overlayGranted).count { it }
+            val a11yReady = uiState.accessibilityGranted && uiState.accessibilityConnected
+            val grantedCount = listOf(a11yReady, uiState.overlayGranted).count { it }
             SettingsAccordion(
                 title = "Permessi Richiesti",
                 icon = Icons.Outlined.Security,
@@ -128,8 +138,14 @@ fun SettingsScreen(
                 PermissionRow(
                     icon = Icons.Outlined.AccessibilityNew,
                     title = "Servizio di accessibilità",
-                    subtitle = if (uiState.accessibilityConnected) "Attivo e connesso" else "Da abilitare nelle impostazioni di sistema",
-                    granted = uiState.accessibilityGranted,
+                    subtitle = when {
+                        a11yReady -> "Attivo e connesso"
+                        uiState.accessibilityGranted ->
+                            "ON ma non collegato — OFF → attendi → ON in Accessibilità"
+                        else -> "Da abilitare nelle impostazioni di sistema"
+                    },
+                    granted = a11yReady,
+                    warning = uiState.accessibilityGranted && !uiState.accessibilityConnected,
                 )
                 PermissionRow(
                     icon = Icons.Outlined.Layers,
@@ -137,6 +153,28 @@ fun SettingsScreen(
                     subtitle = "Overlay STOP disponibile durante la scansione",
                     granted = uiState.overlayGranted,
                 )
+                if (!a11yReady) {
+                    OutlinedButton(
+                        onClick = {
+                            PermissionHelper.safeStartSettingsIntent(
+                                context,
+                                PermissionHelper.accessibilityServiceIntent(
+                                    context,
+                                    AccessScopeAccessibilityService::class.java,
+                                ),
+                            )
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Text(
+                            if (uiState.accessibilityGranted) {
+                                "Ripristina collegamento accessibilità"
+                            } else {
+                                "Apri impostazioni accessibilità"
+                            },
+                        )
+                    }
+                }
                 OutlinedButton(
                     onClick = viewModel::refreshPermissions,
                     modifier = Modifier.fillMaxWidth(),
@@ -420,7 +458,18 @@ private fun PermissionRow(
     title: String,
     subtitle: String,
     granted: Boolean,
+    warning: Boolean = false,
 ) {
+    val tint = when {
+        granted -> MaterialTheme.colorScheme.primary
+        warning -> Warning
+        else -> MaterialTheme.colorScheme.error
+    }
+    val label = when {
+        granted -> "OK"
+        warning -> "SCOLLEGATO"
+        else -> "MANCANTE"
+    }
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -432,7 +481,7 @@ private fun PermissionRow(
         Icon(
             icon,
             contentDescription = null,
-            tint = if (granted) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
+            tint = tint,
         )
         Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {
@@ -440,11 +489,11 @@ private fun PermissionRow(
             Text(subtitle, style = MaterialTheme.typography.bodySmall, color = contentSecondary())
         }
         Text(
-            if (granted) "OK" else "MANCANTE",
+            label,
             style = MaterialTheme.typography.labelSmall,
             fontFamily = JetBrainsMonoFamily,
             fontWeight = FontWeight.Bold,
-            color = if (granted) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
+            color = tint,
         )
     }
 }

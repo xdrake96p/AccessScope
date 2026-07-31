@@ -6,9 +6,124 @@
 **Package:** `dev.accessscope.scanner`  
 **Branch principale sviluppo:** `develop`  
 **Branch release stabile:** `main`  
-**Ultimo aggiornamento:** 27 luglio 2026 (Maestro R1: waitForAnimation quiescenza, soft-fail onesti, vault Play, fail-rate, overlay UNDO)
+**Ultimo aggiornamento:** 31 luglio 2026 (rimosse euristiche Nexi/AXA dal motore precisione: engine generico per qualunque app)
+
+### Motore di precisione: eliminate le euristiche specifiche Nexi/AXA (31 luglio 2026)
+
+Nexi e AXA erano le app usate per validare il motore in fase di sviluppo iniziale; il prodotto
+è pensato per scansionare **qualunque app**, quindi ogni euristica ancorata a id/testi/titoli di
+quelle due app è stata rimossa (non solo isolata in un profilo) da `analyzer/precision/*`:
+
+- `AppPrecisionProfiles`: eliminato `isNexi()` e tutti i set privati Nexi (home markers, chart
+  text/container ids, carousel widget ids, large-text ids, primary CTA ids, PIN keys Nexi); le
+  funzioni pubbliche restano solo per le convenzioni di naming realmente generiche (CTA `show_more`/
+  `see_all`/…, `nav_`/`menu_`/`drawer_`, `tv_tab`).
+- `PrecisionHome`: rimossa l'intera logica home/widget/CTA brandizzata specifica Nexi
+  (`isHomeScreenContext`, `shouldSkipHomeWidgetAnalysis`, `isHomeEffettiCarouselNode`,
+  `hasTvCustomDescendant`, `isBrandedCtaText`, `isHomeChartDecorativeText`, …) — priva di
+  equivalente generico, quindi era completamente inerte per ogni app diversa da Nexi.
+- `PrecisionContrast`: rimossi gli hardcode `vop_info`, `causale`, `tv_title_second_section`;
+  il cluster "calendario Material" (gated su titolo schermata `COMUNICAZIONI` + id Nexi) è stato
+  **generalizzato** in rilevamento puramente strutturale (conteggio nodi con `collectionRow`/
+  `collectionColumn` valorizzati — API standard Android, non un id di un'app) invece di essere
+  cancellato, perché il problema che risolve (rumore su celle ripetute di griglia) è reale per
+  qualunque app con griglie dense.
+- `PrecisionNavigation`: `isTopBarControl` ora riconosce per substring (`topbar`/`toolbar`/
+  `app_bar`/`action_bar`) invece di un elenco id esatti Nexi; rimossa `shouldReportMissingTopBarLabel`
+  (pattern nidificato specifico Nexi, nessun generico equivalente).
+- `PrecisionHeadingSkips`/`PrecisionDecorativeLabels`/`PrecisionLabels`/`PrecisionStructural`:
+  rimossi gli id letterali residui (`causale`, `vop_info`, `dot_filter`, `multiple_slection`,
+  `recycler_distinte`/`recycler_effetti`, `card_effetti`/`tab_home`/`card_home`).
+- Test: cancellato `MpsVerificationRegressionTest` (asseriva esplicitamente il trattamento
+  speciale di id Nexi); le sole asserzioni realmente generiche sono confluite in
+  `WcagContrastRegressionTest`.
+**Risoluzione titolo/fingerprint** (`analyzer/title/*`), completata nello stesso giro:
+
+- Cancellato interamente `NexiTitleHeuristics.kt` (titoli sezione Nexi hardcoded, marker home/nav/content
+  Nexi, widget «Ultimi insoluti») — nessun equivalente generico possibile, solo dead-for-non-Nexi.
+- `TitleCandidateLogic.inferTitleFromContentMarkers`/`isToolbarConsistentWithContent` rimossi: erano
+  interamente basati su marker AXA (`titlehello`, `policyname`, `productslist`, …) e Nexi
+  (`labelcontacts`, `edt_ragione_sociale`, …); la candidatura "content_markers" (peso massimo, 100)
+  è sparita dalla catena di risoluzione titolo.
+- `ScreenFingerprint.fingerprintTitle` semplificato: usa direttamente il titolo già risolto da
+  `ScreenTitleResolver`, senza più il tentativo di sostituirlo con un marker di contenuto Nexi/AXA.
+- `TitleScreenDetection`/`TitleCache`/`TitleSectionWalker`/`TitleTopBarWalker`: rimossi tutti i
+  riferimenti a `NexiTitleHeuristics`; `isDrawerOnlyRoot`/`isTransientOverlay` ora usano un
+  rilevamento generico di "chrome" strutturale (id contenenti `topbar`/`toolbar`/`tab_`/
+  `bottom_nav`/`action_bar`/`appbar`) invece di liste di id Nexi.
+- Test: riscritti `ScreenTitleResolverTest` e `ScreenTitleFingerprintRegressionTest` per testare
+  solo il comportamento generico della catena di candidati (pesi, priorità sorgente, filtro titoli
+  generici), rimossa ogni asserzione legata a marker Nexi/AXA.
+
+### Fix critico: frammentazione schermate con titolo "ViewGroup"/classe generica (31 luglio 2026)
+
+Test su device reale dopo la pulizia Nexi/AXA: troppe "schermate" nel report, molte con nome
+tipo `ViewGroup`/classe Android generica.
+
+- **Causa (bug preesistente, smascherato dalla rimozione dei fallback Nexi/AXA):**
+  `AccessibilityTreeScanner.scanRoot` chiama `ScreenTitleResolver.resolve` sia su
+  `TYPE_WINDOW_STATE_CHANGED` sia su `TYPE_WINDOW_CONTENT_CHANGED`. Il candidato titolo
+  "activity" usava `event.className` incondizionatamente — ma su `TYPE_WINDOW_CONTENT_CHANGED`
+  quel campo è la classe del **nodo sorgente cambiato** (spesso un `ViewGroup`/`RecyclerView`
+  qualunque durante lo scroll), non l'Activity. Prima, il candidato "content_markers" (peso 100,
+  ora rimosso perché specifico AXA/Nexi) o i fallback `NexiTitleHeuristics` mascheravano quasi
+  sempre questo titolo spurio; una volta tolti, ogni scroll poteva produrre un titolo/fingerprint
+  diverso → "schermate" fasulle a raffica.
+- **Fix:** `ScreenTitleResolver.resolve` considera il candidato "activity" solo se
+  `event.eventType == TYPE_WINDOW_STATE_CHANGED`; aggiunta `TitleCandidateLogic
+  .isAndroidFrameworkViewClassName` (denylist generica ViewGroup/RecyclerView/FrameLayout/…)
+  come difesa aggiuntiva anche in quel caso.
+- Test: `ScreenTitleResolverTest.isAndroidFrameworkViewClassName_rejectsGenericContainers` (unità)
+  e `ScreenTitleFingerprintRegressionTest.contentChanged_neverUsesSourceNodeClassNameAsTitle`
+  (end-to-end: due `TYPE_WINDOW_CONTENT_CHANGED` con `className` diverso sullo stesso root devono
+  risolvere allo stesso titolo, mai al nome della classe sorgente) — riproduce esattamente lo
+  scenario del bug per impedire che si ripresenti silenziosamente in refactor futuri.
+- Verifica: `./gradlew :app:testDebugUnitTest :app:assembleDebug` verde; reinstallato su device
+  fisico (Galaxy S10) per riverifica manuale.
+
+**Verifica complessiva:** `./gradlew :app:testDebugUnitTest :app:assembleDebug` verde (250 test JVM).
+Nessuna verifica ancora su device/benchmark reale con app terze: da fare a fine lavoro come da
+richiesta esplicita (i punteggi su Nexi/AXA in `reports/golden/` cambieranno rispetto alle baseline
+v1.3.0/v1.3.1 — atteso, dato che quelle app non ricevono più trattamento speciale).
+
+### Fix confidence gate: toggle "findings a bassa confidenza" non funzionava (31 luglio 2026)
+
+- **Bug:** `ScanSessionRepository.addViolations` applicava la soglia di confidenza (`ReportHelper.filterViolations` default) **in scrittura**, scartando per sempre le violazioni sotto soglia. Il toggle Settings "Findings a bassa confidenza" (letto poi da `ReportScreen`/`DynamicReportScreen`/PDF) non aveva più nulla da recuperare: sessione live, sessione archiviata, PDF e report affidabilità mostravano sempre solo le violazioni confermate, a prescindere dal toggle.
+- **Fix:** `addViolations` ora applica solo `ViolationConfidencePolicy.demoteIfNoisy` + dedupe per `dedupeKey`, senza soglia — la soglia resta responsabilità esclusiva del livello report (`ReportHelper.filterViolations`), coerente con `DynamicReportHelper` che già lo faceva correttamente.
+- **Consistenza a cascata:** snapshot archiviato in `AccessScopeApp.stopScanSession` e `PdfReportExporter.export` (nuovo parametro `includeLowConfidence`) ora ricevono lo stesso toggle mostrato live, invece del default fisso `false`.
+- **Contratto bridge invariato:** `ScanResultProvider.buildStatusJson` (`violationCount`) resta esplicitamente confidence-confermata-only (non segue il toggle UI), per non alterare la semantica consumata da plugin/CI.
+- Test: `ScanSessionRepositoryTest.addViolations_keepsLowConfidenceFindings_forLaterReportFiltering`; fix di `PermissionHelperTest` (shadowing `resolveActivity` per il nuovo fallback OEM già introdotto in `AppHelpers.kt`).
+- Verifica: `./gradlew :app:testDebugUnitTest :app:assembleDebug` verde (254 test JVM).
 
 **Manuale utente e tecnico:** [`docs/MANUALE_UTENTE.md`](MANUALE_UTENTE.md) — installazione, uso plugin AS/VS Code, troubleshooting.
+
+### OTP/PIN edit-slot vs pad (31 luglio 2026)
+
+- **Schermo reale:** `edit1`…`edit6` sono EditText (OTP SMS / PIN); i tasti `uno`/`due` spesso **non** sono nell’albero a11y
+- **Algoritmo:** `normalizePinOrOtpSlotInputs` — collassa N input sugli slot in un `inputText` su `edit1`; tap pad → **Optional**; Play ha fallback `inputPinDigitOnSlots` se il pad manca
+- Non droppare gli inputText sugli slot (rompevano l’inserimento cifre)
+
+### PIN pad digit-slot (31 luglio 2026)
+
+- **Problema:** su Nexi/MPS i tap `uno`…`sei` riempiono `edit1`…`edit6` → REC esportava anche `inputText: "123456"` su ogni slot → Play falliva al tap `uno` (step ~35) e non arrivava a CONTINUA/Conferma
+- **Fix algoritmo:** `isPinPadDigitSlot` / `isPinPadKey`; REC ignora TEXT_CHANGED sugli slot; `NoiseActionFilter.dropPinPadDigitSlotInputs` (+ collapse wait) in optimize e `sanitizeForPlay`; drop assert rating spurî
+
+### Accessibilità unbound + install sicuro (31 luglio 2026)
+
+- **Causa:** su Samsung `am force-stop` lascia AccessScope in `enabled_accessibility_services` senza bind → REC/scan senza eventi
+- **App:** `AccessibilityBindState` + `isAccessibilityServiceReady` = enabled∧connected; Home/Settings con warning + CTA **Ripristina collegamento**; gate su `startScan`/`startRecordingSession`; refresh permessi su `ON_RESUME`
+- **Intent:** `accessibilityServiceIntent` / `safeStartSettingsIntent` con `resolveActivity` (fallback lista generale su OEM)
+- **Workflow:** `scripts/install-debug.sh` + regola `.cursor/rules/android-device-install.mdc` — vietato force-stop dopo install
+- **Nota Samsung:** se `enabled` pieno e `bound` vuoto persiste dopo OFF→ON, un **reboot** ripristina il bind (stato DEAD connection AMS)
+
+### Maestro ZeroEdit + editor (31 luglio 2026, branch `restyle`)
+
+- **Contratto ZeroEdit:** `recorder/quality/` (`ZeroEditGate`, `StaticSelectorHealer`) — lint Error su point-only; heal id strutturali → testo; gate su `FlowStore.saveFlow`/`updateFlow`
+- **Capture:** `recorder/capture/TapIdentityResolver` → `selectorChain` + `weakSelector` a REC; `TYPE_VIEW_SELECTED` solo se clickable/checkable
+- **Popup optional:** preservati da REC in `OptionalStepPolicy`; ghost filter esteso a testo corto post-scroll
+- **Editor:** `InsertStepDialog`/`InsertStepCatalog` — `+` apre scelta tipo (non Wait immediato); edit (cd, point, direction, optional assert); **Download YAML** (`YamlDownloadHelper`); Salva vs Ottimizza
+- **Alert Nexi `alert_pop`:** `AlertOverlayResolver` cattura `id/dismiss` («OK, HO CAPITO») anche quando a11y punta all’EditText sotto (prima: `editable_skip_tap` → tap perso / fuori ordine)
+- **Ordine YAML overlay:** `BlockingOverlayOrderHealer` sposta dismiss bloccanti subito dopo CONTINUA (prima degli `inputText`); `BlockingOverlayWaitPlanner` aggiunge `extendedWaitUntil` sul dismiss; attivo anche in `sanitizeForPlay`
 
 ---
 
@@ -108,6 +223,8 @@ Documento vivo: [`docs/PIANO_MAESTRO_E_SCANSIONE.md`](PIANO_MAESTRO_E_SCANSIONE.
 - **M1-B1:** `ReportHelper.confidenceGateStats` + sezione «Confidence gate» nel reliability MD
 - **Popup Maestro:** package `permissioncontroller` / installer / GMS non più droppati in REC/optimize; tap Allow/Consenti → `optional: true`; root multi-window in recording
 - **Popup in-app (27 luglio):** «Non ora» anche se source è EditText sotto dialog; `AssertVisible` titolo (es. caricamento documento); scroll solo con delta reale + soppressione dopo Back/popup; Back via `onKeyEvent`; editor insert dopo selezione + checkbox Opzionale su tap
+
+- **Overlay REC compatto (31 luglio):** barra minimizzata all’avvio (`⋮ REC` + step + `▸` + **STOP** sempre in header); PICK/PAUSE/UNDO/OPT e YAML solo dopo espansione — evita che STOP esca dallo schermo su overlay stretto
 
 - **R1 affidabilità (27 luglio):**
   - **waitForAnimationToEnd ovunque serve:** `WaitPlanner` inserisce anim dopo ogni tap (anche same-screen), Back, InputText→Tap; `ensureAnimationWaits` anche in `sanitizeForPlay`; Play attende **UI stabile ≥650ms** (`waitForAnimationToEnd`) non solo delay fisso

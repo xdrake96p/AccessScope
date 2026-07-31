@@ -21,11 +21,11 @@ internal object NodeCrossNodeChecker {
     ) {
         val maxBottom = snapshots.maxOfOrNull { it.bounds.bottom } ?: 0
         val screenArea = if (screenWidth > 0 && maxBottom > 0) screenWidth * maxBottom else 0
-        val isMaterialCalendar = PrecisionRules.isMaterialCalendarContext(screenTitle, snapshots)
+        val isMaterialCalendar = PrecisionRules.isMaterialCalendarContext(snapshots)
         val clickables = snapshots
             .filter { PrecisionRules.isSemanticClickTarget(it) }
             .filterNot { PrecisionRules.isObscuredByModalOverlay(it, snapshots) }
-            .filterNot { snap -> isMaterialCalendar && PrecisionRules.isMaterialCalendarDayCell(snap, screenTitle, snapshots) }
+            .filterNot { snap -> isMaterialCalendar && PrecisionRules.isMaterialCalendarDayCell(snap, snapshots) }
 
         snapshots.mapNotNull { snap -> snap.accessibleName()?.lowercase()?.let { it to snap } }
             .groupBy({ it.first }, { it.second })

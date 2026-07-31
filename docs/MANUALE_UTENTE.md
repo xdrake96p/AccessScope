@@ -113,9 +113,9 @@ Tab **Maestro** nella bottom bar. Serve a **registrare**, **importare/creare** e
 6. In elenco, sulla card:
    - **Play** — riproduce il flusso in-app via accessibilità
    - **Long-press Play** — dialog **Avvia pulito** (stopApp + cold launch) / **Avvia normale**
-   - **Matita** — editor step: seleziona una riga (i nuovi vanno **subito dopo**), `+` / duplica; **Valida** (dry-run selettori); **Vault** (PIN/password per `${PIN}`/`${PASSWORD}`); in modifica tap puoi segnare **Opzionale**; catalogo comandi via `+`
+   - **Matita** — editor step: seleziona una riga (i nuovi vanno **subito dopo**); **`+` apre un elenco categorizzato** di tipi (Interazione / Attesa / Verifica / Avanzate), non inserisce più un wait automatico; duplica / su-giù; **Valida**; **Vault**; **Download** YAML in `Download/AccessScope/`; **Salva** o **Ottimizza**. In modifica tap/assert puoi segnare **Opzionale**
    - **Logo AccessScope** — Scan+Flusso (scan WCAG + playback in parallelo)
-   - **YAML** / condividi / elimina
+   - **YAML** / **Download** / condividi / elimina
 
 Menu **☰** su Maestro (non è il drawer Home):
 
@@ -123,10 +123,11 @@ Menu **☰** su Maestro (non è il drawer Home):
 - **Nuovo flusso YAML** — nome + app → apre l’editor con `launchApp`
 - **Segnala bug Maestro** / **Suggerisci miglioramento** — GitHub Issues precompilata `[Maestro]`
 
-**Dopo un update dell’APK:** disattiva e riattiva **AccessScope** in Impostazioni → Accessibilità. Se il servizio non è collegato, i tap non vengono catturati e Play non parte.
+**Dopo un update dell’APK:** se Home mostra «ON ma non collegato» (o REC dice che il servizio non è collegato), tocca **Ripristina collegamento** → in Accessibilità **OFF → attendi 2s → ON → Consenti**. Non usare `adb shell am force-stop` dopo l’install (rompe il bind su Samsung). Install consigliato: `./scripts/install-debug.sh`.
 
-**Nota Beta:** dopo ogni tap/navigazione il flusso include `waitForAnimationToEnd` e il Play attende che la UI sia stabile (≥650ms) prima dello step successivo — riduce tap “a caso” durante le animazioni. Credenziali: al Play compare il dialog Vault se mancano. Selettori: catena di fallback + promozione automatica dopo 2 fail. Export YAML con `${PIN}`/`${PASSWORD}`.
+**PIN pad (Nexi/MPS):** i tap sul tastierino (`uno`…`sei`) non devono diventare `inputText` su `edit1`…`edit6`. Se un flusso vecchio ha ancora quegli input, **Play** li ignora automaticamente; in editor usa **Ottimizza** per ripulire lo YAML.
 
+**Nota Beta / ZeroEdit:** dopo ogni tap/navigazione il flusso include `waitForAnimationToEnd` dove serve; i popup sono `optional: true` così i test non si bloccano se il dialog non riappare. Credenziali: dialog Vault se mancano `${PIN}`/`${PASSWORD}`. Selettori solo-coordinate = errore lint → usa **PICK** in REC. Catena di fallback + promozione dopo 2 fail.
 Registrazione e playback/scansione: **record** è esclusivo; **Play + scan** possono coesistere (Scan+Flusso).
 
 ### Suggerimenti e segnalazioni
@@ -315,6 +316,7 @@ Se passi da build debug a release (o viceversa), il plugin **disinstalla e reins
 | `INSTALL_FAILED_UPDATE_INCOMPATIBLE` | Firma APK diversa | **Install / Update** di nuovo (reinstall automatico in v1.0.8+) |
 | `Fetch Results` errore JSON | Nessuna scansione completata | Esegui scansione nell'app e premi STOP prima di fetch |
 | Setup Check: accessibilità OFF | Permesso non dato | Impostazioni → Accessibilità → AccessScope ON |
+| «ON ma non collegato» / REC senza eventi | Toggle ON senza bind (post force-stop/update Samsung) | Home → **Ripristina collegamento** → OFF → 2s → ON → Consenti; se persiste, **riavvia il telefono** |
 | Setup Check: overlay OFF | Permesso non dato | Impostazioni → App → AccessScope → overlay |
 | Plugin update: rate limit GitHub | Troppe richieste API | Riprova dopo qualche minuto o imposta `GITHUB_TOKEN` |
 | `Aggiorna il plugin IDE alla versione X` | Plugin IDE obsoleto | Aggiorna plugin AS/VS Code alla versione indicata |

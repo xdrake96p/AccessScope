@@ -1,0 +1,42 @@
+# Install / relaunch AccessScope su device
+
+## Regola fondamentale
+
+**Non usare mai** `adb shell am force-stop dev.accessscope.scanner` dopo install o update.
+
+Su Samsung (e altri OEM) `force-stop` lascia il servizio in `enabled_accessibility_services` ma **non lo ri-binda** → UI «ON ma non collegato», REC/scan senza eventi.
+
+## Install consigliato
+
+```bash
+./scripts/install-debug.sh                 # device unico
+./scripts/install-debug.sh RF8MB3477ZH     # device specifico
+```
+
+Equivalente manuale:
+
+```bash
+./gradlew :app:assembleDebug
+adb install -r -g app/build/outputs/apk/debug/app-debug.apk
+adb shell am start -n dev.accessscope.scanner/.MainActivity
+# NO am force-stop
+```
+
+## Wipe / reinstall pulito
+
+1. Disattiva AccessScope in Impostazioni → Accessibilità (altrimenti `DELETE_FAILED_INTERNAL_ERROR`)
+2. `adb shell pm uninstall --user 0 dev.accessscope.scanner`
+3. `./scripts/install-debug.sh`
+4. Riattiva AccessScope → Consenti
+
+## Verifica bind
+
+```bash
+adb shell dumpsys accessibility | sed -n '/enabled services:/,/crashed services:/p'
+```
+
+`bound services` deve elencare `AccessScopeAccessibilityService`. Se `enabled` pieno e `bound` vuoto:
+
+1. OFF → 2s → ON → Consenti
+2. Se ancora vuoto dopo diversi tentativi → **reboot del device** (pulisce ConnectionRecord DEAD in AMS)
+

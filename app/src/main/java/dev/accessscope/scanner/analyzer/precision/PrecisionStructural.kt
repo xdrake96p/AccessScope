@@ -10,7 +10,6 @@ import dev.accessscope.scanner.analyzer.ViolationConfidencePolicy
 import dev.accessscope.scanner.analyzer.precision.PrecisionGeometry
 import dev.accessscope.scanner.analyzer.precision.PrecisionLabels
 import dev.accessscope.scanner.analyzer.precision.PrecisionNavigation
-import dev.accessscope.scanner.analyzer.precision.PrecisionHome
 import dev.accessscope.scanner.analyzer.precision.PrecisionTouch
 import dev.accessscope.scanner.analyzer.precision.PrecisionRulesPlatform
 import dev.accessscope.scanner.analyzer.precision.area
@@ -40,9 +39,9 @@ internal object PrecisionStructural {
     }
 
     /**
-     * Verifica se il nodo è una checkbox o riga di selezione del carousel distinte/effetti.
+     * Verifica se il nodo è una checkbox o riga di selezione a tutta larghezza in un carousel.
      *
-     * Nel carousel Nexi l'overlap con il FrameLayout padre è intenzionale e non costituisce
+     * L'overlap con il FrameLayout padre è intenzionale in questi casi e non costituisce
      * un problema di accessibilità da segnalare.
      *
      * @param snap Snapshot del nodo da valutare.
@@ -50,8 +49,8 @@ internal object PrecisionStructural {
      */
     fun isCarouselSelectionRow(snap: NodeSnapshot): Boolean {
         val id = PrecisionGeometry.viewIdShort(snap)
-        return id in setOf("multiple_slection", "check_multiple_selection", "checkbox_all") ||
-            (id.contains("slection") && snap.bounds.width() >= snap.minTouchTargetPx * 5)
+        return (id.contains("select") || id.contains("selection")) &&
+            snap.bounds.width() >= snap.minTouchTargetPx * 5
     }
 
     /**
@@ -134,10 +133,6 @@ internal object PrecisionStructural {
         val screenArea = if (screenWidth > 0) screenWidth * PrecisionGeometry.estimateViewport(all).height() else 0
         if (isStructuralScrollOverlap(a, b, all, packageName, screenArea)) return true
         if (PrecisionNavigation.isTabStripNode(a, packageName) && PrecisionNavigation.isTabStripNode(b, packageName)) return true
-        if (PrecisionNavigation.isTabStripNode(a, packageName) || PrecisionNavigation.isTabStripNode(b, packageName)) {
-            val tabParent = all.any { PrecisionGeometry.viewIdShort(it) in setOf("card_effetti", "tab_home", "card_home") }
-            if (tabParent) return true
-        }
         if (PrecisionRulesPlatform.isObscuredByModalOverlay(a, all) || PrecisionRulesPlatform.isObscuredByModalOverlay(b, all)) return true
         if (PrecisionRulesPlatform.isInsideMapOrMediaSurface(a, all) && PrecisionRulesPlatform.isInsideMapOrMediaSurface(b, all)) return true
         if (PrecisionRulesPlatform.isInsideWebView(a, all) || PrecisionRulesPlatform.isInsideWebView(b, all)) return true
@@ -149,9 +144,7 @@ internal object PrecisionStructural {
             return true
         }
         if (a.isWebView() || b.isWebView()) return true
-        if (!PrecisionHome.isHomeScreenContext(all, packageName)) return false
-        return PrecisionHome.shouldSkipHomeWidgetAnalysis(a, all, packageName) ||
-            PrecisionHome.shouldSkipHomeWidgetAnalysis(b, all, packageName)
+        return false
     }
 
     /**
@@ -250,10 +243,7 @@ internal object PrecisionStructural {
                 (
                     other.className.contains("RecyclerView", true) ||
                         other.className.contains("ViewPager", true) ||
-                        PrecisionGeometry.viewIdShort(other) in setOf(
-                            "recycler_distinte", "recycler_effetti", "recycler",
-                            "content", "layout_content",
-                        ) ||
+                        PrecisionGeometry.viewIdShort(other) in setOf("recycler", "content", "layout_content") ||
                         (PrecisionLabels.isKnownListTemplateId(other.viewId, packageName) && other.bounds.area() > snap.bounds.area() * 2)
                     )
         }

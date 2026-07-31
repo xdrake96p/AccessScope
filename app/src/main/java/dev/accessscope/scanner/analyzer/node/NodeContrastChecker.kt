@@ -2,7 +2,6 @@ package dev.accessscope.scanner.analyzer.node
 
 import android.graphics.Bitmap
 import android.graphics.Rect
-import dev.accessscope.scanner.analyzer.AppPrecisionProfiles
 import dev.accessscope.scanner.analyzer.CheckCollector
 import dev.accessscope.scanner.analyzer.NodeSnapshot
 import dev.accessscope.scanner.analyzer.PrecisionRules
@@ -29,14 +28,12 @@ internal object NodeContrastChecker {
     ) {
         if (PrecisionRules.isLayoutContainer(snap.className)) return
         if (PrecisionRules.isLikelyStatusBadge(snap)) return
-        if (PrecisionRules.isHomeChartDecorativeText(snap, all, packageName)) return
-        if (PrecisionRules.isBrandedOrPrimaryCtaText(snap, all, packageName)) return
         val screenArea = bitmap.width * bitmap.height
         if (PrecisionRules.shouldSkipContrastCheck(snap, all, packageName, screenArea)) return
         if (PrecisionRules.shouldSkipTopBarIconContrast(snap, all, viewport)) return
         if (screenArea > 0 && snap.area() > screenArea * 0.6) return
 
-        val largeTextIds = AppPrecisionProfiles.largeTextViewIds(packageName)
+        val largeTextIds = emptySet<String>()
         val hintOnly = snap.isEditable && snap.text.isNullOrBlank() && !snap.hintText.isNullOrBlank()
 
         if (snap.hasVisibleText() || hintOnly) {

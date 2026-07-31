@@ -1,7 +1,7 @@
 /**
  * Overlay foreground REC per la registrazione Maestro (Beta).
  *
- * Mostra anteprima YAML live, contatore step, modalità PICK e STOP.
+ * Barra compatta di default (REC + step + STOP); espandibile per YAML/PICK/UNDO.
  */
 package dev.accessscope.scanner.service
 
@@ -43,6 +43,7 @@ import dev.accessscope.scanner.util.AppFileLogger
 
 /**
  * Overlay trascinabile durante la registrazione flussi Maestro.
+ * Minimizzato all’avvio: solo handle + contatore + STOP; tap su ▸ per espandere.
  */
 class RecordingOverlayService : Service() {
 
@@ -53,8 +54,11 @@ class RecordingOverlayService : Service() {
     private var stepCountView: TextView? = null
     private var pickBtn: TextView? = null
     private var pauseBtn: TextView? = null
+    private var expandBtn: TextView? = null
     private var pickKindsRow: LinearLayout? = null
-    private var expanded = true
+    private var expandedPanel: LinearLayout? = null
+    /** Compatto all’avvio: STOP sempre visibile in header. */
+    private var expanded = false
 
     private val previewReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
@@ -68,10 +72,10 @@ class RecordingOverlayService : Service() {
                 paused -> "# PAUSA\n$snippet"
                 else -> snippet.ifBlank { "# in attesa di step…" }
             }
-            stepCountView?.text = if (paused) "$steps · PAUSA" else "$steps step"
+            stepCountView?.text = if (paused) "$steps · PAUSA" else "$steps"
             pickBtn?.text = if (pick) "PICK ON" else "PICK"
             pauseBtn?.text = if (paused) "RESUME" else "PAUSE"
-            pickKindsRow?.visibility = if (pick) View.VISIBLE else View.GONE
+            pickKindsRow?.visibility = if (pick && expanded) View.VISIBLE else View.GONE
         }
     }
 
@@ -86,7 +90,6 @@ class RecordingOverlayService : Service() {
             filter,
             ContextCompat.RECEIVER_NOT_EXPORTED,
         )
-        // Prima anteprima.
         val app = application as AccessScopeApp
         val st = app.recordingController.state.value
         if (st.isRecording && !st.targetPackage.isNullOrBlank()) {
@@ -119,6 +122,7 @@ class RecordingOverlayService : Service() {
         val ctrl = (application as AccessScopeApp).recordingController
         val next = !ctrl.state.value.pickMode
         ctrl.setPickMode(next)
+        if (next && !expanded) setExpanded(true)
     }
 
     private fun togglePause() {
@@ -132,15 +136,23 @@ class RecordingOverlayService : Service() {
         ctrl.setPickMode(true)
     }
 
+    private fun setExpanded(value: Boolean) {
+        expanded = value
+        expandedPanel?.visibility = if (expanded) View.VISIBLE else View.GONE
+        expandBtn?.text = if (expanded) "▾" else "▸"
+        val pickOn = (application as AccessScopeApp).recordingController.state.value.pickMode
+        pickKindsRow?.visibility = if (expanded && pickOn) View.VISIBLE else View.GONE
+    }
+
     private fun showOverlay() {
         windowManager = getSystemService(WINDOW_SERVICE) as WindowManager
         val density = resources.displayMetrics.density
-        val pad = (8 * density).toInt()
+        val pad = (6 * density).toInt()
 
         val cardBg = GradientDrawable().apply {
             setColor(0xE6121820.toInt())
             setStroke((1 * density).toInt(), 0x55FFFFFF)
-            cornerRadius = 14 * density
+            cornerRadius = 12 * density
         }
 
         val root = LinearLayout(this).apply {
@@ -148,33 +160,50 @@ class RecordingOverlayService : Service() {
             background = cardBg
             setPadding(pad, pad, pad, pad)
             elevation = 12f
-            minimumWidth = (220 * density).toInt()
         }
 
+        // Header compatto: drag · step · expand · STOP (sempre visibile).
         val header = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
         }
         val dragHandle = TextView(this).apply {
-            text = "⋮⋮ REC"
+            text = "⋮ REC"
             setTextColor(0xCCFFFFFF.toInt())
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 10f)
             setTypeface(typeface, Typeface.BOLD)
             layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
         }
         stepCountView = TextView(this).apply {
-            text = "0 step"
+            text = "0"
             setTextColor(0xAAFFFFFF.toInt())
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 10f)
+            setPadding(0, 0, (6 * density).toInt(), 0)
+        }
+        expandBtn = chipButton("▸", density, compact = true) {
+            setExpanded(!expanded)
+        }
+        val stopBtn = chipButton("STOP", density, accent = 0xFFBA1A1A.toInt(), compact = true) {
+            stopRecordingNow("overlay")
         }
         header.addView(dragHandle)
         header.addView(stepCountView)
+        header.addView(expandBtn)
+        header.addView(stopBtn)
         root.addView(header)
+
+        // Pannello espandibile: YAML + azioni secondarie.
+        val panel = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            visibility = View.GONE
+            setPadding(0, pad, 0, 0)
+        }
+        expandedPanel = panel
 
         val yamlScroll = ScrollView(this).apply {
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
-                (110 * density).toInt(),
+                (88 * density).toInt(),
             )
         }
         yamlView = TextView(this).apply {
@@ -185,14 +214,8 @@ class RecordingOverlayService : Service() {
             setPadding(pad / 2, pad / 2, pad / 2, pad / 2)
         }
         yamlScroll.addView(yamlView)
-        root.addView(yamlScroll)
+        panel.addView(yamlScroll)
 
-        pickKindsRow = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            visibility = View.GONE
-            val hsv = HorizontalScrollView(this@RecordingOverlayService)
-            // populated below via chips in parent
-        }
         val kindsScroll = HorizontalScrollView(this)
         val kindsInner = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
         listOf(
@@ -203,23 +226,26 @@ class RecordingOverlayService : Service() {
             "2×" to PickActionKind.DOUBLE_TAP,
             "long" to PickActionKind.LONG_PRESS,
         ).forEach { (label, kind) ->
-            kindsInner.addView(chipButton(label, density) { setPickKind(kind) })
+            kindsInner.addView(chipButton(label, density, compact = true) { setPickKind(kind) })
         }
         kindsScroll.addView(kindsInner)
         pickKindsRow = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             visibility = View.GONE
+            setPadding(0, pad / 2, 0, 0)
             addView(kindsScroll)
         }
-        root.addView(pickKindsRow)
+        panel.addView(pickKindsRow)
 
+        val actionsScroll = HorizontalScrollView(this).apply {
+            setPadding(0, pad / 2, 0, 0)
+        }
         val actionsRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
-            setPadding(0, pad, 0, 0)
         }
-        pickBtn = chipButton("PICK", density, accent = 0xFF0D9488.toInt()) { togglePick() }
-        pauseBtn = chipButton("PAUSE", density, accent = 0xFFCA8A04.toInt()) { togglePause() }
-        val undoBtn = chipButton("UNDO", density) {
+        pickBtn = chipButton("PICK", density, accent = 0xFF0D9488.toInt(), compact = true) { togglePick() }
+        pauseBtn = chipButton("PAUSE", density, accent = 0xFFCA8A04.toInt(), compact = true) { togglePause() }
+        val undoBtn = chipButton("UNDO", density, compact = true) {
             val ok = (application as? AccessScopeApp)?.recordingController?.undoLastStep() == true
             Toast.makeText(
                 this,
@@ -227,7 +253,7 @@ class RecordingOverlayService : Service() {
                 Toast.LENGTH_SHORT,
             ).show()
         }
-        val optBtn = chipButton("OPT", density, accent = 0xFF7C3AED.toInt()) {
+        val optBtn = chipButton("OPT", density, accent = 0xFF7C3AED.toInt(), compact = true) {
             val ok = (application as? AccessScopeApp)?.recordingController?.markLastTapOptional() == true
             Toast.makeText(
                 this,
@@ -235,24 +261,17 @@ class RecordingOverlayService : Service() {
                 Toast.LENGTH_SHORT,
             ).show()
         }
-        val collapseBtn = chipButton("↕", density) {
-            expanded = !expanded
-            yamlScroll.visibility = if (expanded) View.VISIBLE else View.GONE
-        }
-        val stopBtn = chipButton("STOP", density, accent = 0xFFBA1A1A.toInt()) {
-            stopRecordingNow("overlay")
-        }
         actionsRow.addView(pickBtn)
         actionsRow.addView(pauseBtn)
         actionsRow.addView(undoBtn)
         actionsRow.addView(optBtn)
-        actionsRow.addView(collapseBtn)
-        actionsRow.addView(stopBtn)
-        root.addView(actionsRow)
+        actionsScroll.addView(actionsRow)
+        panel.addView(actionsScroll)
+        root.addView(panel)
 
         val metrics = resources.displayMetrics
         val params = WindowManager.LayoutParams(
-            (248 * density).toInt(),
+            (168 * density).toInt(),
             WindowManager.LayoutParams.WRAP_CONTENT,
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
@@ -266,7 +285,7 @@ class RecordingOverlayService : Service() {
         ).apply {
             gravity = Gravity.TOP or Gravity.END
             x = (8 * density).toInt()
-            y = (100 * density).toInt()
+            y = (72 * density).toInt()
         }
 
         var downX = 0f
@@ -303,26 +322,27 @@ class RecordingOverlayService : Service() {
         label: String,
         density: Float,
         accent: Int = 0xFF334155.toInt(),
+        compact: Boolean = false,
         onClick: () -> Unit,
     ): TextView {
         val btnBg = GradientDrawable().apply {
             setColor(accent)
-            cornerRadius = 20 * density
+            cornerRadius = 16 * density
         }
         return TextView(this).apply {
             text = label
             setTextColor(Color.WHITE)
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 11f)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, if (compact) 10f else 11f)
             setTypeface(typeface, Typeface.BOLD)
             background = RippleDrawable(ColorStateList.valueOf(0x44FFFFFF), btnBg, null)
-            val vPad = (8 * density).toInt()
-            val hPad = (12 * density).toInt()
+            val vPad = ((if (compact) 5 else 8) * density).toInt()
+            val hPad = ((if (compact) 8 else 12) * density).toInt()
             setPadding(hPad, vPad, hPad, vPad)
             val lp = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.WRAP_CONTENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT,
             )
-            lp.marginEnd = (6 * density).toInt()
+            lp.marginEnd = (4 * density).toInt()
             layoutParams = lp
             setOnClickListener { onClick() }
         }
@@ -359,7 +379,7 @@ class RecordingOverlayService : Service() {
         )
         return NotificationCompat.Builder(this, channelId)
             .setContentTitle("AccessScope · Maestro (Beta)")
-            .setContentText("YAML live + PICK — STOP per salvare")
+            .setContentText("REC attiva — STOP sull’overlay o qui")
             .setSmallIcon(R.drawable.ic_access_scope_logo)
             .setContentIntent(openApp)
             .addAction(0, "Stop", stop)

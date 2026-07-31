@@ -7,7 +7,6 @@ import android.graphics.Rect
 import dev.accessscope.scanner.analyzer.AppPrecisionProfiles
 import dev.accessscope.scanner.analyzer.NodeSnapshot
 import dev.accessscope.scanner.analyzer.precision.PrecisionGeometry
-import dev.accessscope.scanner.analyzer.precision.PrecisionHome
 import dev.accessscope.scanner.analyzer.precision.PrecisionNavigation
 import dev.accessscope.scanner.analyzer.precision.PrecisionRulesPlatform
 
@@ -116,9 +115,7 @@ fun hasLabeledDescendantInScroll(snap: NodeSnapshot, all: List<NodeSnapshot>): B
  * @return `true` se il controllo etichetta va saltato; `false` altrimenti.
  */
 fun shouldSkipContainerLabelCheck(snap: NodeSnapshot, all: List<NodeSnapshot>, packageName: String = ""): Boolean {
-    if (PrecisionHome.shouldSkipHomeWidgetAnalysis(snap, all, packageName)) return true
     if (PrecisionNavigation.isCarouselContentContainer(snap, all, packageName)) return true
-    if (PrecisionHome.isCtaContainer(snap, packageName) && PrecisionHome.hasTvCustomDescendant(snap, all)) return true
     if (!snap.hasAccessibleName()) {
         if (hasLabeledDescendant(snap, all) || hasLabeledDescendantInScroll(snap, all)) return true
         if (isLayoutContainer(snap.className) || snap.isCustomView()) {

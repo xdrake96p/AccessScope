@@ -138,6 +138,23 @@ internal class ScanSessionController(
             uiState.update { it.copy(statusMessage = "Abilita il servizio di accessibilità AccessScope.") }
             return
         }
+        if (!state.accessibilityConnected) {
+            appListController.logSelectionForStart("start_scan_blocked_a11y_unbound")
+            PermissionHelper.safeStartSettingsIntent(
+                context,
+                PermissionHelper.accessibilityServiceIntent(
+                    context,
+                    AccessScopeAccessibilityService::class.java,
+                ),
+            )
+            uiState.update {
+                it.copy(
+                    statusMessage = "Accessibilità ON ma servizio non collegato. " +
+                        "In Accessibilità: OFF → attendi → ON → Consenti.",
+                )
+            }
+            return
+        }
         if (!state.overlayGranted) {
             appListController.logSelectionForStart("start_scan_blocked_overlay")
             uiState.update { it.copy(statusMessage = "Concedi il permesso di sovrapposizione.") }

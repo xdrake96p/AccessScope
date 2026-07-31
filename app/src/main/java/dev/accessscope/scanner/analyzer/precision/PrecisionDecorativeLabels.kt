@@ -3,19 +3,13 @@
  */
 package dev.accessscope.scanner.analyzer.precision
 
-import android.graphics.Rect
-import dev.accessscope.scanner.analyzer.AppPrecisionProfiles
 import dev.accessscope.scanner.analyzer.NodeSnapshot
-import dev.accessscope.scanner.analyzer.precision.PrecisionGeometry
-import dev.accessscope.scanner.analyzer.precision.PrecisionHome
 import dev.accessscope.scanner.analyzer.precision.PrecisionNavigation
 import dev.accessscope.scanner.analyzer.precision.PrecisionRulesPlatform
 
 internal object PrecisionDecorativeLabels {
 fun isDecorative(snap: NodeSnapshot): Boolean {
     if (PrecisionNavigation.isTopBarControl(snap)) return false
-    val id = PrecisionGeometry.viewIdShort(snap)
-    if (id in setOf("vop_info", "dot_filter")) return false
     if (PrecisionRulesPlatform.isLottieAnimation(snap) && !snap.isInteractiveClickable()) return true
     return snap.isLikelyDecorative
 }

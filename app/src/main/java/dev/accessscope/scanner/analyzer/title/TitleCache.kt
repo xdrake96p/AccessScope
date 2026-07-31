@@ -28,14 +28,7 @@ internal object TitleCache {
     }
 
     fun shouldCacheTitle(root: AccessibilityNodeInfo, title: String, ids: Set<String>): Boolean {
-        if (title.equals("Ultimi insoluti", ignoreCase = true) && NexiTitleHeuristics.hasHomeMarkers(ids)) return false
         if (ids.any { it.startsWith("nav_") }) return false
-        val contentTitle = TitleCandidateLogic.inferTitleFromContentMarkers(ids)
-        if (contentTitle != null && !title.equals(contentTitle, ignoreCase = true) &&
-            !TitleCandidateLogic.isToolbarConsistentWithContent(title, ids)
-        ) {
-            return false
-        }
         return true
     }
 
@@ -44,30 +37,13 @@ internal object TitleCache {
      */
     fun canReuseCachedTitle(root: AccessibilityNodeInfo, cached: String, ids: Set<String>): Boolean {
         if (ids.any { it.startsWith("nav_") }) return false
-        if (cached.equals("Ultimi insoluti", ignoreCase = true) && NexiTitleHeuristics.hasHomeMarkers(ids)) return false
-        if (cached.equals("Ultimi insoluti", ignoreCase = true) &&
-            (ids.contains("recycler_distinte") || ids.contains("vop_info"))
-        ) {
-            return false
-        }
-        TitleCandidateLogic.inferTitleFromContentMarkers(ids)?.let { contentTitle ->
-            if (!cached.equals(contentTitle, ignoreCase = true) &&
-                !TitleCandidateLogic.isToolbarConsistentWithContent(cached, ids)
-            ) {
-                return false
-            }
-        }
         if (TitleTreeWalker.hasScrollableContent(root) && hasActivityChrome(ids)) {
             TitleTreeWalker.findTopBarTitle(root)?.let { top ->
                 return top.equals(cached, ignoreCase = true)
             }
-            TitleCandidateLogic.inferTitleFromContentMarkers(ids)?.let { content ->
-                return content.equals(cached, ignoreCase = true)
-            }
             return false
         }
-        val fresh = TitleTreeWalker.findSectionTitle(root) ?: NexiTitleHeuristics.findKnownNexiTitles(root) ?:
-            NexiTitleHeuristics.findByDistinctiveIds(root)
+        val fresh = TitleTreeWalker.findSectionTitle(root)
         if (fresh != null && !fresh.equals(cached, ignoreCase = true)) return false
         return true
     }

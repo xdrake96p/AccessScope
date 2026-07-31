@@ -31,10 +31,9 @@ internal object NodeSingleNodeChecker {
     ) {
         if (PrecisionRules.shouldSkipDrawerNode(snap)) return
         if (PrecisionRules.shouldSkipPinPadWhenNotPinScreen(snap, screenTitle, packageName)) return
-        if (PrecisionRules.shouldSkipHomeWidgetAnalysis(snap, all, packageName)) return
         if (PrecisionRules.shouldSkipStructuralNoise(snap, viewport, screenWidth, packageName)) return
         if (PrecisionRules.shouldSkipPlatformNoiseAnalysis(snap, all, packageName)) return
-        val inMaterialCalendar = PrecisionRules.isMaterialCalendarRelatedNode(snap, screenTitle, all)
+        val inMaterialCalendar = PrecisionRules.isMaterialCalendarRelatedNode(snap, all)
 
         NodeLabelsSingleChecker.check(
             snap, all, packageName, screenTitle, violations, scanScope, screenFingerprint,

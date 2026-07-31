@@ -7,8 +7,6 @@
 package dev.accessscope.scanner.analyzer
 
 import android.view.accessibility.AccessibilityNodeInfo
-import dev.accessscope.scanner.analyzer.title.TitleCandidateLogic
-import dev.accessscope.scanner.analyzer.title.TitleTreeWalker
 import java.util.ArrayDeque
 
 /**
@@ -37,13 +35,13 @@ object ScreenFingerprint {
     }
 
     /**
-     * Titolo stabile per fingerprint: preferisce content markers al titolo display oscillante.
+     * Titolo stabile per fingerprint.
+     *
+     * @param root Non usato direttamente: mantenuto per compatibilità di firma con i chiamanti esistenti.
+     * @param displayTitle Titolo già risolto da [ScreenTitleResolver].
      */
-    fun fingerprintTitle(root: AccessibilityNodeInfo, displayTitle: String): String {
-        val rootIds = TitleTreeWalker.collectViewIdShorts(root)
-        return TitleCandidateLogic.inferTitleFromContentMarkers(rootIds)?.trim()?.takeIf { it.isNotBlank() }
-            ?: displayTitle.trim().ifBlank { "unknown" }
-    }
+    fun fingerprintTitle(root: AccessibilityNodeInfo, displayTitle: String): String =
+        displayTitle.trim().ifBlank { "unknown" }
 
     /** Formato fingerprint per test (chrome già raccolto). */
     internal fun formatForTest(packageName: String, title: String, chromeIds: List<String>): String {

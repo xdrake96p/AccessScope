@@ -27,17 +27,13 @@ object PrecisionRules {
     fun isPhantomClickableBounds(snap: NodeSnapshot): Boolean = PrecisionRulesApp.isPhantomClickableBounds(snap)
     fun shouldSkipDrawerNode(snap: NodeSnapshot): Boolean = PrecisionRulesApp.shouldSkipDrawerNode(snap)
     fun isCarouselContentContainer(snap: NodeSnapshot, all: List<NodeSnapshot>, packageName: String): Boolean = PrecisionRulesApp.isCarouselContentContainer(snap, all, packageName)
-    fun shouldReportMissingTopBarLabel(snap: NodeSnapshot, all: List<NodeSnapshot>): Boolean = PrecisionRulesApp.shouldReportMissingTopBarLabel(snap, all)
     fun isIconInsideLabeledButton(snap: NodeSnapshot, all: List<NodeSnapshot>): Boolean = PrecisionRulesApp.isIconInsideLabeledButton(snap, all)
     fun isIconWithLabeledSibling(snap: NodeSnapshot, all: List<NodeSnapshot>): Boolean = PrecisionRulesApp.isIconWithLabeledSibling(snap, all)
     fun hasLabeledClickableAncestor(snap: NodeSnapshot, all: List<NodeSnapshot>): Boolean = PrecisionRulesApp.hasLabeledClickableAncestor(snap, all)
     fun hasLabeledDescendant(snap: NodeSnapshot, all: List<NodeSnapshot>): Boolean = PrecisionRulesApp.hasLabeledDescendant(snap, all)
     fun hasLabeledDescendantInScroll(snap: NodeSnapshot, all: List<NodeSnapshot>): Boolean = PrecisionRulesApp.hasLabeledDescendantInScroll(snap, all)
-    fun isHomeScreenContext(all: List<NodeSnapshot>, packageName: String = ""): Boolean = PrecisionRulesApp.isHomeScreenContext(all, packageName)
     fun isPinPadKey(snap: NodeSnapshot, packageName: String = ""): Boolean = PrecisionRulesApp.isPinPadKey(snap, packageName)
     fun shouldSkipPinPadWhenNotPinScreen(snap: NodeSnapshot, screenTitle: String, packageName: String = ""): Boolean = PrecisionRulesApp.shouldSkipPinPadWhenNotPinScreen(snap, screenTitle, packageName)
-    fun shouldSkipHomeWidgetAnalysis(snap: NodeSnapshot, all: List<NodeSnapshot>, packageName: String): Boolean = PrecisionRulesApp.shouldSkipHomeWidgetAnalysis(snap, all, packageName)
-    fun isHomeEffettiCarouselNode(snap: NodeSnapshot, all: List<NodeSnapshot>, packageName: String): Boolean = PrecisionRulesApp.isHomeEffettiCarouselNode(snap, all, packageName)
     fun shouldSkipSilentDynamicContent(
         screenTitle: String,
         snapshots: List<NodeSnapshot>,
@@ -54,7 +50,6 @@ object PrecisionRules {
     fun shouldSkipCarouselListItemAnalysis(snap: NodeSnapshot, all: List<NodeSnapshot>, packageName: String): Boolean = PrecisionRulesApp.shouldSkipCarouselListItemAnalysis(snap, all, packageName)
     fun isMainContentScroll(snap: NodeSnapshot, screenArea: Int, packageName: String = ""): Boolean = PrecisionRulesApp.isMainContentScroll(snap, screenArea, packageName)
     fun isCtaContainer(snap: NodeSnapshot, packageName: String = ""): Boolean = PrecisionRulesApp.isCtaContainer(snap, packageName)
-    fun hasTvCustomDescendant(snap: NodeSnapshot, all: List<NodeSnapshot>): Boolean = PrecisionRulesApp.hasTvCustomDescendant(snap, all)
     fun shouldSkipContainerLabelCheck(snap: NodeSnapshot, all: List<NodeSnapshot>, packageName: String = ""): Boolean = PrecisionRulesApp.shouldSkipContainerLabelCheck(snap, all, packageName)
     fun isWideTapTarget(snap: NodeSnapshot): Boolean = PrecisionRulesApp.isWideTapTarget(snap)
     fun isButtonLikeTapTarget(snap: NodeSnapshot): Boolean = PrecisionRulesApp.isButtonLikeTapTarget(snap)
@@ -64,11 +59,6 @@ object PrecisionRules {
     fun isKnownContrastFieldLabel(snap: NodeSnapshot, packageName: String = ""): Boolean = PrecisionRulesApp.isKnownContrastFieldLabel(snap, packageName)
     fun isCurrencyOrAmountText(text: String): Boolean = PrecisionRulesApp.isCurrencyOrAmountText(text)
     fun isKnownListTemplateId(viewId: String?, packageName: String = ""): Boolean = PrecisionRulesApp.isKnownListTemplateId(viewId, packageName)
-    fun isHomeChartOrCtaWidget(snap: NodeSnapshot, packageName: String = ""): Boolean = PrecisionRulesApp.isHomeChartOrCtaWidget(snap, packageName)
-    fun isHomeChartDecorativeText(snap: NodeSnapshot, all: List<NodeSnapshot>, packageName: String = ""): Boolean = PrecisionRulesApp.isHomeChartDecorativeText(snap, all, packageName)
-    fun isInsideHomeChartContainer(snap: NodeSnapshot, all: List<NodeSnapshot>, packageName: String = ""): Boolean = PrecisionRulesApp.isInsideHomeChartContainer(snap, all, packageName)
-    fun isBrandedCtaText(snap: NodeSnapshot, all: List<NodeSnapshot>, packageName: String = ""): Boolean = PrecisionRulesApp.isBrandedCtaText(snap, all, packageName)
-    fun isBrandedOrPrimaryCtaText(snap: NodeSnapshot, all: List<NodeSnapshot>, packageName: String = ""): Boolean = PrecisionRulesApp.isBrandedOrPrimaryCtaText(snap, all, packageName)
     fun isEmptyTextSurfaceWithoutContent(snap: NodeSnapshot): Boolean = PrecisionRulesApp.isEmptyTextSurfaceWithoutContent(snap)
     fun shouldSkipContrastCheck(
         snap: NodeSnapshot,
@@ -87,17 +77,15 @@ object PrecisionRules {
         all: List<NodeSnapshot>,
         screenAreaPx: Int,
     ): Boolean = PrecisionRulesApp.isTextOverIllustratedBackground(snap, all, screenAreaPx)
-    fun isMaterialCalendarContext(screenTitle: String, snapshots: List<NodeSnapshot>): Boolean = PrecisionRulesApp.isMaterialCalendarContext(screenTitle, snapshots)
+    fun isMaterialCalendarContext(snapshots: List<NodeSnapshot>): Boolean = PrecisionRulesApp.isMaterialCalendarContext(snapshots)
     fun isMaterialCalendarDayCell(
         snap: NodeSnapshot,
-        screenTitle: String,
         snapshots: List<NodeSnapshot>,
-    ): Boolean = PrecisionRulesApp.isMaterialCalendarDayCell(snap, screenTitle, snapshots)
+    ): Boolean = PrecisionRulesApp.isMaterialCalendarDayCell(snap, snapshots)
     fun isMaterialCalendarRelatedNode(
         snap: NodeSnapshot,
-        screenTitle: String,
         snapshots: List<NodeSnapshot>,
-    ): Boolean = PrecisionRulesApp.isMaterialCalendarRelatedNode(snap, screenTitle, snapshots)
+    ): Boolean = PrecisionRulesApp.isMaterialCalendarRelatedNode(snap, snapshots)
     fun hasFocusableOrEditableDescendant(snap: NodeSnapshot, all: List<NodeSnapshot>): Boolean = PrecisionRulesApp.hasFocusableOrEditableDescendant(snap, all)
     fun isTabStripNode(snap: NodeSnapshot, packageName: String = ""): Boolean = PrecisionRulesApp.isTabStripNode(snap, packageName)
     fun isStructuralScrollOverlap(

@@ -26,9 +26,7 @@ internal object TitleTopBarWalker {
     
                 if (isBar || viewId.endsWith("/topbar_title") || viewId.endsWith("/toolbar_title")) {
                     val titleText = findTitleTextInBar(node)
-                    if (!titleText.isNullOrBlank() && !TitleCandidateLogic.looksLikeAmount(titleText) &&
-                        !NexiTitleHeuristics.isKnownSectionTitle(titleText)
-                    ) {
+                    if (!titleText.isNullOrBlank() && !TitleCandidateLogic.looksLikeAmount(titleText)) {
                         return TitleCandidateLogic.humanizeTitle(titleText)
                     }
                 }

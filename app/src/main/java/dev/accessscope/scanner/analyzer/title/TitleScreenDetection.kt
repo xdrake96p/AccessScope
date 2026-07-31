@@ -4,11 +4,19 @@ import android.view.accessibility.AccessibilityNodeInfo
 
 internal object TitleScreenDetection {
 
+    /** Chrome strutturale dell'activity (toolbar, tab, bottom nav) — pattern generici Android. */
+    private fun hasActivityChrome(ids: Set<String>): Boolean =
+        ids.any { id ->
+            id.contains("topbar") || id.contains("toolbar") || id.contains("tab_") ||
+                id.contains("bottom_nav") || id.contains("navigation") || id.contains("nav_host") ||
+                id.contains("action_bar") || id.contains("appbar")
+        }
+
     /**
      * Verifica se la radice rappresenta solo il menu laterale (drawer), senza contenuto principale.
      *
-     * Considera drawer-only una finestra con almeno due viewId `nav_*` e nessun marker
-     * del contenuto principale dell'app.
+     * Considera drawer-only una finestra con almeno due viewId `nav_*` e nessun chrome
+     * strutturale dell'activity (toolbar/tab/bottom nav), per convenzione di naming comune.
      *
      * @param root Nodo radice della finestra o del sottoalbero da valutare.
      * @return `true` se l'albero contiene prevalentemente navigazione laterale senza fragment principale.
@@ -17,7 +25,7 @@ internal object TitleScreenDetection {
         val ids = TitleTreeWalker.collectViewIdShorts(root)
         val navCount = ids.count { it.startsWith("nav_") }
         if (navCount < 2) return false
-        return !ids.any { it in NexiTitleHeuristics.MAIN_CONTENT_MARKER_IDS }
+        return !hasActivityChrome(ids)
     }
 
     /**
@@ -32,10 +40,8 @@ internal object TitleScreenDetection {
     fun isTransientOverlay(root: AccessibilityNodeInfo): Boolean {
         val ids = TitleTreeWalker.collectViewIdShorts(root)
         val hasLogo = "logo" in ids
-        val hasNav = ids.any { it in NexiTitleHeuristics.NAV_HINT_IDS }
-        val hasKnownTitle = TitleTreeWalker.findSectionTitle(root) != null ||
-            NexiTitleHeuristics.findKnownNexiTitles(root) != null ||
-            NexiTitleHeuristics.findByDistinctiveIds(root) != null
+        val hasNav = hasActivityChrome(ids) || ids.any { it.startsWith("nav_") }
+        val hasKnownTitle = TitleTreeWalker.findSectionTitle(root) != null
         return hasLogo && !hasNav && !hasKnownTitle
     }
 

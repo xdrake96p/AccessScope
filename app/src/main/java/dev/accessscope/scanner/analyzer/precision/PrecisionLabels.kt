@@ -57,11 +57,9 @@ private fun shouldReportCustomActionImpl(snap: NodeSnapshot, all: List<NodeSnaps
     if (!snap.isInteractiveClickable() && !snap.isFocusable) return false
     if (PrecisionStructural.isRecyclerListItem(snap, all)) return false
     if (PrecisionNavigation.isCarouselContentContainer(snap, all, packageName)) return false
-    if (PrecisionHome.isHomeChartOrCtaWidget(snap, packageName)) return false
     val id = PrecisionGeometry.viewIdShort(snap)
     if (id.contains("select") || id.contains("selection")) return false
-    if (id in setOf("multiple_slection", "checkbox_all") && snap.hasAccessibleName()) return false
-    if (PrecisionHome.isCtaContainer(snap, packageName) && (PrecisionHome.hasTvCustomDescendant(snap, all) || PrecisionLabelHierarchy.hasLabeledDescendant(snap, all))) {
+    if (PrecisionHome.isCtaContainer(snap, packageName) && PrecisionLabelHierarchy.hasLabeledDescendant(snap, all)) {
         return false
     }
     val cls = snap.className.lowercase()
@@ -69,9 +67,7 @@ private fun shouldReportCustomActionImpl(snap: NodeSnapshot, all: List<NodeSnaps
     if (cls.contains("recyclerview") || cls.contains("scrollview") || cls.contains("viewpager")) {
         return false
     }
-    if (PrecisionGeometry.viewIdShort(snap) in setOf("scrollview_port", "scroll", "card_home")) return false
-    if (PrecisionGeometry.viewIdShort(snap) == "tv_custom") return false
-    if (PrecisionHome.isBrandedCtaText(snap, all, packageName)) return false
+    if (id in setOf("scrollview_port", "scroll")) return false
     if (snap.isScrollable && PrecisionLabelHierarchy.hasLabeledDescendant(snap, all)) return false
     if (isLayoutContainerImpl(snap.className) && PrecisionLabelHierarchy.hasLabeledDescendant(snap, all)) return false
     return true

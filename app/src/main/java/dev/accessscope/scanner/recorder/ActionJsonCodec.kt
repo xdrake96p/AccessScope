@@ -75,6 +75,7 @@ object ActionJsonCodec {
                         },
                     )
                 }
+                if (action.weakSelector) put("weakSelector", true)
             }
             is RecordedAction.DoubleTap -> {
                 putOpt("viewId", action.viewId)
@@ -155,6 +156,7 @@ object ActionJsonCodec {
                 conditionVisibleId = o.optStringOrNull("conditionVisibleId"),
                 conditionVisibleText = o.optStringOrNull("conditionVisibleText"),
                 selectorChain = parseSelectorChain(o.optJSONArray("selectorChain")),
+                weakSelector = o.optBoolean("weakSelector", false),
                 timestampMs = ts,
             )
             "DoubleTap" -> RecordedAction.DoubleTap(

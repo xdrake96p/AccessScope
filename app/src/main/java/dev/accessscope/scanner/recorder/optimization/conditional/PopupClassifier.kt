@@ -89,11 +89,13 @@ object OptionalStepPolicy {
         actions.mapIndexed { index, action ->
             when (action) {
                 is RecordedAction.Tap -> {
+                    // Rispetta optional già impostato a REC (dismiss/permission).
+                    if (action.executionMode == StepExecutionMode.Optional) return@mapIndexed action
                     val meta = PopupClassifier.classifyTap(action, index, telemetry, intel)
                     action.copy(
                         executionMode = meta.executionMode,
-                        conditionVisibleId = meta.conditionVisibleId,
-                        conditionVisibleText = meta.conditionVisibleText,
+                        conditionVisibleId = meta.conditionVisibleId ?: action.conditionVisibleId,
+                        conditionVisibleText = meta.conditionVisibleText ?: action.conditionVisibleText,
                     )
                 }
                 is RecordedAction.AssertVisible -> {

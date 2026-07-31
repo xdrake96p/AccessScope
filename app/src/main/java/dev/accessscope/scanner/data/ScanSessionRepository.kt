@@ -7,7 +7,7 @@
 package dev.accessscope.scanner.data
 
 import dev.accessscope.scanner.analyzer.CheckCollector
-import dev.accessscope.scanner.report.ReportHelper
+import dev.accessscope.scanner.analyzer.ViolationConfidencePolicy
 import dev.accessscope.scanner.ui.selection.AppSelectionPolicy
 import dev.accessscope.scanner.util.AppFileLogger
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -156,13 +156,19 @@ class ScanSessionRepository(context: android.content.Context) {
         _state.value.violations.find { it.dedupeKey == dedupeKey }
 
     /**
-     * Aggiunge violazioni alla sessione, applicando filtri e deduplicazione.
+     * Aggiunge violazioni alla sessione, applicando demotion di confidenza e deduplicazione.
+     *
+     * Non applica la soglia di confidenza (quella è responsabilità del report, via
+     * [dev.accessscope.scanner.report.ReportHelper.filterViolations] con il toggle
+     * "findings a bassa confidenza"): filtrare qui le scarterebbe in modo permanente,
+     * rendendo quel toggle inefficace su sessioni live/archiviate.
      *
      * @param violations Elenco di violazioni da registrare.
      */
     fun addViolations(violations: List<AccessibilityViolation>) {
-        val filtered = ReportHelper.filterViolations(violations)
-        val newOnes = filtered.filter { violationKeys.add(it.dedupeKey) }
+        val demoted = violations.map { ViolationConfidencePolicy.demoteIfNoisy(it) }
+            .distinctBy { it.dedupeKey }
+        val newOnes = demoted.filter { violationKeys.add(it.dedupeKey) }
         if (newOnes.isEmpty()) return
         _state.update { current ->
             current.copy(violations = current.violations + newOnes)

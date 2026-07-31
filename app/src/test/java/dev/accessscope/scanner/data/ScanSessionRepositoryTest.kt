@@ -88,6 +88,31 @@ class ScanSessionRepositoryTest {
     }
 
     @Test
+    fun addViolations_keepsLowConfidenceFindings_forLaterReportFiltering() {
+        // Bug: se addViolations applicasse la soglia di confidenza in scrittura, i finding
+        // sotto soglia sparirebbero per sempre e il toggle "findings a bassa confidenza"
+        // (ReportHelper.filterViolations) non potrebbe mai recuperarli.
+        repository.startScan(setOf("com.example.app"), ScanScope.FULL)
+        repository.registerUniqueScreen("fp-home", "Home")
+
+        val lowConfidence = AccessibilityViolation(
+            type = ViolationType.MISSING_LABEL,
+            viewClassName = "android.widget.Button",
+            screenTitle = "Home",
+            packageName = "com.example.app",
+            details = "test",
+            viewId = "com.example:id/btn",
+            screenFingerprint = "fp-home",
+            confidence = 0.10f,
+        )
+        repository.addViolations(listOf(lowConfidence))
+
+        val state = repository.state.value
+        assertEquals(1, state.violations.size)
+        assertEquals(0.10f, state.violations.first().confidence)
+    }
+
+    @Test
     fun stopScan_preservesCollectedDataButEndsSession() {
         repository.startScan(setOf("com.example.app"), ScanScope.FULL)
         repository.registerUniqueScreen("fp-home", "Home")

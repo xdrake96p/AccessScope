@@ -157,7 +157,10 @@ class AccessScopeApp : Application() {
         )
 
         if (hadActiveSession) {
-            val filtered = ReportHelper.filterViolations(snapshot.violations)
+            val filtered = ReportHelper.filterViolations(
+                snapshot.violations,
+                scanSettingsStore.includeLowConfidenceFindings,
+            )
             val score = ReportHelper.computeScore(filtered, snapshot.uniqueScreens.coerceAtLeast(1))
             val archived = scanHistoryStore.buildArchivedSession(
                 targetPackages = snapshot.selectedPackages,
@@ -201,6 +204,7 @@ class AccessScopeApp : Application() {
                     scanScopeLabel = current.scanScope.label(),
                     scannedScreens = current.visitedScreenTitles,
                     checkSummaries = current.checkSummaries,
+                    includeLowConfidence = scanSettingsStore.includeLowConfidenceFindings,
                 )
             }
             pdfResult.fold(
@@ -271,15 +275,19 @@ class AccessScopeApp : Application() {
         if (recordingController.isRecording) {
             return "Registrazione già in corso"
         }
-        if (!PermissionHelper.isAccessibilityServiceEnabled(
+        if (!PermissionHelper.isAccessibilityServiceReady(
                 this,
                 AccessScopeAccessibilityService::class.java,
             )
         ) {
-            return "Abilita il servizio di accessibilità AccessScope nelle impostazioni."
-        }
-        // Dopo install/force-stop il toggle può restare ON senza service bound → zero eventi.
-        if (AccessScopeAccessibilityService.instance == null) {
+            if (!PermissionHelper.isAccessibilityServiceEnabled(
+                    this,
+                    AccessScopeAccessibilityService::class.java,
+                )
+            ) {
+                return "Abilita il servizio di accessibilità AccessScope nelle impostazioni."
+            }
+            // Dopo install/force-stop il toggle può restare ON senza service bound → zero eventi.
             PermissionHelper.safeStartSettingsIntent(
                 this,
                 PermissionHelper.accessibilityServiceIntent(
@@ -287,9 +295,9 @@ class AccessScopeApp : Application() {
                     AccessScopeAccessibilityService::class.java,
                 ),
             )
-            return "Accessibilità risulta ON ma il servizio non è collegato " +
-                "(tipico dopo update APK). In Accessibilità: OFF → attendi → ON. " +
-                "Se continua, riavvia il telefono e riprova."
+            return "Accessibilità ON ma servizio non collegato (tipico dopo update APK). " +
+                "In Accessibilità: OFF → attendi 2s → ON → Consenti. " +
+                "Poi torna in AccessScope e riprova. Se continua, riavvia il telefono."
         }
         if (playbackController.isPlaying) {
             return "Ferma prima il playback del flusso"

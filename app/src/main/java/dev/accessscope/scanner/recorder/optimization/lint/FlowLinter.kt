@@ -6,11 +6,17 @@ package dev.accessscope.scanner.recorder.optimization.lint
 import dev.accessscope.scanner.recorder.MaestroSelectorHeuristics
 import dev.accessscope.scanner.recorder.RecordedAction
 
-/** Gravità di una segnalazione di lint. */
-enum class LintSeverity { WARNING, INFO }
+/**
+ * Gravità di una segnalazione di lint.
+ *
+ * [ERROR] è bloccante per il contratto ZeroEdit (gate al save).
+ */
+enum class LintSeverity { ERROR, WARNING, INFO }
 
 /** Tipologia di problema rilevato su uno step. */
 enum class LintRule {
+    /** Solo coordinate % — non esportabile come primario ZeroEdit. */
+    POINT_ONLY_SELECTOR,
     WEAK_SELECTOR,
     TEXT_ONLY_SELECTOR,
     STRUCTURAL_SELECTOR,
@@ -32,6 +38,9 @@ data class FlowLintIssue(
 data class FlowLintReport(
     val issues: List<FlowLintIssue>,
 ) {
+    /** Errori bloccanti ZeroEdit. */
+    val errorCount: Int get() = issues.count { it.severity == LintSeverity.ERROR }
+
     val warningCount: Int get() = issues.count { it.severity == LintSeverity.WARNING }
 
     /** Segnalazioni raggruppate per indice step (editor). */
@@ -71,7 +80,8 @@ object FlowLinter {
                         stepIndex = index,
                         viewId = action.viewId,
                         text = action.text ?: action.contentDescription,
-                        hasPoint = action.pointPercentX != null,
+                        hasPoint = action.pointPercentX != null && action.pointPercentY != null,
+                        weakFlag = action.weakSelector,
                         issues = issues,
                     )
                     if (isSubmitLike(action.text ?: action.contentDescription) &&
@@ -90,7 +100,8 @@ object FlowLinter {
                         stepIndex = index,
                         viewId = action.viewId,
                         text = action.text ?: action.contentDescription,
-                        hasPoint = action.pointPercentX != null,
+                        hasPoint = action.pointPercentX != null && action.pointPercentY != null,
+                        weakFlag = false,
                         issues = issues,
                     )
                 }
@@ -99,7 +110,8 @@ object FlowLinter {
                         stepIndex = index,
                         viewId = action.viewId,
                         text = action.text ?: action.contentDescription,
-                        hasPoint = action.pointPercentX != null,
+                        hasPoint = action.pointPercentX != null && action.pointPercentY != null,
+                        weakFlag = false,
                         issues = issues,
                     )
                 }
@@ -126,13 +138,25 @@ object FlowLinter {
         viewId: String?,
         text: String?,
         hasPoint: Boolean,
+        weakFlag: Boolean,
         issues: MutableList<FlowLintIssue>,
     ) {
+        val noSemantic = viewId.isNullOrBlank() && text.isNullOrBlank()
         when {
-            viewId.isNullOrBlank() && text.isNullOrBlank() && hasPoint ->
+            noSemantic && hasPoint ->
                 issues += FlowLintIssue(
-                    stepIndex, LintRule.WEAK_SELECTOR, LintSeverity.WARNING,
-                    "Solo coordinate percentuali: fragile ai cambi di layout/densità.",
+                    stepIndex, LintRule.POINT_ONLY_SELECTOR, LintSeverity.ERROR,
+                    "Solo coordinate %: usa PICK o un selettore id/testo prima del save.",
+                )
+            noSemantic && !hasPoint ->
+                issues += FlowLintIssue(
+                    stepIndex, LintRule.WEAK_SELECTOR, LintSeverity.ERROR,
+                    "Tap senza selettore: ripeti con PICK sull’elemento.",
+                )
+            weakFlag && noSemantic ->
+                issues += FlowLintIssue(
+                    stepIndex, LintRule.WEAK_SELECTOR, LintSeverity.ERROR,
+                    "Selettore debole segnalato in REC: completa con PICK.",
                 )
             viewId.isNullOrBlank() && !text.isNullOrBlank() ->
                 issues += FlowLintIssue(

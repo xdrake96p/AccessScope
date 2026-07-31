@@ -51,14 +51,16 @@ internal object PrecisionNavigation {
     }
 
     /**
-     * Verifica se il nodo è un controllo della top bar Nexi.
+     * Verifica se il nodo è un controllo della top bar, per convenzione di naming comune
+     * (`topbar`/`toolbar`/`app_bar`/`action_bar` nel viewId), non legata a un'app specifica.
      *
      * @param snap Snapshot del nodo da valutare.
      * @return `true` se il nodo corrisponde a un controllo top bar noto; `false` altrimenti.
      */
     fun isTopBarControl(snap: NodeSnapshot): Boolean {
         val id = PrecisionGeometry.viewIdShort(snap)
-        return id in TOPBAR_CONTROL_IDS || id.startsWith("layout_topbar_icon")
+        return id.contains("topbar") || id.contains("toolbar") ||
+            id.contains("app_bar") || id.contains("action_bar")
     }
 
     /**
@@ -131,51 +133,8 @@ internal object PrecisionNavigation {
         return PrecisionStructural.isRecyclerListItem(snap, all)
     }
 
-    /** Identificatori dei controlli top bar Nexi riconosciuti dalle regole di precisione. */
-    private val TOPBAR_CONTROL_IDS = setOf(
-        "topbar_icon_left",
-        "topbar_icon_right",
-        "layout_topbar_icon_left",
-        "layout_topbar_icon_right",
-        "topbar",
-    )
-
     /**
-     * Verifica se va segnalata l'assenza di etichetta accessibile su un controllo top bar Nexi.
-     *
-     * Controlla i layout cliccabili `layout_topbar_icon_*` senza nome accessibile e le icone
-     * `topbar_icon_*` con content description nulla, tenendo conto di icone figlie o discendenti
-     * già etichettati.
-     *
-     * @param snap Snapshot del nodo top bar da valutare.
-     * @param all Elenco completo degli snapshot dei nodi nella schermata.
-     * @return `true` se manca un'etichetta accessibile e va segnalato; `false` altrimenti.
-     */
-    fun shouldReportMissingTopBarLabel(snap: NodeSnapshot, all: List<NodeSnapshot>): Boolean {
-        val id = PrecisionGeometry.viewIdShort(snap)
-        if (id == "layout_topbar_icon_left" || id == "layout_topbar_icon_right") {
-            if (!snap.isInteractiveClickable()) return false
-            if (snap.hasAccessibleName()) return false
-            val iconId = if (id.contains("left")) "topbar_icon_left" else "topbar_icon_right"
-            val icon = all.firstOrNull { PrecisionGeometry.viewIdShort(it) == iconId && snap.bounds.contains(it.bounds) }
-            if (icon?.hasAccessibleName() == true) return false
-            return !PrecisionLabels.hasLabeledDescendant(snap, all)
-        }
-        if (id == "topbar_icon_left" || id == "topbar_icon_right") {
-            if (!snap.contentDescription.isNullOrBlank()) return false
-            val parentClickable = all.any { other ->
-                other.traversalIndex < snap.traversalIndex &&
-                    other.isInteractiveClickable() &&
-                    other.bounds.contains(snap.bounds) &&
-                    PrecisionGeometry.viewIdShort(other).startsWith("layout_topbar_icon")
-            }
-            if (!snap.isInteractiveClickable() && !parentClickable) return false
-            return true
-        }
-        return false
-    }
-    /**
-     * Verifica se il nodo appartiene a una tab strip (TabLayout custom Nexi).
+     * Verifica se il nodo appartiene a una tab strip (TabLayout custom).
      */
     fun isTabStripNode(snap: NodeSnapshot, packageName: String = ""): Boolean {
         val id = PrecisionGeometry.viewIdShort(snap)

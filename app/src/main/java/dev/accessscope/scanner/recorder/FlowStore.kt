@@ -1,5 +1,8 @@
 /**
  * Persistenza flussi Maestro YAML + actions.json su filesystem app (Maestro Beta).
+ *
+ * Competenza I/O: non contiene euristiche di riconoscimento (vedi capture/) né
+ * ranking selettori (optimization/). Il gate ZeroEdit vive in quality/.
  */
 package dev.accessscope.scanner.recorder
 
@@ -7,7 +10,10 @@ import android.content.Context
 import dev.accessscope.scanner.recorder.model.OptimizationContext
 import dev.accessscope.scanner.recorder.model.FlowTelemetry
 import dev.accessscope.scanner.recorder.optimization.selector.SelectorRanker
+import dev.accessscope.scanner.recorder.quality.ZeroEditGate
+import dev.accessscope.scanner.recorder.quality.ZeroEditReport
 import dev.accessscope.scanner.recorder.telemetry.FlowTelemetryCodec
+import dev.accessscope.scanner.util.AppFileLogger
 import dev.accessscope.scanner.util.DebugSessionLog
 import org.json.JSONArray
 import org.json.JSONObject
@@ -34,8 +40,10 @@ class FlowStore(context: Context) {
         loadIndex().map { it.withActionsFlag() }.sortedByDescending { it.createdAtMs }
 
     /**
-     * Salva un nuovo flusso da azioni (applica [FlowOptimizer] prima di scrivere).
+     * Salva un nuovo flusso da azioni (applica [FlowOptimizer] + gate ZeroEdit).
      *
+     * @param enforceZeroEdit Se `true` (default), heal + lint Error bloccano YAML “sporco”
+     *   (salva comunque gli artifacts heal-ati e logga il report; l’UI può leggere [lastZeroEditReport]).
      * @return [SavedFlow] creato.
      */
     fun saveFlow(
@@ -46,13 +54,27 @@ class FlowStore(context: Context) {
         optimize: Boolean = true,
         optimizationContext: OptimizationContext? = null,
         telemetry: FlowTelemetry? = null,
+        enforceZeroEdit: Boolean = true,
     ): SavedFlow {
         val id = UUID.randomUUID().toString().take(8)
         val safeName = name.ifBlank {
             "Flusso ${SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.ITALY).format(Date())}"
         }
         val ctx = optimizationContext ?: OptimizationContext(appId = appId, telemetry = telemetry)
-        val finalActions = if (optimize) FlowOptimizer.optimize(actions, ctx) else actions
+        val optimized = if (optimize) FlowOptimizer.optimize(actions, ctx) else actions
+        val report = if (enforceZeroEdit && optimize) {
+            ZeroEditGate.evaluate(optimized, healFirst = true)
+        } else {
+            ZeroEditReport(issues = emptyList(), actions = optimized)
+        }
+        lastZeroEditReport = report
+        val finalActions = report.actions
+        if (report.hasErrors) {
+            AppFileLogger.info(
+                "FlowStore",
+                "zero_edit_errors id=$id count=${report.errorCount} msg=${report.userSummary()}",
+            )
+        }
         writeArtifacts(id, appId, safeName, finalActions, ctx)
         if (telemetry != null) {
             telemetryFile(id).writeText(FlowTelemetryCodec.toJson(telemetry), Charsets.UTF_8)
@@ -74,6 +96,11 @@ class FlowStore(context: Context) {
         return flow
     }
 
+    /** Ultimo report ZeroEdit prodotto da [saveFlow] / [updateFlow] (thread UI). */
+    @Volatile
+    var lastZeroEditReport: ZeroEditReport? = null
+        private set
+
     /**
      * Aggiorna azioni/nome di un flusso esistente e rigenera YAML.
      *
@@ -87,16 +114,25 @@ class FlowStore(context: Context) {
         actions: List<RecordedAction>,
         name: String? = null,
         optimize: Boolean = false,
+        enforceZeroEdit: Boolean = false,
     ): SavedFlow? {
         val current = loadIndex()
         val existing = current.find { it.id == id } ?: return null
         val safeName = name?.ifBlank { null } ?: existing.name
-        val finalActions = if (optimize) {
-            FlowOptimizer.optimize(actions, OptimizationContext(appId = existing.appId))
+        val ctx = OptimizationContext(appId = existing.appId)
+        val optimized = if (optimize) {
+            FlowOptimizer.optimize(actions, ctx)
         } else {
             actions
         }
-        writeArtifacts(id, existing.appId, safeName, finalActions, OptimizationContext(appId = existing.appId))
+        val report = if (enforceZeroEdit || optimize) {
+            ZeroEditGate.evaluate(optimized, healFirst = true)
+        } else {
+            ZeroEditReport(issues = emptyList(), actions = optimized)
+        }
+        lastZeroEditReport = report
+        val finalActions = report.actions
+        writeArtifacts(id, existing.appId, safeName, finalActions, ctx)
         // #region agent log
         DebugSessionLog.log(
             "H6",
@@ -107,6 +143,7 @@ class FlowStore(context: Context) {
                 "count" to finalActions.size,
                 "types" to finalActions.joinToString(",") { it::class.simpleName.orEmpty() },
                 "optimize" to optimize,
+                "zeroEditErrors" to report.errorCount,
             ),
         )
         // #endregion

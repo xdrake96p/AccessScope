@@ -56,6 +56,42 @@ class FlowPlayer(
             }
         }
         val total = actions.size
+        // #region agent log
+        val pinSlotInputs = actions.count {
+            it is RecordedAction.InputText &&
+                MaestroSelectorHeuristics.isPinPadDigitSlot(it.viewId)
+        }
+        val pinPadTaps = actions.count {
+            it is RecordedAction.Tap &&
+                (
+                    MaestroSelectorHeuristics.isPinPadKey(it.viewId, it.text) ||
+                        MaestroSelectorHeuristics.isPinPadDigitTap(it.text, it.viewId)
+                    )
+        }
+        val optionalPadTaps = actions.count {
+            it is RecordedAction.Tap &&
+                it.executionMode == StepExecutionMode.Optional &&
+                (
+                    MaestroSelectorHeuristics.isPinPadKey(it.viewId, it.text) ||
+                        MaestroSelectorHeuristics.isPinPadDigitTap(it.text, it.viewId)
+                    )
+        }
+        DebugSessionLog.log(
+            "E",
+            "FlowPlayer.play",
+            "pin_flow_summary",
+            mapOf(
+                "total" to total,
+                "pinSlotInputs" to pinSlotInputs,
+                "pinPadTaps" to pinPadTaps,
+                "optionalPadTaps" to optionalPadTaps,
+            ),
+        )
+        AppFileLogger.info(
+            "FlowPlayer",
+            "pin_flow_summary slots=$pinSlotInputs pads=$pinPadTaps optPads=$optionalPadTaps total=$total",
+        )
+        // #endregion
         for ((index, action) in actions.withIndex()) {
             currentStepIndex = index
             onStep(index, total)
@@ -69,6 +105,10 @@ class FlowPlayer(
                     "total" to total,
                     "type" to action::class.simpleName,
                     "clearState" to clearState,
+                    "execMode" to when (action) {
+                        is RecordedAction.Tap -> action.executionMode.name
+                        else -> null
+                    },
                     "viewId" to when (action) {
                         is RecordedAction.InputText -> action.viewId
                         is RecordedAction.EraseText -> action.viewId
@@ -337,14 +377,23 @@ class FlowPlayer(
             val hasLogical = !candidate.viewId.isNullOrBlank() ||
                 !candidate.text.isNullOrBlank() ||
                 !candidate.contentDescription.isNullOrBlank()
+            val isPinPad = MaestroSelectorHeuristics.isPinPadKey(candidate.viewId, candidate.text) ||
+                MaestroSelectorHeuristics.isPinPadDigitTap(candidate.text, candidate.viewId)
+            val findTimeout = when {
+                isPinPad -> PIN_PAD_FIND_TIMEOUT_MS
+                action.executionMode == StepExecutionMode.Optional -> OPTIONAL_TAP_FIND_TIMEOUT_MS
+                else -> TAP_FIND_TIMEOUT_MS
+            }
+            val waitStarted = System.currentTimeMillis()
             val node = if (hasLogical) {
-                waitForTapTarget(svc, probe, TAP_FIND_TIMEOUT_MS)
+                waitForTapTarget(svc, probe, findTimeout)
             } else {
                 null
             }
+            val waitElapsed = System.currentTimeMillis() - waitStarted
             // #region agent log
             DebugSessionLog.log(
-                "P1",
+                "A",
                 "FlowPlayer.tap",
                 "tap_target",
                 mapOf(
@@ -356,8 +405,20 @@ class FlowPlayer(
                     "nodeViewId" to node?.viewIdResourceName?.substringAfterLast('/'),
                     "clickable" to node?.isClickable,
                     "hasPoint" to (candidate.pointPercentX != null),
+                    "isPinPad" to isPinPad,
+                    "optional" to (action.executionMode == StepExecutionMode.Optional),
+                    "findTimeoutMs" to findTimeout,
+                    "waitElapsedMs" to waitElapsed,
                 ),
             )
+            if (isPinPad) {
+                AppFileLogger.info(
+                    "FlowPlayer",
+                    "pin_tap_wait id=${candidate.viewId} text=${candidate.text} " +
+                        "found=${node != null} elapsed=${waitElapsed}ms timeout=${findTimeout}ms " +
+                        "opt=${action.executionMode == StepExecutionMode.Optional}",
+                )
+            }
             // #endregion
             if (node != null) {
                 try {
@@ -410,8 +471,194 @@ class FlowPlayer(
             "FlowPlayer",
             "tap_skip_not_found id=${action.viewId} text=${action.text} chain=${chain.size}",
         )
+        // Pad custom assente dall’albero: digita la cifra sul prossimo EditText editN.
+        if (MaestroSelectorHeuristics.isPinPadKey(action.viewId, action.text) ||
+            MaestroSelectorHeuristics.isPinPadDigitTap(action.text, action.viewId)
+        ) {
+            val digit = action.text?.trim()?.takeIf { it.length == 1 && it[0].isDigit() }
+                ?: pinPadKeyToDigit(action.viewId)
+            val ok = !digit.isNullOrBlank() && inputPinDigitOnSlots(svc, digit.orEmpty())
+            // #region agent log
+            DebugSessionLog.log(
+                "C",
+                "FlowPlayer.tap",
+                "pin_digit_fallback",
+                mapOf(
+                    "digit" to digit,
+                    "ok" to ok,
+                    "viewId" to action.viewId,
+                    "text" to action.text,
+                    "optional" to (action.executionMode == StepExecutionMode.Optional),
+                    "step" to currentStepIndex,
+                ),
+            )
+            // #endregion
+            if (ok) {
+                AppFileLogger.info("FlowPlayer", "pin_digit_fallback digit=$digit ok=true")
+                return
+            }
+            AppFileLogger.info("FlowPlayer", "pin_digit_fallback digit=$digit ok=false")
+        }
         if (action.executionMode == StepExecutionMode.Optional) return
         error("Tap non trovato id=${action.viewId} text=${action.text}")
+    }
+
+    /**
+     * Mappa id pad IT (`uno`…`nove`/`zero`) → cifra.
+     */
+    private fun pinPadKeyToDigit(viewId: String?): String? {
+        val short = MaestroSelectorHeuristics.shortViewId(viewId)?.lowercase().orEmpty()
+        return when (short) {
+            "zero", "key_0", "btn_0", "num_0", "digit_0" -> "0"
+            "uno", "key_1", "btn_1", "num_1", "digit_1" -> "1"
+            "due", "key_2", "btn_2", "num_2", "digit_2" -> "2"
+            "tre", "key_3", "btn_3", "num_3", "digit_3" -> "3"
+            "quattro", "key_4", "btn_4", "num_4", "digit_4" -> "4"
+            "cinque", "key_5", "btn_5", "num_5", "digit_5" -> "5"
+            "sei", "key_6", "btn_6", "num_6", "digit_6" -> "6"
+            "sette", "key_7", "btn_7", "num_7", "digit_7" -> "7"
+            "otto", "key_8", "btn_8", "num_8", "digit_8" -> "8"
+            "nove", "key_9", "btn_9", "num_9", "digit_9" -> "9"
+            else -> Regex("(\\d)$").find(short)?.groupValues?.get(1)
+        }
+    }
+
+    /**
+     * Scrive il codice PIN/OTP una cifra per slot (`edit1`…`editN`).
+     * Necessario perché SET_TEXT del codice intero su `edit1` lascia solo 1 char.
+     *
+     * @return `true` se tutte le cifre sono state scritte.
+     */
+    private fun inputPinCodeOnSlots(
+        svc: AccessibilityService,
+        packageName: String,
+        code: String,
+        hintViewId: String?,
+    ): Boolean {
+        val pkg = packageName.ifBlank {
+            hintViewId?.substringBefore(":id/")?.takeIf { it.isNotBlank() }
+        } ?: return false
+        val roots = collectRoots(svc)
+        if (roots.isEmpty()) return false
+        try {
+            var wrote = 0
+            for ((idx, ch) in code.withIndex()) {
+                val n = idx + 1
+                val fullId = "$pkg:id/edit$n"
+                var done = false
+                for (root in roots) {
+                    val nodes = root.findAccessibilityNodeInfosByViewId(fullId) ?: continue
+                    if (nodes.isEmpty()) {
+                        nodes.forEach { it.recycle() }
+                        continue
+                    }
+                    val node = AccessibilityNodeInfo.obtain(nodes.first())
+                    nodes.forEach { it.recycle() }
+                    try {
+                        node.performAction(AccessibilityNodeInfo.ACTION_FOCUS)
+                        val args = Bundle().apply {
+                            putCharSequence(
+                                AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE,
+                                ch.toString(),
+                            )
+                        }
+                        if (node.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args)) {
+                            wrote++
+                            done = true
+                            // #region agent log
+                            DebugSessionLog.log(
+                                "B",
+                                "FlowPlayer.inputPinCodeOnSlots",
+                                "wrote_digit",
+                                mapOf("slot" to n, "digit" to ch.toString()),
+                            )
+                            // #endregion
+                            break
+                        }
+                    } finally {
+                        node.recycle()
+                    }
+                }
+                if (!done) {
+                    AppFileLogger.info("FlowPlayer", "pin_code_slot_miss n=$n")
+                    return false
+                }
+            }
+            return wrote == code.length
+        } finally {
+            roots.forEach { it.recycle() }
+        }
+    }
+
+    /**
+     * Inserisce una cifra nel primo slot `edit1`…`edit6` vuoto.
+     *
+     * @return `true` se almeno uno slot ha accettato il testo.
+     */
+    private fun inputPinDigitOnSlots(svc: AccessibilityService, digit: String): Boolean {
+        if (digit.isBlank()) return false
+        val roots = collectRoots(svc)
+        if (roots.isEmpty()) return false
+        try {
+            for (root in roots) {
+                val pkg = root.packageName?.toString() ?: continue
+                val slotSnapshot = mutableListOf<String>()
+                for (n in 1..8) {
+                    val fullId = "$pkg:id/edit$n"
+                    val nodes = root.findAccessibilityNodeInfosByViewId(fullId) ?: continue
+                    if (nodes.isEmpty()) {
+                        nodes.forEach { it.recycle() }
+                        continue
+                    }
+                    val node = AccessibilityNodeInfo.obtain(nodes.first())
+                    nodes.forEach { it.recycle() }
+                    try {
+                        val current = node.text?.toString().orEmpty()
+                        slotSnapshot += "e$n:${current.length}"
+                        if (current.isNotBlank()) continue
+                        node.performAction(AccessibilityNodeInfo.ACTION_FOCUS)
+                        val args = Bundle().apply {
+                            putCharSequence(
+                                AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE,
+                                digit,
+                            )
+                        }
+                        if (node.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args)) {
+                            // #region agent log
+                            DebugSessionLog.log(
+                                "C",
+                                "FlowPlayer.inputPinDigitOnSlots",
+                                "wrote_slot",
+                                mapOf(
+                                    "digit" to digit,
+                                    "slot" to n,
+                                    "slots" to slotSnapshot.joinToString(","),
+                                ),
+                            )
+                            // #endregion
+                            return true
+                        }
+                    } finally {
+                        node.recycle()
+                    }
+                }
+                // #region agent log
+                DebugSessionLog.log(
+                    "C",
+                    "FlowPlayer.inputPinDigitOnSlots",
+                    "no_empty_slot",
+                    mapOf("digit" to digit, "slots" to slotSnapshot.joinToString(","), "pkg" to pkg),
+                )
+                AppFileLogger.info(
+                    "FlowPlayer",
+                    "pin_slots_full digit=$digit slots=${slotSnapshot.joinToString(",")}",
+                )
+                // #endregion
+            }
+            return false
+        } finally {
+            roots.forEach { it.recycle() }
+        }
     }
 
     private suspend fun performTapOnNode(
@@ -757,7 +1004,7 @@ class FlowPlayer(
         val node = waitForInputTarget(svc, action.viewId, INPUT_FIND_TIMEOUT_MS)
         // #region agent log
         DebugSessionLog.log(
-            "A",
+            "B",
             "FlowPlayer.inputText",
             "target_found",
             mapOf(
@@ -772,9 +1019,42 @@ class FlowPlayer(
                 "textMasked" to (action.text == "****"),
                 "textLen" to resolvedText.length,
                 "fromVault" to (resolvedText != action.text),
+                "isPinSlot" to MaestroSelectorHeuristics.isPinPadDigitSlot(action.viewId),
+                "step" to currentStepIndex,
             ),
         )
+        if (MaestroSelectorHeuristics.isPinPadDigitSlot(action.viewId)) {
+            AppFileLogger.info(
+                "FlowPlayer",
+                "pin_slot_input_text id=${action.viewId} len=${resolvedText.length} found=${node != null}",
+            )
+        }
         // #endregion
+        // Slot OTP/PIN: ogni EditText tiene 1 cifra — SET_TEXT del codice intero su edit1
+        // lascia solo la prima (evidenza e1:1). Distribuisci su edit1…editN.
+        if (MaestroSelectorHeuristics.isPinPadDigitSlot(action.viewId) &&
+            resolvedText.length in 2..12 &&
+            resolvedText.all { it.isDigit() }
+        ) {
+            node?.recycle()
+            val ok = inputPinCodeOnSlots(svc, action.packageName, resolvedText, action.viewId)
+            // #region agent log
+            DebugSessionLog.log(
+                "B",
+                "FlowPlayer.inputText",
+                "pin_code_distributed",
+                mapOf("ok" to ok, "len" to resolvedText.length, "viewId" to action.viewId),
+            )
+            AppFileLogger.info(
+                "FlowPlayer",
+                "pin_code_distributed ok=$ok len=${resolvedText.length}",
+            )
+            // #endregion
+            if (!ok) error("Impossibile inserire PIN/OTP sugli slot (${action.viewId})")
+            hideSoftInputBestEffort()
+            delay(200)
+            return
+        }
         if (node == null) error("Campo testo non trovato (${action.viewId ?: "no-id"})")
         try {
             // Molti EditText/Compose richiedono CLICK prima di accettare SET_TEXT.
@@ -831,7 +1111,7 @@ class FlowPlayer(
 
             // #region agent log
             DebugSessionLog.log(
-                "F",
+                "B",
                 "FlowPlayer.inputText",
                 "will_set_text",
                 mapOf(
@@ -839,6 +1119,7 @@ class FlowPlayer(
                     "isPasswordFlag" to action.isPassword,
                     "textLen" to resolvedText.length,
                     "textMasked" to false,
+                    "isPinSlot" to MaestroSelectorHeuristics.isPinPadDigitSlot(action.viewId),
                 ),
             )
             // #endregion
@@ -848,15 +1129,23 @@ class FlowPlayer(
             val setOk = node.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args)
             // #region agent log
             DebugSessionLog.log(
-                "C",
+                "B",
                 "FlowPlayer.inputText",
                 "set_text_primary",
                 mapOf(
                     "ok" to setOk,
                     "viewId" to action.viewId,
                     "stillEditable" to node.isEditable,
+                    "textLen" to resolvedText.length,
+                    "isPinSlot" to MaestroSelectorHeuristics.isPinPadDigitSlot(action.viewId),
                 ),
             )
+            if (MaestroSelectorHeuristics.isPinPadDigitSlot(action.viewId)) {
+                AppFileLogger.info(
+                    "FlowPlayer",
+                    "pin_slot_set_text id=${action.viewId} ok=$setOk len=${resolvedText.length}",
+                )
+            }
             // #endregion
             if (setOk) {
                 // Chiudi IME così i tap successivi (es. CONTINUA) non restano coperti.
@@ -1385,6 +1674,10 @@ class FlowPlayer(
         private const val BETWEEN_STEPS_MS = 400L
         private const val DEFAULT_ANIM_MS = 1_000L
         private const val TAP_FIND_TIMEOUT_MS = 10_000L
+        /** Pad custom spesso assente: fail-fast poi fallback slot. */
+        private const val PIN_PAD_FIND_TIMEOUT_MS = 400L
+        /** Overlay opzionali (Non ora): non bruciare 10s. */
+        private const val OPTIONAL_TAP_FIND_TIMEOUT_MS = 1_200L
         /** Timeout più lungo per campi post-loader (PIN dopo CONTINUA). */
         private const val INPUT_FIND_TIMEOUT_MS = 15_000L
     }

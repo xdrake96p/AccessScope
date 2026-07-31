@@ -10,6 +10,7 @@ import android.database.Cursor
 import android.database.MatrixCursor
 import android.net.Uri
 import dev.accessscope.scanner.AccessScopeApp
+import dev.accessscope.scanner.report.ReportHelper
 import dev.accessscope.scanner.service.AccessScopeAccessibilityService
 import dev.accessscope.scanner.util.PermissionHelper
 import org.json.JSONObject
@@ -93,7 +94,9 @@ class ScanResultProvider : ContentProvider() {
             ))
             put("overlayEnabled", PermissionHelper.canDrawOverlays(context))
             put("selectedPackages", org.json.JSONArray(state.selectedPackages.toList()))
-            put("violationCount", state.violations.size)
+            // Contratto bridge stabile per plugin/CI: sempre solo confidenza confermata,
+            // indipendente dal toggle "findings a bassa confidenza" dell'UI in-app.
+            put("violationCount", ReportHelper.filterViolations(state.violations).size)
             put("uniqueScreens", state.uniqueScreens)
         }
     }

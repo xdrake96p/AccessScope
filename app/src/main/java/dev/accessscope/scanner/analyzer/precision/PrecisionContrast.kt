@@ -7,7 +7,6 @@ import android.graphics.Rect
 import dev.accessscope.scanner.analyzer.AppPrecisionProfiles
 import dev.accessscope.scanner.analyzer.NodeSnapshot
 import dev.accessscope.scanner.analyzer.precision.PrecisionGeometry
-import dev.accessscope.scanner.analyzer.precision.PrecisionHome
 import dev.accessscope.scanner.analyzer.precision.PrecisionLabels
 import dev.accessscope.scanner.analyzer.precision.PrecisionStructural
 import dev.accessscope.scanner.analyzer.precision.PrecisionRulesPlatform
@@ -37,7 +36,6 @@ internal object PrecisionContrast {
         packageName: String = "",
         screenAreaPx: Int = 0,
     ): Boolean {
-        if (PrecisionHome.isBrandedOrPrimaryCtaText(snap, all, packageName)) return true
         if (isEmptyTextSurfaceWithoutContent(snap)) return true
         val area = screenAreaPx.takeIf { it > 0 } ?: PrecisionGeometry.estimateViewport(all).let { it.width() * it.height() }
         if (isTextOverIllustratedBackground(snap, all, area)) return true
@@ -47,8 +45,6 @@ internal object PrecisionContrast {
         ) {
             return true
         }
-        if (id == "causale" && PrecisionStructural.isInsideCarouselOrListItem(snap, all, packageName)) return true
-        if (id == "tv_title_second_section" && PrecisionHome.isHomeScreenContext(all, packageName)) return true
         if (snap.isEditable && snap.text.isNullOrBlank() && !snap.hintText.isNullOrBlank()) {
             // Hint contrast handled separately; skip empty-value sampling
             return false
@@ -68,10 +64,6 @@ internal object PrecisionContrast {
         packageName: String = "",
         screenAreaPx: Int = 0,
     ): Boolean {
-        // vop_info: l'icona è in realtà ad altissimo contrasto (drawable stroke scuro su bianco),
-        // ma il campionamento screenshot può generare falsi positivi. Manteniamo solo il check
-        // "manca contentDescription" tramite label/azioni, non il contrasto icona.
-        if (PrecisionGeometry.viewIdShort(snap) == "vop_info") return true
         if (snap.isLikelyDecorative) return true
         if (PrecisionRulesPlatform.isLottieAnimation(snap)) return true
         if (snap.isImageClass()) {
@@ -133,31 +125,29 @@ internal object PrecisionContrast {
     }
 
     /**
-     * Riconosce un contesto di calendario Material (DatePicker) che genera rumore massivo.
+     * Riconosce una griglia densa tipo calendario/DatePicker che genererebbe rumore massivo.
      *
-     * In Nexi/BFF la schermata COMUNICAZIONI usa un calendario con celle ripetute (`material_calendar_day`)
-     * e griglia tappabile; applicare i controlli touch/spacing/focus a ciascuna cella produce falsi positivi.
+     * Rilevamento puramente strutturale (numero di nodi con posizione di collection valorizzata,
+     * `collectionRow`/`collectionColumn` standard Android), non legato a id o titoli di una
+     * singola app: applicare i controlli touch/spacing/focus a ciascuna cella di una griglia
+     * densa produrrebbe falsi positivi ripetuti su qualunque app.
      */
-    fun isMaterialCalendarContext(screenTitle: String, snapshots: List<NodeSnapshot>): Boolean {
-        if (!screenTitle.contains("COMUNICAZIONI", ignoreCase = true)) return false
-        val dayCells = snapshots.count { PrecisionGeometry.viewIdShort(it) == "material_calendar_day" }
-        // Se ci sono molte celle giorno, è quasi certamente il DatePicker Material.
-        return dayCells >= 12
+    fun isMaterialCalendarContext(snapshots: List<NodeSnapshot>): Boolean {
+        val gridCells = snapshots.count { it.collectionRow >= 0 && it.collectionColumn >= 0 }
+        return gridCells >= 12
     }
 
     /**
-     * Identifica una singola cella giorno del calendario Material.
+     * Identifica una singola cella di una griglia densa (calendario/DatePicker).
      *
-     * Oltre all'ID, usa le coordinate di collection (grid) come fallback quando l'ID non è esposto.
+     * @param snap Snapshot del nodo da valutare.
+     * @param snapshots Elenco completo degli snapshot dei nodi nella schermata.
      */
     fun isMaterialCalendarDayCell(
         snap: NodeSnapshot,
-        screenTitle: String,
         snapshots: List<NodeSnapshot>,
     ): Boolean {
-        if (!isMaterialCalendarContext(screenTitle, snapshots)) return false
-        if (PrecisionGeometry.viewIdShort(snap) == "material_calendar_day") return true
-        // Fallback: celle in griglia piccole e ripetute.
+        if (!isMaterialCalendarContext(snapshots)) return false
         val isGridCell = snap.collectionRow >= 0 && snap.collectionColumn >= 0
         val smallish = snap.bounds.width() <= snap.minTouchTargetPx * 2 &&
             snap.bounds.height() <= snap.minTouchTargetPx * 2
@@ -165,40 +155,20 @@ internal object PrecisionContrast {
     }
 
     /**
-     * Determina se un nodo appartiene al cluster del calendario Material (griglia + header + controlli mese).
+     * Determina se un nodo appartiene al cluster di una griglia densa (calendario/DatePicker).
      *
-     * Serve per escludere i controlli che generano falsi positivi sistematici (label/role/custom action/touch)
-     * su componenti Material complessi.
+     * Serve per escludere i controlli che generano falsi positivi sistematici (label/role/custom
+     * action/touch) su componenti a griglia con molte celle ripetute.
+     *
+     * @param snap Snapshot del nodo da valutare.
+     * @param snapshots Elenco completo degli snapshot dei nodi nella schermata.
      */
     fun isMaterialCalendarRelatedNode(
         snap: NodeSnapshot,
-        screenTitle: String,
         snapshots: List<NodeSnapshot>,
     ): Boolean {
-        if (!isMaterialCalendarContext(screenTitle, snapshots)) return false
-        val id = PrecisionGeometry.viewIdShort(snap)
-        if (id in setOf(
-                "material_calendar_day",
-                "gv_calendario",
-                "ll_mese_precedente",
-                "ll_mese_successivo",
-                "iv_previous_month",
-                "iv_next_month",
-                "periodo_temp",
-            )
-        ) {
-            return true
-        }
-        if (isMaterialCalendarDayCell(snap, screenTitle, snapshots)) return true
-
-        // Fallback per nodi senza viewId (—) ma dentro la griglia calendario.
-        val calendar = snapshots.firstOrNull { PrecisionGeometry.viewIdShort(it) == "gv_calendario" } ?: return false
-        if (!Rect.intersects(calendar.bounds, snap.bounds)) return false
-        val centerInside = calendar.bounds.contains(snap.bounds.centerX(), snap.bounds.centerY())
-        if (!centerInside) return false
-        val smallish = snap.bounds.width() <= snap.minTouchTargetPx * 2 &&
-            snap.bounds.height() <= snap.minTouchTargetPx * 2
-        return smallish
+        if (!isMaterialCalendarContext(snapshots)) return false
+        return isMaterialCalendarDayCell(snap, snapshots)
     }
 
     /**

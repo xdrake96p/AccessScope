@@ -228,6 +228,8 @@ object MaestroSelectorHeuristics {
     fun isPinLikeField(viewId: String?): Boolean {
         val short = shortViewId(viewId)?.lowercase().orEmpty()
         if (short.isBlank()) return false
+        // Non includere edit1…edit6: sono slot OTP/PIN UI, ma il valore non è sempre ${PIN}
+        // (es. codice SMS) e non va mascherato in export.
         if (short.contains("pincode") || short.contains("pin_code") ||
             short.contains("passcode") || short.contains("otp") ||
             short.contains("securecode") || short.contains("accesscode") ||
@@ -236,6 +238,69 @@ object MaestroSelectorHeuristics {
             return true
         }
         return short == "pin" || short.startsWith("pin_") || short.endsWith("_pin")
+    }
+
+    /** Id tasti pad numerico IT (Nexi/MPS e simili). */
+    private val PIN_PAD_KEY_IDS = setOf(
+        "zero", "uno", "due", "tre", "quattro", "cinque", "sei", "sette", "otto", "nove",
+        "key_0", "key_1", "key_2", "key_3", "key_4", "key_5", "key_6", "key_7", "key_8", "key_9",
+        "btn_0", "btn_1", "btn_2", "btn_3", "btn_4", "btn_5", "btn_6", "btn_7", "btn_8", "btn_9",
+        "num_0", "num_1", "num_2", "num_3", "num_4", "num_5", "num_6", "num_7", "num_8", "num_9",
+        "digit_0", "digit_1", "digit_2", "digit_3", "digit_4",
+        "digit_5", "digit_6", "digit_7", "digit_8", "digit_9",
+    )
+
+    /** Regex slot display PIN/OTP riempiti dal pad (non da IME). */
+    private val PIN_PAD_DIGIT_SLOT_REGEX = Regex(
+        "^(edit|pin|otp|digit|code|box|cell|slot)_?\\d{1,2}$|" +
+            "^(pin|otp|digit|code)_?(box|digit|slot|cell)_?\\d{1,2}$",
+    )
+
+    /**
+     * Slot display del PIN pad (`edit1`…`edit6`, `otp_1`, …): si riempiono coi tap
+     * sul tastierino custom — **non** vanno esportati come `inputText`.
+     *
+     * @param viewId Resource id completo o corto.
+     * @return `true` se è uno slot display, non un campo IME.
+     */
+    fun isPinPadDigitSlot(viewId: String?): Boolean {
+        val short = shortViewId(viewId)?.lowercase().orEmpty()
+        if (short.isBlank()) return false
+        return PIN_PAD_DIGIT_SLOT_REGEX.matches(short)
+    }
+
+    /**
+     * Tasto del pad numerico custom (es. `id/uno` + testo `1`).
+     *
+     * @param viewId Resource id.
+     * @param text Etichetta/testo del nodo.
+     * @return `true` se è un tasto 0–9 del pad.
+     */
+    fun isPinPadKey(viewId: String?, text: String? = null): Boolean {
+        val short = shortViewId(viewId)?.lowercase().orEmpty()
+        if (short.isNotBlank() && short in PIN_PAD_KEY_IDS) return true
+        val digit = text?.trim().orEmpty()
+        if (digit.length == 1 && digit[0] in '0'..'9') {
+            // Solo se l’id suggerisce un tasto (evita tap spurî su importi “10”).
+            if (short.isBlank()) return false
+            return short.contains("key") || short.contains("btn") ||
+                short.contains("num") || short.contains("digit") ||
+                short.contains("pad") || short in PIN_PAD_KEY_IDS
+        }
+        return false
+    }
+
+    /**
+     * Tap singolo digito 0–9 tipico di pad PIN (anche solo testo, es. payment PIN Nexi).
+     *
+     * @param text Testo del tap.
+     * @param viewId Resource id opzionale.
+     * @return `true` se è un digito pad (non un importo/label lunga).
+     */
+    fun isPinPadDigitTap(text: String?, viewId: String? = null): Boolean {
+        if (isPinPadKey(viewId, text)) return true
+        val digit = text?.trim().orEmpty()
+        return digit.length == 1 && digit[0] in '0'..'9'
     }
 
     /**

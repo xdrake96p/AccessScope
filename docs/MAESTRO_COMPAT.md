@@ -29,6 +29,16 @@
 
 Test JVM: `MaestroYamlRoundTripTest` — `export → import → export` idempotente su un flusso campione multi-comando.
 
+## ZeroEdit (contratto qualità)
+
+Dopo optimize+heal, un flusso è **ZeroEdit** se:
+
+- nessun tap solo `point` / senza selettore semantico (`FlowLinter` ERROR `POINT_ONLY_SELECTOR`);
+- popup/permission con `optional: true` dove applicabile;
+- wait di animazione inseriti dal `WaitPlanner` dove servono (non wait ciechi inutili).
+
+Gate: `dev.accessscope.scanner.recorder.quality.ZeroEditGate` su save con optimize.
+
 ## Verifica CLI (opzionale)
 
 ```bash

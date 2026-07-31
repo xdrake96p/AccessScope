@@ -100,7 +100,6 @@ internal object PrecisionTouch {
         PrecisionNavigation.shouldSkipDrawerNode(snap) ||
             PrecisionNavigation.isPhantomClickableBounds(snap) ||
             PrecisionGeometry.isAnomalousTouchBounds(snap) ||
-            PrecisionHome.shouldSkipHomeWidgetAnalysis(snap, all, packageName) ||
             PrecisionNavigation.isInlineTextLink(snap) ||
             PrecisionLabels.isIconInsideLabeledButton(snap, all) ||
             isWideTapTarget(snap) ||
