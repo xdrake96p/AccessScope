@@ -4,20 +4,22 @@ object PluginVersionChecker {
     private val semverPattern = Regex("""(\d+)\.(\d+)\.(\d+)""")
 
     /**
-     * Verifica che la versione del plugin IDE in uso sia compatibile con il manifest release.
+     * Confronta la versione del plugin IDE in uso con la versione minima richiesta dal manifest.
      *
+     * Restituisce un messaggio di avviso (mai un'eccezione bloccante): un plugin IDE non
+     * aggiornato non deve impedire install/setup-check, solo segnalare che alcune funzionalità
+     * potrebbero non essere allineate all'ultima release dell'app.
      * Se [ACCESS_SCOPE_PLUGIN_VERSION] non è impostata (invocazione CLI diretta), il check viene saltato.
      */
-    fun requireCompatible(manifest: ReleaseManifest) {
-        val minRequired = manifest.minPluginVersion?.takeIf { it.isNotBlank() } ?: return
+    fun compatibilityWarning(manifest: ReleaseManifest): String? {
+        val minRequired = manifest.minPluginVersion?.takeIf { it.isNotBlank() } ?: return null
         val pluginVersion = System.getenv("ACCESS_SCOPE_PLUGIN_VERSION")?.takeIf { it.isNotBlank() }
-            ?: return
+            ?: return null
         if (compareSemver(pluginVersion, minRequired) < 0) {
-            error(
-                "Aggiorna il plugin IDE alla versione $minRequired o superiore " +
-                    "(versione attuale: $pluginVersion).",
-            )
+            return "IDE plugin v$pluginVersion is older than the recommended v$minRequired. " +
+                "Some features may be out of sync with the app — consider updating the plugin."
         }
+        return null
     }
 
     internal fun compareSemver(left: String, right: String): Int {

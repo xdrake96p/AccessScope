@@ -6,7 +6,52 @@
 **Package:** `dev.accessscope.scanner`  
 **Branch principale sviluppo:** `develop`  
 **Branch release stabile:** `main`  
-**Ultimo aggiornamento:** 31 luglio 2026 (Settimana 3 piano pre-mortem: TalkBack overhaul — refactor, dedupe, punteggio)
+**Ultimo aggiornamento:** 1 agosto 2026 (Settimana 3 piano pre-mortem: plugin UX — lingua unica, report VS Code theme-aware, tabella risultati AS)
+
+### Settimana 3 — Plugin UX: lingua unica, report theme-aware, tabella AS + progress (1 agosto 2026)
+
+Pre-mortem UX/professionalità: il plugin mescolava italiano e inglese nello stesso pannello,
+il report VS Code era illeggibile in dark mode, Android Studio mostrava JSON grezzo in una
+`JTextArea`, il bridge droppava metà dei dati di sessione e il setup-check mentiva sullo stato
+reale del device quando scattava il version-gate. Fix:
+
+- **Una lingua sola (inglese)** su tutte le superfici: tooltip e messaggi di
+  `AccessScopeToolWindowFactory.kt`/`PluginUpdateChecker.kt` (erano un mix IT/EN nello stesso
+  pannello) e `lang="it"` di `sidebarPanel.ts` allineato a `lang="en"` come il resto del plugin
+  (i commenti KDoc restano in italiano, per coerenza con il resto del repo).
+- **Bridge arricchito** (`ResultFetcher.buildScanResultResponse`): aggiunti `screenReaderFindings`
+  e `visitedScreens` alla risposta di `fetch-results` — prima il report IDE non poteva mostrare
+  né i finding TalkBack né il percorso di navigazione, molto più povero di quello on-device.
+  `remediation`/`measuredValue`/`requiredValue` erano già presenti (l'array `violations` passa
+  attraverso invariato), l'audit era in parte superato dagli sviluppi precedenti — solo i due
+  campi a livello di sessione mancavano davvero.
+- **`setup-check` non mente più**: prima, un manifest release irraggiungibile o un plugin IDE
+  sotto la versione minima facevano tornare `accessibilityEnabled`/`overlayEnabled`/`appInstalled`
+  tutti `false` **a prescindere** dallo stato reale del device (`SetupCheck.run`). Ora lo stato
+  del device viene sempre letto per davvero; l'unica differenza è un campo opzionale
+  `versionWarning` allegato al risultato.
+- **Version-gate → warning, non blocco**: `PluginVersionChecker.requireCompatible` (che lanciava
+  un'eccezione bloccante) è diventato `compatibilityWarning` (restituisce un messaggio o `null`).
+  `ApkInstaller.installLatest` prosegue con l'installazione anche con plugin IDE datato,
+  anteponendo l'avviso al messaggio di risultato invece di abortire.
+- **Report VS Code theme-aware e accessibile** (`resultsWebview.ts`): colori hardcoded
+  `#111`/`#555`/`#fafafa`/`#ddd` (illeggibili in dark mode) sostituiti con le variabili
+  `--vscode-*` dell'editor corrente; aggiunto `<title>`, `scope="col"` sulle intestazioni tabella
+  e `<caption>` (screen-reader-only) — pessima ottica altrimenti per un tool di accessibilità.
+  Sezione nuova per i finding TalkBack, percorso schermate visitate e path del PDF (prima
+  tipizzato in `types.ts` ma mai renderizzato in HTML).
+- **Android Studio: tabella al posto della `JTextArea` con JSON grezzo** — nuova
+  `ViolationsTableModel` (colonne Severity/Type/Screen/View ID/Details) alimentata dal risultato
+  di `fetch-results`; il log testuale resta per messaggi di install/launch/setup-check ed errori.
+  **`ProgressIndicator` su ogni azione**: `AsyncProcessIcon` + disabilitazione di tutti i bottoni
+  durante l'esecuzione in background (prima `executeOnPooledThread` nudo, zero feedback visivo).
+
+Verifica: `./gradlew :cli:compileKotlin :android-studio-plugin:compileKotlin
+:android-studio-plugin:buildPlugin` verde; `npx tsc --noEmit` verde su `vscode-extension`.
+
+**Non fatto in questo giro** (rimandato a task successivi del piano): canale update plugin
+`develop`→`main` e pulizia impostazioni VS Code dichiarate e mai lette (task "Pulizia API morte");
+collegamento del broadcast `SCAN_COMPLETE` (push invece di polling).
 
 ### Settimana 3 — TalkBack: refactor, dedupe, collegamento al punteggio (31 luglio 2026)
 

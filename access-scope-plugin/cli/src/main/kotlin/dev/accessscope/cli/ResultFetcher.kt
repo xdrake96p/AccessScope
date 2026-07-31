@@ -124,6 +124,10 @@ class ResultFetcher(private val deviceSerial: String) {
                 java.time.Instant.ofEpochMilli(session.get("completedAtMs")?.asLong ?: 0).toString(),
             )
             session.get("pdfPath")?.asString?.let { addProperty("pdfPath", it) }
+            // Prima mancavano nel bridge IDE: senza, il report del plugin non poteva mostrare
+            // i finding TalkBack né il percorso di navigazione, molto più povero di quello on-device.
+            session.getAsJsonArray("screenReaderFindings")?.let { add("screenReaderFindings", it) }
+            session.getAsJsonArray("visitedScreens")?.let { add("visitedScreens", it) }
         }
     }
 
@@ -150,20 +154,13 @@ object SetupCheck {
     fun run(deviceSerial: String): String {
         val gson = Gson()
         DeviceGuard.requireReadyDevice(deviceSerial)
-        runCatching {
-            val manifest = ReleaseClient().fetchLatestManifest()
-            PluginVersionChecker.requireCompatible(manifest)
-        }.onFailure { failure ->
-            val checks = JsonObject().apply {
-                addProperty("accessibilityEnabled", false)
-                addProperty("overlayEnabled", false)
-                addProperty("appInstalled", false)
-                addProperty("ready", false)
-                addProperty("hint", failure.message ?: "Plugin IDE non compatibile con l'ultima release app.")
-                addProperty("error", failure.message)
-            }
-            return gson.toJson(checks)
-        }
+        // Un plugin IDE datato non deve mai far mentire questo check sullo stato reale del
+        // device: prima, un manifest irraggiungibile o un gate di versione facevano tornare
+        // tutto `false` a prescindere da cosa fosse davvero acceso sul device. Ora è solo un
+        // avviso informativo allegato al risultato reale.
+        val versionWarning = runCatching {
+            PluginVersionChecker.compatibilityWarning(ReleaseClient().fetchLatestManifest())
+        }.getOrNull()
         val status = runCatching { ResultFetcher(deviceSerial).fetchStatus() }
             .getOrElse { failure ->
                 val installed = ApkInstaller(deviceSerial).isInstalled()
@@ -181,6 +178,7 @@ object SetupCheck {
                         },
                     )
                     addProperty("error", failure.message ?: "Unable to read AccessScope status")
+                    versionWarning?.let { addProperty("versionWarning", it) }
                 }
                 return gson.toJson(checks)
             }
@@ -202,6 +200,7 @@ object SetupCheck {
         } else if (!checks.get("overlayEnabled").asBoolean) {
             checks.addProperty("hint", "Grant overlay permission in Settings > Apps > AccessScope.")
         }
+        versionWarning?.let { checks.addProperty("versionWarning", it) }
         return gson.toJson(checks)
     }
 }

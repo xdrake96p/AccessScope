@@ -52,10 +52,10 @@ export class AccessScopeSidebarProvider implements vscode.WebviewViewProvider {
   }
 
   private renderHtml(device: string, targetPackage: string): string {
-    const deviceLabel = device || 'Nessun device selezionato';
-    const packageLabel = targetPackage || 'n/a (auto-detect da Gradle)';
+    const deviceLabel = device || 'No device selected';
+    const packageLabel = targetPackage || 'n/a (auto-detected from Gradle)';
     return `<!DOCTYPE html>
-<html lang="it">
+<html lang="en">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />

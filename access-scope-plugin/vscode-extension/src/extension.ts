@@ -210,6 +210,9 @@ async function checkSetup(): Promise<void> {
   const raw = await cli.run(['setup-check']);
   outputChannel.appendLine(raw);
   const result = JSON.parse(raw) as SetupCheckResult;
+  if (result.versionWarning) {
+    vscode.window.showWarningMessage(result.versionWarning);
+  }
   if (result.ready) {
     vscode.window.showInformationMessage('AccessScope setup is complete on the selected device.');
     return;

@@ -30,7 +30,7 @@ class ApkInstaller(
     fun installLatest(force: Boolean = false): InstallResult {
         DeviceGuard.requireReadyDevice(deviceSerial)
         val manifest = releaseClient.fetchLatestManifest()
-        PluginVersionChecker.requireCompatible(manifest)
+        val versionWarning = PluginVersionChecker.compatibilityWarning(manifest)
         val installed = getInstalledVersionCode()
         if (!force && installed != null && installed >= manifest.versionCode) {
             return InstallResult(
@@ -38,7 +38,10 @@ class ApkInstaller(
                 updated = false,
                 versionCode = installed,
                 versionName = manifest.versionName,
-                message = "AccessScope already up to date (v${manifest.versionName}, code $installed)",
+                message = withVersionWarning(
+                    "AccessScope already up to date (v${manifest.versionName}, code $installed)",
+                    versionWarning,
+                ),
             )
         }
 
@@ -52,10 +55,13 @@ class ApkInstaller(
             updated = installed == null || installed < manifest.versionCode || attempt.reinstalled,
             versionCode = manifest.versionCode,
             versionName = manifest.versionName,
-            message = attempt.message,
+            message = withVersionWarning(attempt.message, versionWarning),
             reinstalled = attempt.reinstalled,
         )
     }
+
+    private fun withVersionWarning(message: String, versionWarning: String?): String =
+        if (versionWarning == null) message else "$versionWarning\n$message"
 
     private fun installApkRecovering(apk: File): InstallAttempt {
         val first = adb.runResult("install", "-r", apk.absolutePath)

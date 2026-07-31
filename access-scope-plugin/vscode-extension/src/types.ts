@@ -18,6 +18,8 @@ export interface ScanResultResponse {
   };
   completedAt: string;
   pdfPath?: string;
+  screenReaderFindings?: ScreenReaderFinding[];
+  visitedScreens?: VisitedScreen[];
 }
 
 export interface Violation {
@@ -28,6 +30,26 @@ export interface Violation {
   details: string;
   viewId?: string;
   bounds?: string;
+  remediation?: string;
+  measuredValue?: string;
+  requiredValue?: string;
+}
+
+export interface ScreenReaderFinding {
+  packageName: string;
+  screenTitle: string;
+  nodeClassName: string;
+  announcedText?: string;
+  issue: string;
+  viewId?: string;
+  screenFingerprint?: string;
+}
+
+export interface VisitedScreen {
+  fingerprint: string;
+  title: string;
+  visitIndex: number;
+  protectionReason: 'NONE' | 'FLAG_SECURE' | 'PIN_OR_PASSWORD' | 'SCREENSHOT_BLOCKED';
 }
 
 export interface SetupCheckResult {
@@ -36,4 +58,5 @@ export interface SetupCheckResult {
   appInstalled: boolean;
   ready: boolean;
   hint?: string;
+  versionWarning?: string;
 }

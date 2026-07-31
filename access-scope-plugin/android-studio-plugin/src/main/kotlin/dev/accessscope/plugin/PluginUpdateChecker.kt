@@ -32,20 +32,20 @@ class PluginUpdateChecker {
 
     fun checkAndInstall(onProgress: (String) -> Unit): PluginUpdateResult {
         val current = currentVersion()
-        onProgress("Plugin versione corrente: $current")
+        onProgress("Current plugin version: $current")
 
         val latest = fetchLatestVersion()
-        onProgress("Ultima versione disponibile: $latest")
+        onProgress("Latest version available: $latest")
 
         if (compareVersions(latest, current) <= 0) {
             return PluginUpdateResult.UpToDate(current)
         }
 
-        onProgress("Download AccessScope-$latest.zip in corso...")
+        onProgress("Downloading AccessScope-$latest.zip...")
         val zip = downloadPluginZip(latest)
-        onProgress("Installazione aggiornamento...")
+        onProgress("Installing update...")
         installPluginZip(zip)
-        onProgress("Aggiornamento a v$latest pronto. Riavvio IDE...")
+        onProgress("Update to v$latest ready. Restarting IDE...")
         return PluginUpdateResult.Installed(latest)
     }
 
@@ -61,7 +61,7 @@ class PluginUpdateChecker {
             .filter { it.type == "dir" && VERSION_DIR.matches(it.name) }
             .map { it.name }
             .maxWithOrNull(::compareVersions)
-            ?: error("Nessuna release plugin trovata su GitHub ($RELEASES_PATH).")
+            ?: error("No plugin release found on GitHub ($RELEASES_PATH).")
     }
 
     private fun downloadPluginZip(version: String): File {
@@ -72,7 +72,7 @@ class PluginUpdateChecker {
         target.deleteOnExit()
         downloadFile(url, target)
         if (!target.exists() || target.length() == 0L) {
-            error("Download fallito per $fileName")
+            error("Download failed for $fileName")
         }
         return target
     }
@@ -101,9 +101,9 @@ class PluginUpdateChecker {
             Class.forName("com.intellij.ide.plugins.PluginXmlPathResolver"),
         )
         val descriptor = loadMethod.invoke(null, zipPath, null) as? IdeaPluginDescriptor
-            ?: error("ZIP plugin non valido.")
+            ?: error("Invalid plugin ZIP.")
         if (descriptor.pluginId != pluginId) {
-            error("ZIP plugin non valido: atteso $PLUGIN_ID, trovato ${descriptor.pluginId.idString}.")
+            error("Invalid plugin ZIP: expected $PLUGIN_ID, found ${descriptor.pluginId.idString}.")
         }
         return descriptor
     }
@@ -134,9 +134,9 @@ class PluginUpdateChecker {
         if (connection.responseCode !in 200..299) {
             error(
                 when (connection.responseCode) {
-                    403 -> "GitHub API rate limit. Riprova tra qualche minuto o imposta GITHUB_TOKEN."
-                    404 -> "Release plugin non trovata su GitHub."
-                    else -> "HTTP ${connection.responseCode} scaricando $url"
+                    403 -> "GitHub API rate limit. Retry in a few minutes or set GITHUB_TOKEN."
+                    404 -> "Plugin release not found on GitHub."
+                    else -> "HTTP ${connection.responseCode} downloading $url"
                 },
             )
         }

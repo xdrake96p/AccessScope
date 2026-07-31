@@ -33,22 +33,37 @@ export class ResultsWebview {
     const screenSections = Array.from(grouped.entries())
       .map(([screen, violations]) => {
         const rows = violations
-          .map(
-            (v) => `
+          .map((v) => {
+            const remediation = v.remediation
+              ? `<div class="remediation">${escapeHtml(v.remediation)}</div>`
+              : '';
+            const measured =
+              v.measuredValue || v.requiredValue
+                ? `<div class="measured">measured ${escapeHtml(v.measuredValue ?? '?')} · required ${escapeHtml(
+                    v.requiredValue ?? '?',
+                  )}</div>`
+                : '';
+            return `
               <tr>
                 <td>${escapeHtml(v.severity ?? 'MODERATE')}</td>
                 <td>${escapeHtml(v.type)}</td>
-                <td>${escapeHtml(v.details)}</td>
+                <td>${escapeHtml(v.details)}${measured}${remediation}</td>
                 <td><code>${escapeHtml(v.viewId ?? '')}</code></td>
-              </tr>`,
-          )
+              </tr>`;
+          })
           .join('');
         return `
           <section>
             <h3>${escapeHtml(screen)} (${violations.length})</h3>
             <table>
+              <caption class="sr-only">Accessibility violations found on screen ${escapeHtml(screen)}</caption>
               <thead>
-                <tr><th>Severity</th><th>Type</th><th>Details</th><th>View ID</th></tr>
+                <tr>
+                  <th scope="col">Severity</th>
+                  <th scope="col">Type</th>
+                  <th scope="col">Details</th>
+                  <th scope="col">View ID</th>
+                </tr>
               </thead>
               <tbody>${rows}</tbody>
             </table>
@@ -56,20 +71,105 @@ export class ResultsWebview {
       })
       .join('');
 
+    const talkBackFindings = result.screenReaderFindings ?? [];
+    const talkBackSection =
+      talkBackFindings.length > 0
+        ? `
+          <section>
+            <h2>TalkBack notes (${talkBackFindings.length})</h2>
+            <table>
+              <caption class="sr-only">Screen reader simulation notes</caption>
+              <thead>
+                <tr>
+                  <th scope="col">Screen</th>
+                  <th scope="col">Element</th>
+                  <th scope="col">Issue</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${talkBackFindings
+                  .map(
+                    (f) => `
+                  <tr>
+                    <td>${escapeHtml(f.screenTitle)}</td>
+                    <td>${escapeHtml(f.nodeClassName)}</td>
+                    <td>${escapeHtml(f.issue)}</td>
+                  </tr>`,
+                  )
+                  .join('')}
+              </tbody>
+            </table>
+          </section>`
+        : '';
+
+    const visitedScreens = result.visitedScreens ?? [];
+    const visitedSection =
+      visitedScreens.length > 0
+        ? `
+          <div class="meta">
+            Screens visited: ${escapeHtml(
+              [...visitedScreens]
+                .sort((a, b) => a.visitIndex - b.visitIndex)
+                .map((s) => s.title)
+                .join(' → '),
+            )}
+          </div>`
+        : '';
+
+    const pdfSection = result.pdfPath
+      ? `<div class="meta">PDF report: <code>${escapeHtml(result.pdfPath)}</code></div>`
+      : '';
+
     return `<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
+  <title>AccessScope Scan Results</title>
   <style>
-    body { font-family: -apple-system, BlinkMacSystemFont, sans-serif; padding: 16px; color: #111; }
+    :root {
+      color-scheme: light dark;
+    }
+    body {
+      font-family: var(--vscode-font-family, -apple-system, BlinkMacSystemFont, sans-serif);
+      font-size: var(--vscode-font-size, 13px);
+      padding: 16px;
+      color: var(--vscode-foreground);
+      background: var(--vscode-editor-background);
+    }
     h1 { margin-bottom: 4px; }
-    .meta { color: #555; margin-bottom: 16px; }
-    .summary { display: flex; gap: 12px; margin-bottom: 20px; }
-    .pill { background: #f2f2f2; border-radius: 999px; padding: 6px 12px; font-size: 13px; }
+    h2 { margin-top: 28px; }
+    .meta { color: var(--vscode-descriptionForeground); margin-bottom: 16px; }
+    .summary { display: flex; flex-wrap: wrap; gap: 12px; margin-bottom: 20px; }
+    .pill {
+      background: var(--vscode-badge-background);
+      color: var(--vscode-badge-foreground);
+      border-radius: 999px;
+      padding: 6px 12px;
+      font-size: 13px;
+    }
     table { width: 100%; border-collapse: collapse; margin-bottom: 24px; font-size: 13px; }
-    th, td { border-bottom: 1px solid #ddd; text-align: left; padding: 8px; vertical-align: top; }
-    th { background: #fafafa; }
+    th, td {
+      border-bottom: 1px solid var(--vscode-panel-border, #808080);
+      text-align: left;
+      padding: 8px;
+      vertical-align: top;
+    }
+    th { background: var(--vscode-sideBar-background); }
+    tr:hover td { background: var(--vscode-list-hoverBackground); }
     code { font-size: 12px; }
+    .remediation, .measured {
+      color: var(--vscode-descriptionForeground);
+      font-size: 12px;
+      margin-top: 4px;
+    }
+    .sr-only {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      overflow: hidden;
+      clip: rect(0, 0, 0, 0);
+      white-space: nowrap;
+    }
   </style>
 </head>
 <body>
@@ -79,6 +179,8 @@ export class ResultsWebview {
     Completed ${escapeHtml(result.completedAt)} ·
     Packages ${escapeHtml(result.targetPackages.join(', '))}
   </div>
+  ${pdfSection}
+  ${visitedSection}
   <div class="summary">
     <div class="pill">Score: ${result.score}</div>
     <div class="pill">Critical: ${result.summary.critical}</div>
@@ -88,6 +190,7 @@ export class ResultsWebview {
     <div class="pill">Total: ${result.violations.length}</div>
   </div>
   ${screenSections || '<p>No violations found.</p>'}
+  ${talkBackSection}
 </body>
 </html>`;
   }
