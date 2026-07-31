@@ -12,11 +12,8 @@ import dev.accessscope.scanner.export.ViolationEvidenceAnnotator
 import dev.accessscope.scanner.export.ViolationTreeEvidenceAnnotator
 import java.io.File
 import java.io.FileOutputStream
-import java.util.concurrent.ConcurrentHashMap
 
 class ScanEvidenceStore(private val context: Context) {
-
-  private val lastScreenSaveMs = ConcurrentHashMap<String, Long>()
 
   fun sessionDir(sessionId: String): File =
       File(context.cacheDir, "$ROOT_DIR/$sessionId").apply { mkdirs() }
@@ -25,24 +22,23 @@ class ScanEvidenceStore(private val context: Context) {
       screenFingerprint.replace(Regex("""[^\w.-]"""), "_").take(120)
 
   /**
-   * Salva screenshot schermata con debounce (max 1 ogni 2s per fingerprint).
+   * Salva lo screenshot di schermata solo alla prima visita del fingerprint: le rivisite
+   * successive (scroll, animazioni, richiami dello stesso fingerprint) non lo sovrascrivono.
    *
-   * @return path assoluto del file JPEG o null se saltato / errore.
+   * Se il file venisse riscritto ad ogni visita, i marker delle violazioni rilevate in una
+   * visita precedente finirebbero disegnati sul contenuto sbagliato — lo sfondo mostrato nel
+   * report cambia ma le coordinate delle violazioni già registrate restano quelle di prima.
+   *
+   * @return path assoluto del file JPEG (esistente o appena salvato) o null se il salvataggio fallisce.
    */
   fun saveScreenScreenshot(
       sessionId: String,
       screenFingerprint: String,
       bitmap: Bitmap,
   ): String? {
-    val evidenceId = screenEvidenceId(screenFingerprint)
-    val debounceKey = "$sessionId|$evidenceId"
-    val now = System.currentTimeMillis()
-    val last = lastScreenSaveMs[debounceKey] ?: 0L
-    if (now - last < SCREEN_DEBOUNCE_MS) {
-      return screenFile(sessionId, evidenceId).takeIf { it.exists() }?.absolutePath
-    }
-    lastScreenSaveMs[debounceKey] = now
-    return saveJpeg(bitmap, screenFile(sessionId, evidenceId), SCREEN_JPEG_QUALITY)
+    val file = screenFile(sessionId, screenEvidenceId(screenFingerprint))
+    if (file.exists()) return file.absolutePath
+    return saveJpeg(bitmap, file, SCREEN_JPEG_QUALITY)
   }
 
   fun screenFilePath(sessionId: String, screenEvidenceId: String): String? =
@@ -263,7 +259,6 @@ class ScanEvidenceStore(private val context: Context) {
 
   fun cleanupSession(sessionId: String) {
     sessionDir(sessionId).deleteRecursively()
-    lastScreenSaveMs.keys.removeIf { it.startsWith("$sessionId|") }
   }
 
   fun cleanupExcept(keepSessionIds: Set<String>) {
@@ -319,7 +314,6 @@ class ScanEvidenceStore(private val context: Context) {
 
   companion object {
     private const val ROOT_DIR = "scan_evidence"
-    private const val SCREEN_DEBOUNCE_MS = 2_000L
     private const val SCREEN_JPEG_QUALITY = 82
     private const val VIOLATION_JPEG_QUALITY = 90
   }

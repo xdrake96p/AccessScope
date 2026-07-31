@@ -6,7 +6,28 @@
 **Package:** `dev.accessscope.scanner`  
 **Branch principale sviluppo:** `develop`  
 **Branch release stabile:** `main`  
-**Ultimo aggiornamento:** 1 agosto 2026 (Settimana 4 piano pre-mortem: fingerprint stabile, dedup chrome transitorio)
+**Ultimo aggiornamento:** 1 agosto 2026 (Settimana 4 piano pre-mortem: evidenze coerenti, screenshot solo alla prima visita)
+
+### Settimana 4 — Evidence/marker coerenti: screenshot solo alla prima visita (1 agosto 2026)
+
+Pre-mortem report dinamico: `ScanEvidenceStore.saveScreenScreenshot` sovrascriveva il file
+`screen_<fingerprint>.jpg` ad ogni rivisita dello stesso fingerprint (debounce di soli 2s, non
+un blocco). Il crop di una singola violazione resta sempre corretto (annotato subito con la
+bitmap della propria passata), ma lo sfondo "schermata intera" mostrato nel report dinamico è
+condiviso da fingerprint — se veniva sovrascritto con una cattura più recente (scroll, contenuto
+dinamico), i marker delle violazioni rilevate in una visita precedente finivano disegnati sul
+contenuto sbagliato dell'immagine più recente.
+
+- `saveScreenScreenshot` ora scrive il file solo se non esiste già per quel fingerprint in
+  quella sessione: prima visita vince, rivisite successive riusano il file esistente invece di
+  sovrascriverlo.
+- Rimossa la logica di debounce time-based (`lastScreenSaveMs`, `SCREEN_DEBOUNCE_MS`) — non
+  più necessaria: "esiste già" è una condizione più semplice e più corretta di "è passato
+  abbastanza tempo".
+- 2 test nuovi in `ScanEvidenceStoreTest.kt` (Robolectric per `Bitmap`/`Context`): seconda
+  visita non sovrascrive la prima; fingerprint diversi ottengono file separati.
+
+Verifica: `./gradlew :app:testDebugUnitTest :app:assembleDebug` verde.
 
 ### Settimana 4 — Fingerprint stabile: dedup chrome transitorio (1 agosto 2026)
 
