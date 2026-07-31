@@ -178,17 +178,33 @@ class ScanSessionRepository(context: android.content.Context) {
     /**
      * Aggiunge risultati della simulazione screen reader, deduplicandoli per chiave composta.
      *
+     * Tre correzioni rispetto alla versione precedente (bug confermati su schermate reali):
+     * 1. La chiave include ora [ScreenReaderFinding.screenFingerprint]: prima due schermate
+     *    diverse con lo stesso titolo perdevano silenziosamente i finding della seconda.
+     * 2. Nodi senza viewId/etichetta usano i bounds quantizzati (come [ViolationDedupeRules]
+     *    per le violazioni) invece del token letterale `"no-id"`: prima 10 immagini mute sulla
+     *    stessa schermata collassavano in un solo finding — sottostima enorme del problema.
+     * 3. I finding di livello schermata (nodeClassName `"—"`) non usano più `announcedText`
+     *    nell'identità: per il finding aggregato ">50% silenzioso" il testo include il
+     *    conteggio corrente, che cambia a ogni passata di scroll — chiave instabile → righe
+     *    duplicate per lo stesso identico problema.
+     *
      * @param findings Elenco di risultati TalkBack da registrare.
      */
     fun addScreenReaderFindings(findings: List<ScreenReaderFinding>) {
         if (findings.isEmpty()) return
         val newOnes = findings.filter {
-            val normalizedViewId = it.viewId?.let { id -> ViolationDedupeRules.normalizeViewId(id) }
-            val labelToken = it.announcedText?.let { t -> ViolationDedupeRules.normalizeElementLabel(t) }
+            val identity = if (it.nodeClassName == "—") {
+                "aggregate"
+            } else {
+                val normalizedViewId = it.viewId?.let { id -> ViolationDedupeRules.normalizeViewId(id) }
+                val labelToken = it.announcedText?.let { t -> ViolationDedupeRules.normalizeElementLabel(t) }
+                normalizedViewId ?: labelToken ?: ViolationDedupeRules.quantizeBoundsLabel(it.boundsLabel)
+            }
             val key = buildString {
                 append(it.packageName)
                 append('|')
-                append(it.screenTitle)
+                append(it.screenFingerprint.orEmpty())
                 append('|')
                 append(it.reportSection)
                 append('|')
@@ -196,7 +212,7 @@ class ScanSessionRepository(context: android.content.Context) {
                 append('|')
                 append(it.issue)
                 append('|')
-                append(normalizedViewId ?: labelToken ?: "no-id")
+                append(identity)
             }
             screenReaderKeys.add(key)
         }

@@ -130,9 +130,18 @@ class NodeAccessibilityAnalyzer(
         }
 
         val screenReaderFindings = if (includes(ViolationArea.SCREEN_READER)) {
-            TalkBackSimulator().simulate(root, packageName, screenTitle, screenFingerprint)
+            TalkBackSimulator.simulate(snapshots, packageName, screenTitle, screenFingerprint)
         } else {
             emptyList()
+        }
+        // I finding "elemento silenzioso" diventano violazioni formali (dietro il confidence
+        // gate, come tutto il resto): prima restavano solo nella sezione TalkBack del report,
+        // mai nel punteggio né nelle evidenze. I riepiloghi di schermata (nessun elemento
+        // focalizzabile / >50% silenzioso) restano solo diagnostici, non hanno un nodo singolo.
+        if (includes(ViolationArea.SCREEN_READER)) {
+            violations += TalkBackSimulator.toViolations(
+                screenReaderFindings.filter { it.isSilentElementFinding() },
+            )
         }
         return AnalysisResult(
             violations,

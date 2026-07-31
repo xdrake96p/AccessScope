@@ -113,6 +113,67 @@ class ScanSessionRepositoryTest {
     }
 
     @Test
+    fun addScreenReaderFindings_sameTitleDifferentFingerprint_bothKept() {
+        // Bug: la chiave ignorava screenFingerprint — due schermate DIVERSE con lo stesso
+        // titolo perdevano silenziosamente i finding della seconda.
+        repository.startScan(setOf("com.example.app"), ScanScope.FULL)
+        val findingA = ScreenReaderFinding(
+            packageName = "com.example.app",
+            screenTitle = "Dettaglio",
+            nodeClassName = "android.view.View",
+            announcedText = null,
+            issue = "TalkBack non avrebbe testo da annunciare su questo elemento.",
+            screenFingerprint = "fp-A",
+            boundsLabel = "10x10 px @(0,0)",
+        )
+        val findingB = findingA.copy(screenFingerprint = "fp-B")
+        repository.addScreenReaderFindings(listOf(findingA))
+        repository.addScreenReaderFindings(listOf(findingB))
+
+        assertEquals(2, repository.state.value.screenReaderFindings.size)
+    }
+
+    @Test
+    fun addScreenReaderFindings_multipleUnlabeledNodes_notCollapsedIntoOne() {
+        // Bug: senza viewId/etichetta la chiave usava il token letterale "no-id" per tutti —
+        // 10 immagini mute sulla stessa schermata collassavano in un solo finding.
+        repository.startScan(setOf("com.example.app"), ScanScope.FULL)
+        val first = ScreenReaderFinding(
+            packageName = "com.example.app",
+            screenTitle = "Home",
+            nodeClassName = "android.widget.ImageView",
+            announcedText = null,
+            issue = "TalkBack non avrebbe testo da annunciare su questo elemento.",
+            screenFingerprint = "fp-home",
+            boundsLabel = "40x40 px @(0,0)",
+        )
+        val second = first.copy(boundsLabel = "40x40 px @(400,800)")
+        repository.addScreenReaderFindings(listOf(first, second))
+
+        assertEquals(2, repository.state.value.screenReaderFindings.size)
+    }
+
+    @Test
+    fun addScreenReaderFindings_aggregateFinding_stableAcrossChangingCount() {
+        // Bug: il finding aggregato ">50% silenzioso" aveva il conteggio corrente nel testo
+        // usato come identità — chiave diversa a ogni passata di scroll, righe duplicate.
+        repository.startScan(setOf("com.example.app"), ScanScope.FULL)
+        val pass1 = ScreenReaderFinding(
+            packageName = "com.example.app",
+            screenTitle = "Lista",
+            nodeClassName = "—",
+            announcedText = "3 / 5 elementi",
+            issue = "Oltre il 50% degli elementi focalizzabili non ha un annuncio utile.",
+            screenFingerprint = "fp-lista",
+        )
+        val pass2 = pass1.copy(announcedText = "6 / 9 elementi")
+        repository.addScreenReaderFindings(listOf(pass1))
+        repository.addScreenReaderFindings(listOf(pass2))
+
+        assertEquals(1, repository.state.value.screenReaderFindings.size)
+    }
+
+    @Test
     fun stopScan_preservesCollectedDataButEndsSession() {
         repository.startScan(setOf("com.example.app"), ScanScope.FULL)
         repository.registerUniqueScreen("fp-home", "Home")

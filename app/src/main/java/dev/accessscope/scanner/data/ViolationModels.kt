@@ -115,6 +115,12 @@ data class ScreenReaderFinding(
     val sectionTitle: String? = null,
     /** Fingerprint schermata per attribuzione report dinamico (opzionale). */
     val screenFingerprint: String? = null,
+    /**
+     * Bounds del nodo (formato [dev.accessscope.scanner.analyzer.NodeSnapshot.boundsLabel]),
+     * per dedupe basato su posizione quando manca sia viewId sia un'etichetta distintiva —
+     * senza, nodi diversi senza id/testo collassavano tutti sulla stessa identità "no-id".
+     */
+    val boundsLabel: String? = null,
 ) {
     /**
      * Sezione da usare nel report: preferisce [sectionTitle] se valorizzata,

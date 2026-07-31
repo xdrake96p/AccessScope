@@ -6,7 +6,53 @@
 **Package:** `dev.accessscope.scanner`  
 **Branch principale sviluppo:** `develop`  
 **Branch release stabile:** `main`  
-**Ultimo aggiornamento:** 31 luglio 2026 (Git Flow canonico in `docs/GIT_FLOW.md`: branch naming, delete post-merge, release app+plugin, bump develop post-tag)
+**Ultimo aggiornamento:** 31 luglio 2026 (Settimana 3 piano pre-mortem: TalkBack overhaul — refactor, dedupe, punteggio)
+
+### Settimana 3 — TalkBack: refactor, dedupe, collegamento al punteggio (31 luglio 2026)
+
+Il simulatore TalkBack (`TalkBackSimulator.kt`) non simulava davvero TalkBack: annuncio
+infedele (concatenava sempre cd+testo+hint), dedupe rotta (schermate omonime perdevano
+finding, nodi senza id collassavano tutti in uno), zero test, e i finding non entravano
+mai nel punteggio o nelle evidenze (sezione puramente cosmetica del report). Tre fix in
+sequenza:
+
+- **Refactor su `NodeSnapshot`** (era `class` che camminava `AccessibilityNodeInfo`
+  direttamente, non testabile su JVM senza mock Android): ora `object TalkBackSimulator`
+  opera sugli stessi snapshot già raccolti da `NodeAccessibilityAnalyzer` (nessuna seconda
+  camminata dell'albero). Modello annuncio riscritto per fedeltà a TalkBack reale:
+  `contentDescription` **sostituisce** `text`/`hint` (non si concatenano più — mascherava
+  difetti veri); copertura ruoli estesa (Switch/CheckBox/RadioButton/SeekBar/Spinner/Tab,
+  prima solo Button/EditText/Image); stati (heading, checked, expanded, stateDescription,
+  password, disabled), range percentuale, posizione riga/colonna in collection. Esclude
+  nodi `isAccessibilityExcluded` (prima impossibile). 14 test JVM nuovi
+  (`TalkBackSimulatorTest.kt`, Robolectric per `Rect.width()/height()`).
+- **Fix dedupe** (`ScanSessionRepository.addScreenReaderFindings`): chiave ora include
+  `screenFingerprint` (prima due schermate diverse con lo stesso titolo si rubavano i
+  finding a vicenda); identità per nodi senza viewId/etichetta usa bounds quantizzati a
+  griglia 32dp (`ViolationDedupeRules.quantizeBoundsLabel`) invece del token letterale
+  `"no-id"` (10 immagini mute non collassano più in un solo finding); il finding aggregato
+  ">50% silenzioso" ha chiave stabile che non include il conteggio corrente (non più
+  duplicato ad ogni passata di scroll). 3 test nuovi in `ScanSessionRepositoryTest.kt`.
+- **Collegamento al punteggio + filtro severità**: i finding "elemento silenzioso" per
+  singolo nodo (`ScreenReaderFinding.isSilentElementFinding()`) diventano violazioni
+  formali `SCREEN_READER_ANNOUNCEMENT` (dietro il confidence gate come tutto il resto,
+  `TalkBackSimulator.toViolations`, wired in `NodeAccessibilityAnalyzer.analyzeTree`) —
+  prima `toViolations` era dead code, mai chiamato. `DynamicReportHelper.buildFrames`
+  esclude questi finding promossi da `DynamicScreenFrame.talkBackFindings` (altrimenti
+  duplicati: violazione filtrabile per gravità + nota TalkBack sempre visibile); restano
+  in `talkBackFindings` solo i riepiloghi di schermata (nessun elemento focalizzabile /
+  >50% silenzioso, che non hanno un nodo singolo). Il filtro severità richiesto dal piano
+  è così soddisfatto gratis: i finding promossi passano per `filterFrameViolations`
+  esistente, nessun codice di filtro TalkBack-specifico nuovo.
+
+Verifica: `./gradlew :app:compileDebugKotlin :app:testDebugUnitTest` verde (build pulita,
+nessun test esistente rotto — le fixture di `DynamicReportHelperTest.kt` usano
+`announcedText` non-null, quindi non sono "elementi silenziosi" e restano in
+`talkBackFindings` come prima).
+
+**Non fatto in questo giro** (fuori scope Settimana 3, task separati nel piano): UX plugin
+(lingua unica, report theme-aware, tabella AS); fingerprint instabile (3× "Home");
+evidence/marker su schermate ripetute; finestre di attribuzione fingerprint (B2).
 
 ### Settimana 2 — Maestro "CLI-truth" (31 luglio 2026)
 

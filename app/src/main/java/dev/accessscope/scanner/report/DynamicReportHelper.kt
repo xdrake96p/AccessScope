@@ -6,6 +6,7 @@
  */
 package dev.accessscope.scanner.report
 
+import dev.accessscope.scanner.analyzer.isSilentElementFinding
 import dev.accessscope.scanner.data.AccessibilityViolation
 import dev.accessscope.scanner.data.CheckAreaSummary
 import dev.accessscope.scanner.data.ScreenReaderFinding
@@ -50,6 +51,12 @@ object DynamicReportHelper {
         },
         includeLowConfidence: Boolean = false,
     ): List<DynamicScreenFrame> {
+        // I finding "elemento silenzioso" sono ora promossi a violazioni formali
+        // (NodeAccessibilityAnalyzer + TalkBackSimulator.toViolations): qui restano solo i
+        // riepiloghi di schermata (nessun elemento focalizzabile / >50% silenzioso), altrimenti
+        // lo stesso problema apparirebbe due volte — come violazione severity-filtrabile E
+        // come nota TalkBack sempre visibile, mai soggetta al filtro gravità.
+        val screenLevelTalkBack = talkBackFindings.filterNot { it.isSilentElementFinding() }
         val filteredViolations = ReportHelper.filterViolations(violations, includeLowConfidence)
         val violationsByFingerprint = filteredViolations
             .filter { !it.screenFingerprint.isNullOrBlank() }
@@ -58,10 +65,10 @@ object DynamicReportHelper {
             .filter { it.screenFingerprint.isNullOrBlank() }
             .groupBy { it.screenTitle }
 
-        val talkBackByFingerprint = talkBackFindings
+        val talkBackByFingerprint = screenLevelTalkBack
             .filter { !it.screenFingerprint.isNullOrBlank() }
             .groupBy { it.screenFingerprint!! }
-        val talkBackByTitle = talkBackFindings
+        val talkBackByTitle = screenLevelTalkBack
             .filter { it.screenFingerprint.isNullOrBlank() }
             .groupBy { it.reportSection }
 
@@ -117,7 +124,7 @@ object DynamicReportHelper {
 
         return buildFramesFromViolationsOnly(
             filteredViolations = filteredViolations,
-            talkBackFindings = talkBackFindings,
+            talkBackFindings = screenLevelTalkBack,
             checkSummaries = checkSummaries,
             screenEvidenceIdResolver = screenEvidenceIdResolver,
         )
