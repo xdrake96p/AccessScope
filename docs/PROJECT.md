@@ -6,7 +6,35 @@
 **Package:** `dev.accessscope.scanner`  
 **Branch principale sviluppo:** `develop`  
 **Branch release stabile:** `main`  
-**Ultimo aggiornamento:** 1 agosto 2026 (Settimana 4 piano pre-mortem: unificata pipeline export YAML / Play in-app)
+**Ultimo aggiornamento:** 1 agosto 2026 (Settimana 4 piano pre-mortem: CLI-check Maestro come gate pre-release in CI)
+
+### Settimana 4 — Maestro: CLI-check come gate pre-release (1 agosto 2026)
+
+Settimana 2 aveva validato manualmente lo YAML esportato con `maestro check-syntax` (CLI reale
+installata in locale), ma `docs/MAESTRO_COMPAT.md` segnalava onestamente "CLI-check opzionale =
+nessun segnale automatico": nessuna regressione di sintassi nell'exporter sarebbe stata
+intercettata senza rifare quella validazione a mano ad ogni modifica.
+
+- Nuovo `MaestroCliSyntaxValidationTest.kt`: costruisce un flusso realistico (login con PIN,
+  tap point-only spurio, testo con parentesi da escapare), lo fa passare per la pipeline di
+  produzione reale (`optimize` → `sanitizeForPlay` → `export`, la stessa unificata pochi commit
+  fa) e invoca il binario `maestro check-syntax` reale via `ProcessBuilder` su un file temporaneo,
+  verificando `exitCode == 0` e `"OK"` nell'output. Se il binario non è installato in locale
+  (`~/.maestro/bin/maestro`, o `$MAESTRO_CLI_PATH`), il test si salta con `Assume` — non rompe
+  `./gradlew test` per chi non ha Maestro installato sulla propria macchina.
+- `.github/workflows/release.yml`: nuovo step "Install Maestro CLI" (installer ufficiale
+  `get.maestro.mobile.dev`) seguito da "Run JVM tests" (`./gradlew testDebugUnitTest`) **prima**
+  della build APK/plugin — se il test di sintassi Maestro fallisce, l'intera pipeline di release
+  si ferma. Questo è il gate pre-release richiesto: da questo momento una regressione di sintassi
+  nell'exporter blocca la pubblicazione della release invece di essere scoperta solo a mano (o,
+  peggio, dal cliente che prova `maestro test` sullo YAML esportato).
+- **`when:`/`runFlow` export**: confermato backlog dichiarato, non implementato in questo giro.
+  `docs/MAESTRO_COMPAT.md` §"Condizionali" documenta già onestamente perché (richiede wrapping
+  `runFlow` + supporto import per blocchi annidati, che l'importer oggi non ha) — nessun
+  aggiornamento necessario, la nota è ancora accurata.
+
+Verifica: `./gradlew :app:testDebugUnitTest` verde (nuovo test eseguito e passato con la CLI
+reale installata in locale); sintassi di `release.yml` validata.
 
 ### Settimana 4 — Maestro: unificata pipeline export/Play ("verde in-app" ora predice "verde CI") (1 agosto 2026)
 
