@@ -80,7 +80,11 @@ Test manuale:
 adb shell content query --uri content://dev.accessscope.scanner.results/status
 ```
 
-Broadcast locale a fine scansione: `dev.accessscope.scanner.SCAN_COMPLETE`
+Broadcast locale a fine scansione: `dev.accessscope.scanner.SCAN_COMPLETE` (intra-app,
+`setPackage`-ristretto — non osservabile da adb). Il segnale osservabile esternamente è la riga
+logcat taggata `AccessScopeBridge` (`scan_complete sessionId=... package=...`): `fetch-results
+--wait` la ascolta in tempo reale (watcher `adb logcat` in background) invece di affidarsi solo
+al polling periodico su `/status`, che resta come rete di sicurezza a ritmo più basso.
 
 ## Flusso utente
 

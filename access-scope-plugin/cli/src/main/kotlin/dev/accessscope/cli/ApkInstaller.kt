@@ -6,6 +6,14 @@ object AppConstants {
     const val PACKAGE_NAME = "dev.accessscope.scanner"
     const val MAIN_ACTIVITY = "dev.accessscope.scanner/.MainActivity"
     const val RESULTS_AUTHORITY = "dev.accessscope.scanner.results"
+    /**
+     * Tag logcat che l'app usa per segnalare fine scansione (vedi `BridgeConstants.BRIDGE_LOG_TAG`
+     * nel modulo app — duplicato qui perché cli/ e app/ sono moduli Gradle separati senza
+     * dipendenza diretta). L'app lo documenta esplicitamente come "tag per automazione plugin".
+     */
+    const val BRIDGE_LOG_TAG = "AccessScopeBridge"
+    /** Sottostringa della riga logcat che segnala il completamento scansione. */
+    const val SCAN_COMPLETE_MARKER = "scan_complete"
 }
 
 class ApkInstaller(

@@ -39,6 +39,16 @@ class Adb(private val deviceSerial: String? = null) {
     fun runOrNull(vararg args: String): String? =
         runCatching { run(*args).output }.getOrNull()
 
+    /**
+     * Avvia un processo adb persistente (es. `logcat`) e legge lo stdout riga per riga finché
+     * [onLine] non ritorna `true` (match trovato) o [timeoutSeconds] scade. Il processo viene
+     * sempre terminato all'uscita, match trovato o no — mai lasciato appeso in background.
+     *
+     * @return `true` se [onLine] ha trovato un match prima del timeout, `false` altrimenti.
+     */
+    fun streamUntil(args: List<String>, timeoutSeconds: Long, onLine: (String) -> Boolean): Boolean =
+        streamProcessUntil(buildCommand(args.toTypedArray()), timeoutSeconds, onLine)
+
     private fun buildCommand(args: Array<out String>): List<String> = buildList {
         add(adbExecutable)
         if (!deviceSerial.isNullOrBlank()) {
@@ -53,6 +63,36 @@ class Adb(private val deviceSerial: String? = null) {
 }
 
 data class AdbResult(val output: String, val exitCode: Int)
+
+/**
+ * Avvia [command] e legge il suo stdout riga per riga finché [onLine] non ritorna `true` o
+ * [timeoutSeconds] scade, poi termina sempre il processo. Estratta da [Adb.streamUntil] come
+ * funzione libera (nessun binario adb coinvolto) così è testabile in isolamento con un comando
+ * qualunque (es. `sh -c ...`), senza device.
+ *
+ * La lettura avviene su un thread separato in coda bloccante: un `readLine()` diretto nel loop
+ * principale ignorerebbe la deadline finché non arriva una riga (può bloccare per sempre se il
+ * flusso resta silenzioso), qui invece `poll(remaining, ...)` la rispetta sempre.
+ */
+fun streamProcessUntil(command: List<String>, timeoutSeconds: Long, onLine: (String) -> Boolean): Boolean {
+    val process = ProcessBuilder(command).redirectErrorStream(true).start()
+    val lines = java.util.concurrent.LinkedBlockingQueue<String>()
+    val readerThread = Thread {
+        runCatching { process.inputStream.bufferedReader().forEachLine { lines.put(it) } }
+    }.apply { isDaemon = true; start() }
+    try {
+        val deadline = System.currentTimeMillis() + timeoutSeconds * 1000
+        while (true) {
+            val remaining = deadline - System.currentTimeMillis()
+            if (remaining <= 0) return false
+            val line = lines.poll(remaining, TimeUnit.MILLISECONDS) ?: continue
+            if (onLine(line)) return true
+        }
+    } finally {
+        process.destroyForcibly()
+        readerThread.interrupt()
+    }
+}
 
 fun resolveAdbPath(): String = defaultAdbPath()
 

@@ -32,22 +32,52 @@ class ResultFetcher(private val deviceSerial: String) {
         return gson.toJson(buildScanResultResponse(session))
     }
 
+    /**
+     * Attende la fine della scansione in corso: prima solo polling ogni 2s su `/status` (un
+     * nuovo processo `adb shell content query` ad ogni giro), anche se l'app emette già un
+     * segnale via logcat (`AccessScopeBridge`, tag pensato esplicitamente per l'automazione
+     * plugin — vedi `BridgeConstants.kt` nel modulo app) che nessun client ascoltava.
+     *
+     * Ora il segnale primario è push: un watcher `adb logcat` in background che si sblocca
+     * appena vede la riga `scan_complete`. Il polling su `/status` resta come rete di sicurezza
+     * a ritmo più basso (ogni 5s, non più l'unico meccanismo) — copre i casi in cui logcat non è
+     * disponibile (permessi, emulatore headless) o la riga si perde.
+     */
     private fun waitForScanComplete(timeoutMinutes: Long) {
-        val deadline = System.currentTimeMillis() + timeoutMinutes * 60_000
-        var wasScanning = false
-        while (System.currentTimeMillis() < deadline) {
-            val status = fetchStatus()
-            val scanning = status.get("isScanning")?.asBoolean ?: false
-            if (scanning) {
-                wasScanning = true
-            } else if (wasScanning) {
-                Thread.sleep(1500)
-                return
+        if (fetchStatus().get("isScanning")?.asBoolean != true) return
+
+        val timeoutSeconds = timeoutMinutes * 60
+        val logcatFound = java.util.concurrent.atomic.AtomicBoolean(false)
+        val logcatWatcher = Thread {
+            val found = runCatching {
+                adb.streamUntil(
+                    args = listOf("logcat", "-s", "${AppConstants.BRIDGE_LOG_TAG}:I"),
+                    timeoutSeconds = timeoutSeconds,
+                ) { line -> line.contains(AppConstants.SCAN_COMPLETE_MARKER) }
+            }.getOrDefault(false)
+            if (found) logcatFound.set(true)
+        }.apply { isDaemon = true; start() }
+
+        try {
+            val deadline = System.currentTimeMillis() + timeoutSeconds * 1000
+            var wasScanning = true
+            while (System.currentTimeMillis() < deadline) {
+                if (logcatFound.get()) {
+                    Thread.sleep(500) // lascia il tempo alla sessione di archiviarsi lato app
+                    return
+                }
+                Thread.sleep(5000)
+                val scanning = runCatching { fetchStatus().get("isScanning")?.asBoolean }
+                    .getOrNull() ?: wasScanning
+                if (!scanning && wasScanning) {
+                    Thread.sleep(1500)
+                    return
+                }
+                wasScanning = scanning
             }
-            Thread.sleep(2000)
-        }
-        if (wasScanning) {
             error("Timed out waiting for scan to complete after ${timeoutMinutes}m")
+        } finally {
+            logcatWatcher.interrupt()
         }
     }
 

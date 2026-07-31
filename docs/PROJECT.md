@@ -6,7 +6,35 @@
 **Package:** `dev.accessscope.scanner`  
 **Branch principale sviluppo:** `develop`  
 **Branch release stabile:** `main`  
-**Ultimo aggiornamento:** 1 agosto 2026 (Settimana 4 piano pre-mortem: CLI-check Maestro come gate pre-release in CI)
+**Ultimo aggiornamento:** 1 agosto 2026 (Settimana 4 piano pre-mortem: plugin, collegato il broadcast SCAN_COMPLETE)
+
+### Settimana 4 — Plugin: collegato il segnale di fine scansione (push invece di solo polling) (1 agosto 2026)
+
+Pre-mortem plugin, causa 4 del post-mortem fluidità: "polling 2s mai usato... mentre l'app
+emette già il broadcast SCAN_COMPLETE che nessuno ascolta — l'architettura push esiste, non è
+collegata". Verificato: `AccessScopeApp.notifyScanComplete` invia l'Intent con
+`setPackage(this@AccessScopeApp.packageName)` — **intra-app per costruzione**, mai osservabile
+da adb/plugin esterno, quindi non è quello il canale da collegare. Il vero segnale già pensato
+per l'automazione esterna è la riga logcat che la stessa funzione emette subito dopo, con un tag
+il cui commento nel modulo app dice esplicitamente "Tag logcat per **automazione plugin**"
+(`BridgeConstants.BRIDGE_LOG_TAG`) — mai realmente ascoltato da nessun client.
+
+- `Adb.streamUntil` (delega a un nuovo `streamProcessUntil` libero, testabile senza adb/device):
+  avvia un processo persistente (es. `logcat`), legge lo stdout riga per riga su un thread
+  dedicato con `LinkedBlockingQueue.poll(remaining, ...)` — rispetta sempre la deadline anche se
+  il flusso resta silenzioso (un `readLine()` diretto nel loop principale no), e termina sempre
+  il processo figlio all'uscita.
+- `ResultFetcher.waitForScanComplete` (`fetch-results --wait`): ora avvia un watcher
+  `adb logcat -s AccessScopeBridge:I` in background come segnale **primario** — si sblocca
+  appena vede `scan_complete`, invece di aspettare fino a 2s del prossimo poll. Il polling su
+  `/status` resta come rete di sicurezza (ogni 5s, non più l'unico meccanismo) per i casi in cui
+  logcat non è disponibile (permessi, emulatore headless) o la riga si perde. Se la scansione
+  non è già in corso alla prima chiamata, ritorna subito senza attendere.
+- 2 test nuovi (`AdbStreamUntilTest`, primo test JVM del modulo `cli/`): ritorno anticipato non
+  appena la riga match arriva (non aspetta la vita intera del processo), timeout quando la riga
+  non arriva mai — usano `sh -c` al posto di adb/logcat reali per restare test JVM puri.
+
+Verifica: `./gradlew :cli:test :android-studio-plugin:compileKotlin` verde.
 
 ### Settimana 4 — Maestro: CLI-check come gate pre-release (1 agosto 2026)
 
