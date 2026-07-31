@@ -11,7 +11,10 @@ import dev.accessscope.scanner.recorder.optimization.selector.SelectorRanker
 /**
  * Generatore YAML compatibile con Maestro CLI.
  *
- * Si aspetta azioni già ottimizzate ([FlowOptimizer.optimize]); non ri-ottimizza.
+ * Si aspetta azioni già ottimizzate ([FlowOptimizer.optimize]) e passate anche da
+ * [FlowOptimizer.sanitizeForPlay] (vedi `FlowStore.writeArtifacts`) — la stessa trasformazione
+ * applicata al Play in-app, così il YAML esportato riflette esattamente ciò che gira dal vivo
+ * invece di poter divergere. Non ri-ottimizza da sé.
  */
 object MaestroYamlExporter {
 

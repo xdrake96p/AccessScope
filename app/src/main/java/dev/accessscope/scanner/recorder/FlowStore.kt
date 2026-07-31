@@ -75,7 +75,7 @@ class FlowStore(context: Context) {
                 "zero_edit_errors id=$id count=${report.errorCount} msg=${report.userSummary()}",
             )
         }
-        writeArtifacts(id, appId, safeName, finalActions, ctx)
+        val stepCount = writeArtifacts(id, appId, safeName, finalActions, ctx)
         if (telemetry != null) {
             telemetryFile(id).writeText(FlowTelemetryCodec.toJson(telemetry), Charsets.UTF_8)
         }
@@ -85,7 +85,7 @@ class FlowStore(context: Context) {
             appId = appId,
             appLabel = appLabel,
             createdAtMs = System.currentTimeMillis(),
-            stepCount = MaestroYamlExporter.countSteps(finalActions),
+            stepCount = stepCount,
             yamlRelativePath = "$id.yaml",
             hasActionsJson = true,
         )
@@ -132,7 +132,7 @@ class FlowStore(context: Context) {
         }
         lastZeroEditReport = report
         val finalActions = report.actions
-        writeArtifacts(id, existing.appId, safeName, finalActions, ctx)
+        val stepCount = writeArtifacts(id, existing.appId, safeName, finalActions, ctx)
         // #region agent log
         DebugSessionLog.log(
             "H6",
@@ -149,7 +149,7 @@ class FlowStore(context: Context) {
         // #endregion
         val updated = existing.copy(
             name = safeName,
-            stepCount = MaestroYamlExporter.countSteps(finalActions),
+            stepCount = stepCount,
             hasActionsJson = true,
         )
         writeIndex(current.map { if (it.id == id) updated.copy(hasActionsJson = false) else it })
@@ -230,22 +230,38 @@ class FlowStore(context: Context) {
      */
     fun rootDirectory(): File = rootDir
 
+    /**
+     * Scrive YAML + actions.json per un flusso.
+     *
+     * Il YAML **non** viene generato dalle [actions] grezze: passa prima da
+     * [FlowOptimizer.sanitizeForPlay], la stessa trasformazione che il Play in-app applica
+     * prima di eseguire dal vivo. Prima le due pipeline divergevano — un flusso verde in-app
+     * (che beneficiava del riordino overlay bloccanti, dei wait-target e della rinormalizzazione
+     * selettori di sanitizeForPlay) poteva esportare un YAML privo di quegli stessi fix e fallire
+     * nel `maestro` CLI reale ("verde in-app non predice verde in CI"). `actions.json` resta la
+     * versione pre-sanitize: è quella che editor e ri-ottimizzazione al prossimo salvataggio si
+     * aspettano.
+     *
+     * @return Numero di step Maestro nel YAML generato (per [SavedFlow.stepCount]).
+     */
     private fun writeArtifacts(
         id: String,
         appId: String,
         name: String,
         actions: List<RecordedAction>,
         context: OptimizationContext,
-    ) {
+    ): Int {
+        val yamlActions = FlowOptimizer.sanitizeForPlay(actions)
         val yaml = MaestroYamlExporter.export(
             appId,
             name,
-            actions,
+            yamlActions,
             context.scanIntel,
             context.telemetry,
         )
         File(rootDir, "$id.yaml").writeText(yaml, Charsets.UTF_8)
         actionsFile(id).writeText(ActionJsonCodec.toJson(actions), Charsets.UTF_8)
+        return MaestroYamlExporter.countSteps(yamlActions)
     }
 
     private fun actionsFile(id: String): File = File(rootDir, "$id.actions.json")

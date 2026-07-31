@@ -6,7 +6,35 @@
 **Package:** `dev.accessscope.scanner`  
 **Branch principale sviluppo:** `develop`  
 **Branch release stabile:** `main`  
-**Ultimo aggiornamento:** 1 agosto 2026 (Settimana 4 piano pre-mortem: pulizia API morte, canale update plugin develop→main)
+**Ultimo aggiornamento:** 1 agosto 2026 (Settimana 4 piano pre-mortem: unificata pipeline export YAML / Play in-app)
+
+### Settimana 4 — Maestro: unificata pipeline export/Play ("verde in-app" ora predice "verde CI") (1 agosto 2026)
+
+Backlog M2 esplicitamente rimandato in Settimana 2 per rischio/ampiezza: "due pipeline diverse,
+`sanitizeForPlay` esegue un flusso diverso dallo YAML esportato". `FlowStore.saveFlow`/
+`updateFlow` scrivevano lo YAML direttamente dalle azioni prodotte da `FlowOptimizer.optimize()`
+(+ ZeroEditGate), mentre il Play in-app (`AccessScopeApp.kt`) applicava `FlowOptimizer.
+sanitizeForPlay()` **solo** alla copia in memoria usata per l'esecuzione dal vivo — mai
+ripropagato nel file YAML persistito. `sanitizeForPlay` fa lavoro reale che `optimize()` da solo
+non fa (riordino overlay bloccanti, wait-target ciechi, wait di animazione, ri-normalizzazione
+selettori, drop di tap "point-only" con coordinate ormai obsolete): un flusso verde in-app
+poteva quindi esportare uno YAML privo di quegli stessi fix e fallire nel `maestro` CLI reale —
+esattamente il rischio "verde in-app non predice verde in CI" del pre-mortem.
+
+Non è stata una fusione completa delle due pipeline (rischio/ampiezza troppo alti per
+un'unica sessione: `optimize()` cura la registrazione grezza con telemetria/scan-intel,
+`sanitizeForPlay` fa una pulizia più leggera e non distruttiva su un flusso già curato — sono
+input strutturalmente diversi). La correzione mirata: `FlowStore.writeArtifacts` ora passa le
+azioni da `sanitizeForPlay` **prima** di generarci il YAML, così l'export riflette esattamente
+la stessa trasformazione del Play in-app. `actions.json` (letto da editor e ri-ottimizzazione)
+resta invariato — solo il YAML persistito cambia.
+
+Verifica: `./gradlew :app:testDebugUnitTest :app:assembleDebug` verde (nessuna regressione sulla
+suite esistente di golden-master/round-trip/ZeroEdit); nuovo test
+`FlowStoreTest.saveFlow_exportedYaml_reflectsSanitizeForPlayNotJustRawActions` (un tap
+point-only sopravvive a `optimize()` ma viene scartato da `sanitizeForPlay`, quindi deve sparire
+dal YAML esportato); YAML generato dalla pipeline unificata (login flow multi-step, incluso un
+tap point-only spurio) validato con `maestro check-syntax` reale — `OK`.
 
 ### Settimana 4 — Pulizia API morte + canale update plugin develop→main (1 agosto 2026)
 
