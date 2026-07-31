@@ -37,12 +37,19 @@ class CliExecutor {
             .apply { environment().putAll(buildCliEnvironment(project)) }
             .redirectErrorStream(true)
             .start()
+        // Drena stdout in un thread PRIMA di waitFor: se l'output supera il pipe buffer
+        // dell'OS (~64KB, tipico per fetch-results con molte violazioni) il figlio si
+        // blocca in scrittura e waitFor non ritorna mai → IDE congelato fino al timeout.
+        val outputFuture = java.util.concurrent.CompletableFuture.supplyAsync {
+            process.inputStream.bufferedReader(StandardCharsets.UTF_8).readText().trim()
+        }
         val completed = process.waitFor(10, TimeUnit.MINUTES)
-        val output = process.inputStream.bufferedReader(StandardCharsets.UTF_8).readText().trim()
         if (!completed) {
             process.destroyForcibly()
+            outputFuture.cancel(true)
             error("CLI timed out")
         }
+        val output = outputFuture.get(30, TimeUnit.SECONDS)
         if (process.exitValue() != 0) {
             error(formatCliError(output.ifBlank { "CLI failed with exit code ${process.exitValue()}" }))
         }

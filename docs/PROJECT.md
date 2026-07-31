@@ -6,7 +6,43 @@
 **Package:** `dev.accessscope.scanner`  
 **Branch principale sviluppo:** `develop`  
 **Branch release stabile:** `main`  
-**Ultimo aggiornamento:** 31 luglio 2026 (rimosse euristiche Nexi/AXA dal motore precisione: engine generico per qualunque app)
+**Ultimo aggiornamento:** 31 luglio 2026 (P0 stabilità pre-presentazione: scan off-main-thread, leak HardwareBuffer, OOM report, deadlock plugin)
+
+### P0 Stabilità (Settimana 1 piano pre-mortem, 31 luglio 2026)
+
+Fix dei "demo-killer" individuati dal pre-mortem (4 audit: threading app, TalkBack/report, Maestro, plugin):
+
+- **Scan off-main-thread**: `AccessibilityScreenshotCapture` riceve l'executor di scansione
+  (non più `mainExecutor`) — camminata albero, contrasto e JPEG evidenze non girano più sul
+  main thread (prima: jank/ANR garantiti su schermate dense, sempre su API 30+).
+- **Leak `HardwareBuffer` chiuso**: il buffer nativo dello screenshot non veniva mai
+  rilasciato → screenshot degradanti nelle sessioni lunghe. Ora `close()` su tutti i path,
+  e il bitmap HARDWARE intermedio viene riciclato dopo la copia.
+- **B3 retry screenshot**: fallimenti transitori e bitmap neri ritentati 1 volta con backoff
+  (300ms) prima di marcare la schermata protetta; FLAG_SECURE resta senza retry (deterministico).
+- **Data race**: `seenFingerprintsThisSession` → `ConcurrentHashMap.newKeySet`.
+- **OOM report dinamico**: decode screenshot con `inSampleSize` (lato max = schermo),
+  cache thumbnail con eviction FIFO (max 6), `remember` keyed su `sessionId`;
+  `ScreenIssueCanvas` ora scala i marker sulla larghezza schermo reale (non `bitmap.width`),
+  così restano allineati anche con bitmap downsampled.
+- **Frame build fuori dal tick live**: sessioni archiviate via `produceState`+IO (una volta
+  per sessionId); live keyed sui soli dati che contano, non sull'intero `scanState`.
+- **Overlay**: `removeView` protetto in `ScanOverlayService`; overlay errore playback con
+  auto-chiusura 12s; rollback scan+overlay se `startScanWithFlow` fallisce all'avvio.
+- **I/O fuori composizione**: `FlowsScreen` (listFlows/readYaml/deleteFlow su IO),
+  `ScanHistoryScreen` (parse cronologia via `produceState`+IO).
+- **Settings**: rimosso lo switch "Analizza tutto" one-way (spegnerlo non faceva nulla);
+  il preset «Completa» copre lo stesso caso.
+- **Plugin — deadlock pipe buffer**: `CliExecutor` (AS) e `Adb` (CLI) chiamavano `waitFor()`
+  prima di drenare stdout: output > 64KB (fetch-results ricco) bloccava il figlio per sempre
+  → IDE congelato fino a timeout (10 min). Ora stdout drenato in concorrenza.
+- **Plugin — crash su zero sessioni**: `fetch-results` con `{"error":"not_found"}` (exit 0)
+  crashava VS Code su `result.violations.length`; ora messaggio chiaro "nessun risultato".
+- **Plugin — README**: rimosso il package cliente `it.nexi.bff` (→ `com.example.targetapp`).
+
+Verifica: app 250 test JVM + assembleDebug verdi; `:cli:compileKotlin` e
+`:android-studio-plugin:compileKotlin` verdi; `tsc --noEmit` estensione VS Code pulito;
+reinstallato su Galaxy S10.
 
 ### Motore di precisione: eliminate le euristiche specifiche Nexi/AXA (31 luglio 2026)
 

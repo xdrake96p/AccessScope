@@ -49,8 +49,8 @@ java -jar cli/build/libs/cli-1.0.0-all.jar devices list
 java -jar cli/build/libs/cli-1.0.0-all.jar install --device <SERIAL>
 java -jar cli/build/libs/cli-1.0.0-all.jar launch --device <SERIAL>
 java -jar cli/build/libs/cli-1.0.0-all.jar setup-check --device <SERIAL>
-java -jar cli/build/libs/cli-1.0.0-all.jar fetch-results --device <SERIAL> --package it.nexi.bff
-java -jar cli/build/libs/cli-1.0.0-all.jar fetch-results --device <SERIAL> --package it.nexi.bff --wait --timeout 30m
+java -jar cli/build/libs/cli-1.0.0-all.jar fetch-results --device <SERIAL> --package com.example.targetapp
+java -jar cli/build/libs/cli-1.0.0-all.jar fetch-results --device <SERIAL> --package com.example.targetapp --wait --timeout 30m
 ```
 
 Variabile ambiente opzionale: `ACCESS_SCOPE_DEVICE`, `GITHUB_TOKEN` (rate limit GitHub API).
@@ -96,7 +96,7 @@ Broadcast locale a fine scansione: `dev.accessscope.scanner.SCAN_COMPLETE`
 {
   "accessScope.githubRepo": "xdrake96p/AccessScope",
   "accessScope.defaultDevice": "emulator-5554",
-  "accessScope.targetPackage": "it.nexi.bff",
+  "accessScope.targetPackage": "com.example.targetapp",
   "accessScope.autoUpdate": true,
   "accessScope.javaPath": "/Applications/Android Studio.app/Contents/jbr/Contents/Home/bin/java"
 }

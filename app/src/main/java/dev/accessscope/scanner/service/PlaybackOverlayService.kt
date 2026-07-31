@@ -37,6 +37,8 @@ class PlaybackOverlayService : Service() {
     private var windowManager: WindowManager? = null
     private var overlayRoot: LinearLayout? = null
     private var titleView: TextView? = null
+    private val autoDismissHandler = android.os.Handler(android.os.Looper.getMainLooper())
+    private val autoDismissRunnable = Runnable { stopSelf() }
 
     override fun onCreate() {
         super.onCreate()
@@ -50,6 +52,10 @@ class PlaybackOverlayService : Service() {
             ACTION_ERROR -> {
                 val msg = intent.getStringExtra(EXTRA_ERROR).orEmpty()
                 titleView?.text = if (msg.isBlank()) "ERR · Beta" else "ERR · ${msg.take(48)}"
+                // L'overlay di errore non deve restare appeso all'infinito se l'utente
+                // non lo dismette: auto-chiusura dopo un tempo sufficiente a leggerlo.
+                autoDismissHandler.removeCallbacks(autoDismissRunnable)
+                autoDismissHandler.postDelayed(autoDismissRunnable, ERROR_AUTO_DISMISS_MS)
             }
             ACTION_STEP -> {
                 val step = intent.getIntExtra(EXTRA_STEP_INDEX, -1)
@@ -65,6 +71,7 @@ class PlaybackOverlayService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onDestroy() {
+        autoDismissHandler.removeCallbacks(autoDismissRunnable)
         removeOverlay()
         super.onDestroy()
     }
@@ -207,6 +214,9 @@ class PlaybackOverlayService : Service() {
     companion object {
         private const val CHANNEL_ID = "accessscope_playback"
         private const val NOTIFICATION_ID = 43
+
+        /** Tempo di lettura dell'errore prima dell'auto-chiusura dell'overlay. */
+        private const val ERROR_AUTO_DISMISS_MS = 12_000L
         private const val ACTION_STOP = "dev.accessscope.scanner.STOP_PLAYBACK"
         private const val ACTION_ERROR = "dev.accessscope.scanner.PLAYBACK_ERROR"
         private const val ACTION_STEP = "dev.accessscope.scanner.PLAYBACK_STEP"

@@ -212,7 +212,15 @@ class ScanOverlayService : Service() {
     }
 
     private fun removeOverlay() {
-        overlayRoot?.let { windowManager?.removeView(it) }
+        // removeView lancia IllegalArgumentException se la view non è (più) attaccata —
+        // può accadere in onDestroy dopo un addView fallito o una rimozione doppia.
+        overlayRoot?.let { root ->
+            try {
+                windowManager?.removeView(root)
+            } catch (e: IllegalArgumentException) {
+                AppFileLogger.info("ScanOverlay", "removeView_skipped ${e.message}")
+            }
+        }
         overlayRoot = null
         overlayParams = null
     }

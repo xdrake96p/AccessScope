@@ -228,6 +228,6 @@ class ScanViewModel(application: Application) : AndroidViewModel(application) {
     fun buildDynamicReport(sessionId: String? = null): List<DynamicScreenFrame> =
         historyController.buildDynamicReport(sessionId)
 
-    fun loadScreenBitmapForFrame(frame: DynamicScreenFrame, sessionId: String? = null) =
-        historyController.loadScreenBitmapForFrame(frame, sessionId)
+    fun loadScreenBitmapForFrame(frame: DynamicScreenFrame, sessionId: String? = null, maxDimPx: Int = 0) =
+        historyController.loadScreenBitmapForFrame(frame, sessionId, maxDimPx)
 }

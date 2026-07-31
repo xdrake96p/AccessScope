@@ -20,12 +20,19 @@ class Adb(private val deviceSerial: String? = null) {
         val process = ProcessBuilder(command)
             .redirectErrorStream(true)
             .start()
+        // Drena stdout PRIMA di waitFor: un `content query` con molte violazioni supera
+        // il pipe buffer dell'OS (~64KB) e senza lettura concorrente il figlio si blocca
+        // in scrittura → deadlock fino al timeout.
+        val outputFuture = java.util.concurrent.CompletableFuture.supplyAsync {
+            process.inputStream.bufferedReader().readText()
+        }
         val completed = process.waitFor(timeoutSeconds, TimeUnit.SECONDS)
         if (!completed) {
             process.destroyForcibly()
+            outputFuture.cancel(true)
             error("adb command timed out: ${command.joinToString(" ")}")
         }
-        val output = process.inputStream.bufferedReader().readText()
+        val output = outputFuture.get(15, TimeUnit.SECONDS)
         return AdbResult(output.trim(), process.exitValue())
     }
 

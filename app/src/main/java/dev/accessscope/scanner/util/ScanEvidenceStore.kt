@@ -158,10 +158,31 @@ class ScanEvidenceStore(private val context: Context) {
     }
   }
 
-  fun loadScreenBitmap(sessionId: String, screenEvidenceId: String): Bitmap? {
+  /**
+   * Carica lo screenshot di schermata, opzionalmente downsampled.
+   *
+   * @param maxDimPx Lato massimo desiderato in px; `<= 0` = full-res. Il decode usa
+   *   `inSampleSize` (potenze di 2): un full-res 1080×2400 ≈ 10MB in RAM, con
+   *   downsampling a ~1080 di lato lungo scende a ~2.5MB — indispensabile per non
+   *   accumulare centinaia di MB nel report dinamico multi-schermata.
+   */
+  fun loadScreenBitmap(sessionId: String, screenEvidenceId: String, maxDimPx: Int = 0): Bitmap? {
     val file = screenFile(sessionId, screenEvidenceId)
     if (!file.exists()) return null
-    return runCatching { android.graphics.BitmapFactory.decodeFile(file.absolutePath) }.getOrNull()
+    return runCatching { decodeDownsampled(file.absolutePath, maxDimPx) }.getOrNull()
+  }
+
+  private fun decodeDownsampled(path: String, maxDimPx: Int): Bitmap? {
+    if (maxDimPx <= 0) return android.graphics.BitmapFactory.decodeFile(path)
+    val bounds = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
+    android.graphics.BitmapFactory.decodeFile(path, bounds)
+    if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return null
+    var sample = 1
+    while (maxOf(bounds.outWidth, bounds.outHeight) / (sample * 2) >= maxDimPx) {
+      sample *= 2
+    }
+    val opts = android.graphics.BitmapFactory.Options().apply { inSampleSize = sample }
+    return android.graphics.BitmapFactory.decodeFile(path, opts)
   }
 
   fun annotateOnDemand(

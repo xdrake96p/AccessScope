@@ -188,7 +188,16 @@ async function fetchResults(context: vscode.ExtensionContext): Promise<void> {
     },
     async () => cli.run(args),
   );
-  const result = JSON.parse(raw) as ScanResultResponse;
+  const parsed = JSON.parse(raw) as ScanResultResponse & { error?: string; message?: string };
+  // The CLI returns {"error":"not_found"} with exit 0 when no session exists yet:
+  // treating it as a result would crash on result.violations below.
+  if (parsed.error || !Array.isArray(parsed.violations)) {
+    vscode.window.showInformationMessage(
+      'AccessScope: no scan results on the device yet. Run a scan from the app first.',
+    );
+    return;
+  }
+  const result = parsed as ScanResultResponse;
   await context.workspaceState.update('accessScope.lastResult', result);
   resultsWebview.show(result);
   vscode.window.showInformationMessage(

@@ -29,11 +29,13 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -41,6 +43,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.accessscope.scanner.data.AccessibilityViolation
 import dev.accessscope.scanner.data.ViolationSeverity
 import dev.accessscope.scanner.report.DynamicReportHelper
+import dev.accessscope.scanner.report.DynamicScreenFrame
 import dev.accessscope.scanner.report.ReportHelper
 import dev.accessscope.scanner.ui.components.AccessScopeTopBar
 import dev.accessscope.scanner.ui.components.ScreenFilmstrip
@@ -55,6 +58,9 @@ import dev.accessscope.scanner.ui.viewmodel.ScanViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
+/** Bitmap schermata tenuti in cache contemporaneamente nel report dinamico. */
+private const val MAX_CACHED_THUMBNAILS = 6
+
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun DynamicReportScreen(
@@ -65,8 +71,17 @@ fun DynamicReportScreen(
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val scan = uiState.scanState
-    val frames = remember(sessionId, uiState.scanState) {
-        viewModel.buildDynamicReport(sessionId)
+    // Sessione archiviata: parse JSON una sola volta per sessionId, su IO (non in composizione).
+    // Sessione live: ricostruisci solo quando cambiano i dati che contano, non a ogni tick
+    // di scanState (il contatore analisi cambia a ogni evento a11y).
+    val frames = if (sessionId != null) {
+        produceState(initialValue = emptyList<DynamicScreenFrame>(), sessionId) {
+            value = withContext(Dispatchers.IO) { viewModel.buildDynamicReport(sessionId) }
+        }.value
+    } else {
+        remember(scan.visitedScreens, scan.violations, scan.screenReaderFindings, scan.checkSummaries) {
+            viewModel.buildDynamicReport(null)
+        }
     }
     val reportScore = remember(scan.violations, scan.uniqueScreens) {
         ReportHelper.computeScore(
@@ -78,7 +93,12 @@ fun DynamicReportScreen(
     var selectedIndex by rememberSaveable { mutableIntStateOf(0) }
     var severityFilter by rememberSaveable { mutableStateOf<ViolationSeverity?>(null) }
     var selectedDedupeKey by rememberSaveable { mutableStateOf<String?>(null) }
-    val thumbnails = remember { mutableStateMapOf<String, Bitmap?>() }
+    // Keyed su sessionId: cambiando sessione la cache riparte, niente bitmap stantii.
+    val thumbnails = remember(sessionId) { mutableStateMapOf<String, Bitmap?>() }
+    val thumbnailOrder = remember(sessionId) { ArrayDeque<String>() }
+    val screenMaxDimPx = LocalContext.current.resources.displayMetrics.let {
+        maxOf(it.widthPixels, it.heightPixels)
+    }
 
     val safeIndex = selectedIndex.coerceIn(0, (frames.size - 1).coerceAtLeast(0))
     val currentFrame = frames.getOrNull(safeIndex)
@@ -90,9 +110,14 @@ fun DynamicReportScreen(
         val frame = frames.getOrNull(safeIndex) ?: return@LaunchedEffect
         if (thumbnails.containsKey(frame.fingerprint)) return@LaunchedEffect
         val bitmap = withContext(Dispatchers.IO) {
-            viewModel.loadScreenBitmapForFrame(frame, sessionId)
+            viewModel.loadScreenBitmapForFrame(frame, sessionId, maxDimPx = screenMaxDimPx)
         }
         thumbnails[frame.fingerprint] = bitmap
+        thumbnailOrder.addLast(frame.fingerprint)
+        // Eviction FIFO: senza limite 20+ schermate accumulano centinaia di MB (OOM).
+        while (thumbnailOrder.size > MAX_CACHED_THUMBNAILS) {
+            thumbnails.remove(thumbnailOrder.removeFirst())
+        }
     }
 
     LaunchedEffect(frames.size) {

@@ -524,7 +524,14 @@ class AccessScopeApp : Application() {
         scanRepository.startScan(setOf(flow.appId), scope)
         AccessScopeAccessibilityService.instance?.resetDynamicTracking()
         ScanOverlayService.start(this)
-        return startFlowPlayback(flow, withScan = true)
+        val error = startFlowPlayback(flow, withScan = true)
+        if (error != null) {
+            // Rollback: senza playback la scansione appena avviata resterebbe attiva
+            // con l'overlay appeso e nessun flusso in esecuzione.
+            scanRepository.stopScan()
+            ScanOverlayService.stop(this)
+        }
+        return error
     }
 
     /**

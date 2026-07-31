@@ -26,6 +26,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -76,6 +77,11 @@ fun ScreenIssueCanvas(
     val imageBitmap = remember(bitmap) { bitmap.asImageBitmap() }
     val density = LocalDensity.current
 
+    // I bounds delle violazioni sono in pixel di schermo: la scala dei marker va calcolata
+    // sulla larghezza reale dello schermo, NON su bitmap.width — lo screenshot può essere
+    // downsampled per memoria e i marker devono restare allineati comunque.
+    val screenWidthPx = LocalContext.current.resources.displayMetrics.widthPixels
+
     BoxWithConstraints(
         modifier = modifier
             .fillMaxWidth()
@@ -87,8 +93,9 @@ fun ScreenIssueCanvas(
             ),
     ) {
         val containerWidthPx = with(density) { maxWidth.toPx() }
-        val scale = containerWidthPx / bitmap.width.toFloat()
-        val displayHeightDp = with(density) { (bitmap.height * scale).toDp() }
+        val scale = containerWidthPx / screenWidthPx.toFloat()
+        val imageScale = containerWidthPx / bitmap.width.toFloat()
+        val displayHeightDp = with(density) { (bitmap.height * imageScale).toDp() }
 
         Box(
             modifier = Modifier

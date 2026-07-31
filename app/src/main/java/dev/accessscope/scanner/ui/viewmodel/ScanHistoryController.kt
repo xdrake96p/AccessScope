@@ -128,12 +128,21 @@ internal class ScanHistoryController(
         )
     }
 
-    fun loadScreenBitmapForFrame(frame: DynamicScreenFrame, sessionId: String? = null): android.graphics.Bitmap? {
+    /**
+     * @param maxDimPx Lato massimo del bitmap decodificato; `<= 0` = full-res.
+     *   Il report dinamico passa un limite (~schermo) per evitare accumulo di
+     *   bitmap full-res in memoria.
+     */
+    fun loadScreenBitmapForFrame(
+        frame: DynamicScreenFrame,
+        sessionId: String? = null,
+        maxDimPx: Int = 0,
+    ): android.graphics.Bitmap? {
         val sid = sessionId
             ?: repository.currentSessionId()
             ?: uiState.value.scanState.sessionId
             ?: return null
-        val screenBitmap = scanEvidenceStore.loadScreenBitmap(sid, frame.screenEvidenceId)
+        val screenBitmap = scanEvidenceStore.loadScreenBitmap(sid, frame.screenEvidenceId, maxDimPx)
         if (screenBitmap != null) return screenBitmap
         if (frame.protectionReason == ScreenProtectionReason.FLAG_SECURE ||
             frame.protectionReason == ScreenProtectionReason.PIN_OR_PASSWORD

@@ -39,6 +39,7 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -61,6 +62,8 @@ import dev.accessscope.scanner.ui.viewmodel.ScanViewModel
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 /**
  * Elenco fino a 20 sessioni archiviate per package con dettaglio readonly al tap.
@@ -80,7 +83,10 @@ fun ScanHistoryScreen(
     onBack: () -> Unit,
     onOpenPdf: (String) -> Unit,
 ) {
-    val sessions = remember(packageName) { viewModel.getScanHistory(packageName) }
+    // Parse dei JSON di cronologia (fino a 20 file) su IO, non in composizione.
+    val sessions by produceState(initialValue = emptyList<ArchivedScanSession>(), packageName) {
+        value = withContext(Dispatchers.IO) { viewModel.getScanHistory(packageName) }
+    }
     var selectedSession by remember { mutableStateOf<ArchivedScanSession?>(null) }
     val dateFormat = remember {
         SimpleDateFormat("dd MMM yyyy, HH:mm", Locale.ITALY)

@@ -189,19 +189,8 @@ fun SettingsScreen(
                 icon = Icons.Outlined.ViewQuilt,
                 initiallyExpanded = false,
             ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Text("Analizza tutto")
-                    Switch(
-                        checked = scope.isFullScan,
-                        onCheckedChange = { enabled ->
-                            if (enabled) viewModel.setFullScan() else Unit
-                        },
-                    )
-                }
+                // Il vecchio switch "Analizza tutto" era one-way (spegnerlo non faceva nulla):
+                // il preset «Completa» qui sotto copre lo stesso caso in modo onesto.
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     FilterChip(
                         selected = scope.isFullScan,

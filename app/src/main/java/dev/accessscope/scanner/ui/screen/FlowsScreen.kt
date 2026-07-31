@@ -50,6 +50,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -80,6 +81,9 @@ import dev.accessscope.scanner.ui.viewmodel.ScanViewModel
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /**
  * Gestione registrazioni Maestro (feature Beta).
@@ -103,7 +107,9 @@ fun FlowsScreen(
     val recording by app.recordingController.state.collectAsStateWithLifecycle()
     val playback by app.playbackController.state.collectAsStateWithLifecycle()
     val appListState by viewModel.appListUiState.collectAsStateWithLifecycle()
-    var flows by remember { mutableStateOf(app.flowStore.listFlows()) }
+    // Niente I/O in composizione: la lista si carica su IO al primo frame e a ogni refresh.
+    var flows by remember { mutableStateOf<List<SavedFlow>>(emptyList()) }
+    val ioScope = rememberCoroutineScope()
     var query by remember { mutableStateOf("") }
     var showPicker by remember { mutableStateOf(false) }
     var showCreateDialog by remember { mutableStateOf(false) }
@@ -119,8 +125,12 @@ fun FlowsScreen(
     var vaultPassword by remember { mutableStateOf("") }
 
     fun refresh() {
-        flows = app.flowStore.listFlows()
+        ioScope.launch {
+            flows = withContext(Dispatchers.IO) { app.flowStore.listFlows() }
+        }
     }
+
+    LaunchedEffect(Unit) { refresh() }
 
     fun startPlay(flow: SavedFlow, clearState: Boolean) {
         if (app.needsMaestroCredentials(flow)) {
@@ -339,7 +349,9 @@ fun FlowsScreen(
                     },
                     onPreview = {
                         previewFlow = flow
-                        previewYaml = app.flowStore.readYaml(flow)
+                        ioScope.launch {
+                            previewYaml = withContext(Dispatchers.IO) { app.flowStore.readYaml(flow) }
+                        }
                     },
                     onShare = {
                         val file = app.flowStore.yamlFile(flow)
@@ -369,8 +381,10 @@ fun FlowsScreen(
                         }
                     },
                     onDelete = {
-                        app.flowStore.deleteFlow(flow.id)
-                        refresh()
+                        ioScope.launch {
+                            withContext(Dispatchers.IO) { app.flowStore.deleteFlow(flow.id) }
+                            refresh()
+                        }
                     },
                 )
             }

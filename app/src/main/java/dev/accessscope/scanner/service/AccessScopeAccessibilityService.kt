@@ -50,11 +50,16 @@ class AccessScopeAccessibilityService : AccessibilityService() {
     private val lastScanByWindow = ConcurrentHashMap<String, Long>()
     private val retryScheduledKeys = ConcurrentHashMap.newKeySet<String>()
     private val screenshotInFlight = AtomicBoolean(false)
-    private val seenFingerprintsThisSession = mutableSetOf<String>()
+
+    // Scritto sia dall'executor di scan sia dai callback screenshot: deve essere thread-safe.
+    private val seenFingerprintsThisSession: MutableSet<String> = ConcurrentHashMap.newKeySet()
 
     private val rootSelector = AccessibilityRootSelector()
     private val screenshotCapture by lazy {
-        AccessibilityScreenshotCapture(this, mainExecutor, screenshotInFlight)
+        // callbackExecutor = executor di scan: la conversione buffer→bitmap e l'intera
+        // analisi post-screenshot restano fuori dal main thread (prima: mainExecutor ⇒
+        // camminata albero + contrasto + JPEG per violazione tutti sul main = jank/ANR).
+        AccessibilityScreenshotCapture(this, executor, screenshotInFlight, retryExecutor)
     }
     private val treeScanner by lazy {
         AccessibilityTreeScanner(repository, evidenceStore, seenFingerprintsThisSession)
