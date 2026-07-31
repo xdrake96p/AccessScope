@@ -1,0 +1,33 @@
+---
+description: Prima di branch/commit/push/merge/tag leggere docs/GIT_FLOW.md
+alwaysApply: true
+---
+
+# Gate Git Flow (obbligatorio)
+
+Prima di **qualsiasi** operazione Git che crei o modifichi storia/remoto — in particolare:
+
+- creare o rinominare un branch
+- fare `commit`
+- fare `push` / `pull` con merge
+- aprire o mergiare una PR
+- fare `merge` / `rebase` / `cherry-pick`
+- creare o pushare un **tag** / release
+
+l’agente **deve**:
+
+1. **Leggere** `docs/GIT_FLOW.md` (fonte di verità).
+2. **Verificare** di rispettare: prefisso branch, base corretta (`develop` vs `main` per hotfix), target di merge, delete post-merge, sequenza release, bump post-tag.
+3. **Rifiutare / correggere** il piano se viola il Git Flow (es. branch senza prefisso, commit di release su `feature/*`, tag su `develop`, lasciare branch mergiati).
+
+Sintesi operativa (non sostituisce il doc):
+
+| Azione | Regola |
+|--------|--------|
+| Nuovo lavoro | Branch da `develop` con `feature/` `bugfix/` `chore/` `docs/` |
+| Fine lavoro | Merge in `develop` → **delete** branch locale+remoto |
+| Release | Commit `release:` su `develop` → merge `main` → tag `v*` solo su `main` |
+| Dopo tag | Su `develop`: bump **app** sempre; valuta bump **plugin** |
+| Hotfix | Solo da `main` (`hotfix/`), poi re-merge su `develop` |
+
+Se l’utente chiede qualcosa in contrasto col Git Flow, **avvisare** e proporre la sequenza conforme a `docs/GIT_FLOW.md`.

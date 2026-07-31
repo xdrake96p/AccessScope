@@ -6,7 +6,7 @@
 **Package:** `dev.accessscope.scanner`  
 **Branch principale sviluppo:** `develop`  
 **Branch release stabile:** `main`  
-**Ultimo aggiornamento:** 31 luglio 2026 (Settimana 2 piano pre-mortem: Maestro "CLI-truth" — YAML esportato validato contro `maestro check-syntax` reale)
+**Ultimo aggiornamento:** 31 luglio 2026 (Git Flow canonico in `docs/GIT_FLOW.md`: branch naming, delete post-merge, release app+plugin, bump develop post-tag)
 
 ### Settimana 2 — Maestro "CLI-truth" (31 luglio 2026)
 
@@ -247,13 +247,15 @@ A **fine di ogni task**, obbligatorio (regola Cursor: `.cursor/rules/project-mai
 
 ### Git e release
 
-Flusso obbligatorio (regola Cursor: `.cursor/rules/git-release-workflow.mdc`):
+**Documento canonico:** [`docs/GIT_FLOW.md`](GIT_FLOW.md).  
+Regole Cursor: `.cursor/rules/git-flow-gate.mdc` (gate prima di branch/commit/push) · `.cursor/rules/git-release-workflow.mdc`.
 
-1. Sviluppo su `develop`
-2. Merge `develop` → `main`
-3. Tag `v*` su `main` (es. `v1.3.0` per `versionName` 1.3.0)
-4. Push `main` + tag → GitHub Release
-5. Nuovo sviluppo sempre da `develop`
+1. Branch di lavoro da `develop` con prefisso (`feature/`, `bugfix/`, `chore/`, `docs/`) → merge in `develop` → **delete** branch
+2. Commit `release:` su `develop` (versioni + note app/plugin)
+3. Merge `develop` → `main`
+4. Tag `v*` su `main` (es. `v1.3.0` = `versionName`) → CI pubblica APK + plugin ZIP/VSIX
+5. Su `develop`: **bump sempre l’app**; valuta se bumpare anche i plugin per il ciclo successivo
+6. Hotfix urgenti: da `main` (`hotfix/`), poi re-merge su `develop`
 
 ---
 
