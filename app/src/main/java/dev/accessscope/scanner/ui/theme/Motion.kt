@@ -35,10 +35,4 @@ object AccessScopeMotion {
     val screenExitTween = tween<Float>(durationMillis = 240, easing = FastOutSlowInEasing)
     val fadeInTween = tween<Float>(durationMillis = 220, easing = FastOutSlowInEasing)
     val expandTween = tween<Float>(durationMillis = 300, easing = FastOutSlowInEasing)
-
-    @Deprecated("Usare navSpring", ReplaceWith("navSpring"))
-    val navSlideTween = tween<IntOffset>(durationMillis = 280)
-
-    @Deprecated("Usare navSpring", ReplaceWith("navSpring"))
-    val navSlideExitTween = tween<IntOffset>(durationMillis = 220)
 }

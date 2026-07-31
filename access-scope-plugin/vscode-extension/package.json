@@ -119,11 +119,6 @@
     "configuration": {
       "title": "AccessScope",
       "properties": {
-        "accessScope.githubRepo": {
-          "type": "string",
-          "default": "xdrake96p/AccessScope",
-          "description": "GitHub repository used to download AccessScope releases."
-        },
         "accessScope.cliPath": {
           "type": "string",
           "default": "",
@@ -133,11 +128,6 @@
           "type": "string",
           "default": "",
           "description": "Default adb device serial."
-        },
-        "accessScope.autoUpdate": {
-          "type": "boolean",
-          "default": true,
-          "description": "Automatically update AccessScope before launch."
         },
         "accessScope.targetPackage": {
           "type": "string",

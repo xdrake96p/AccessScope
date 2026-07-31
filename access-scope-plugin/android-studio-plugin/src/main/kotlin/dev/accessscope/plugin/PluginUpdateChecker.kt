@@ -18,7 +18,9 @@ import java.nio.file.Path
 private const val PLUGIN_ID = "dev.accessscope.plugin"
 private const val GITHUB_REPO = "xdrake96p/AccessScope"
 private const val RELEASES_PATH = "access-scope-plugin/releases"
-private const val RELEASE_BRANCH = "develop"
+// Le release (ZIP/VSIX inclusi) vengono pubblicate solo su `main` dopo il tag — vedi
+// docs/GIT_FLOW.md §5. Puntare a `develop` avrebbe fatto scaricare build non ancora rilasciate.
+private const val RELEASE_BRANCH = "main"
 
 sealed class PluginUpdateResult {
     data class UpToDate(val version: String) : PluginUpdateResult()

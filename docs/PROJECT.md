@@ -6,7 +6,42 @@
 **Package:** `dev.accessscope.scanner`  
 **Branch principale sviluppo:** `develop`  
 **Branch release stabile:** `main`  
-**Ultimo aggiornamento:** 1 agosto 2026 (Settimana 4 piano pre-mortem: B2, finestre di attribuzione fingerprint)
+**Ultimo aggiornamento:** 1 agosto 2026 (Settimana 4 piano pre-mortem: pulizia API morte, canale update plugin develop→main)
+
+### Settimana 4 — Pulizia API morte + canale update plugin develop→main (1 agosto 2026)
+
+- **Canale update develop→main**: `PluginUpdateChecker.kt` (Android Studio) e `extension.ts`
+  (VS Code) cercavano gli aggiornamenti del plugin su `ref=develop`/`raw/develop`, ma per
+  `docs/GIT_FLOW.md` §5 le release (ZIP/VSIX inclusi) vengono pubblicate **solo su `main`** dopo
+  il tag. Un plugin aggiornato via "Plugin update" avrebbe potuto scaricare una build di
+  `develop` non ancora rilasciata. Ora entrambi puntano a `main` (`RELEASE_BRANCH` esplicito
+  invece del letterale sparso in 3 punti in `extension.ts`).
+- **Versione extension duplicata**: `EXTENSION_VERSION = '1.0.8'` in `extension.ts` era un
+  letterale da tenere manualmente sincronizzato con `"version"` in `package.json` — bump di uno
+  solo dei due faceva riportare uno stato aggiornato/obsoleto falso al check-update. Ora letta a
+  runtime da `context.extension.packageJSON.version` (`currentExtensionVersion()`), mai duplicata.
+- **Impostazioni VS Code morte**: `accessScope.githubRepo` e `accessScope.autoUpdate`, dichiarate
+  in `package.json` ma mai lette da nessun punto del codice (il repo è hardcoded, l'auto-update
+  prima del launch non è implementato) — rimosse. Un utente che le avesse impostate si sarebbe
+  aspettato un effetto che non esisteva.
+- **`@Deprecated` dead code**: `AccessScopeMotion.navSlideTween`/`navSlideExitTween`,
+  `ScreenshotCapture.secureOrUnusable`, `SecureScreenDetector.isSecureContext` — nessun chiamante
+  residuo in tutto il repo, rimossi.
+- **Artefatti `.vsix` randagi**: 3 pacchetti locali non tracciati (`AccessScope-1.0.1.vsix`,
+  `accessscope-1.0.8.vsix`, `accessscope-1.0.9.vsix`) rimossi da `vscode-extension/` — già
+  esclusi da `.gitignore`, byproduct riproducibile di `npm run package`, non finiti mai nel repo
+  Git ma comunque disco sporco locale.
+- **Non fatto in questo giro** (decisione esplicita): i parametri `packageName` ormai inutilizzati
+  in `AppPrecisionProfiles.kt` e a cascata in `PrecisionHome`/`PrecisionContrast`/
+  `PrecisionNavigation`/`PrecisionStructural`/`PrecisionLabels`/`SecureScreenDetector` — già
+  documentati in KDoc come "Non usato: mantenuto per compatibilità di firma" dalla rimozione
+  Nexi/AXA. Rimuoverli per davvero è un refactor a cascata su ~8 file (ogni rimozione rende
+  potenzialmente inutilizzato anche il parametro del chiamante) per un guadagno puramente
+  cosmetico (nessun bug, i default `""` sono innocui) — rimandato a una pulizia dedicata invece
+  di rischiarlo di corsa in questa sessione.
+
+Verifica: `./gradlew :app:compileDebugKotlin :app:testDebugUnitTest` verde;
+`:android-studio-plugin:compileKotlin` verde; `npx tsc --noEmit` verde su `vscode-extension`.
 
 ### Settimana 4 — B2: finestre di attribuzione fingerprint (1 agosto 2026)
 

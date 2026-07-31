@@ -79,14 +79,6 @@ object SecureScreenDetector {
         return SecureScreenAssessment.NONE
     }
 
-    /** @deprecated Usare [assess]. */
-    @Deprecated("Use assess()", ReplaceWith("assess(root, screenTitle, packageName, null).isProtected"))
-    fun isSecureContext(
-        root: AccessibilityNodeInfo,
-        screenTitle: String,
-        packageName: String,
-    ): Boolean = assess(root, screenTitle, packageName, null).useSecureEvidence
-
     internal fun titleProtectionReason(screenTitle: String): ScreenProtectionReason {
         if (screenTitle.isBlank()) return ScreenProtectionReason.NONE
         return if (SECURE_TITLE_PATTERNS.any { it.containsMatchIn(screenTitle) }) {

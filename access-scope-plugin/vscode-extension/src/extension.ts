@@ -4,9 +4,11 @@ import { ResultsWebview } from './resultsWebview';
 import { AccessScopeSidebarProvider } from './sidebarPanel';
 import { DeviceInfo, ScanResultResponse, SetupCheckResult } from './types';
 
-const EXTENSION_VERSION = '1.0.8';
 const GITHUB_REPO = 'xdrake96p/AccessScope';
 const RELEASES_PATH = 'access-scope-plugin/releases';
+// Le release (ZIP/VSIX inclusi) vengono pubblicate solo su `main` dopo il tag — vedi
+// docs/GIT_FLOW.md §5. Puntare a `develop` avrebbe fatto scaricare build non ancora rilasciate.
+const RELEASE_BRANCH = 'main';
 
 let outputChannel: vscode.OutputChannel;
 let cli: CliRunner;
@@ -230,19 +232,29 @@ function clearOutput(): void {
   outputChannel.clear();
 }
 
+/**
+ * Versione dell'extension letta dal proprio package.json — mai un letterale duplicato da
+ * tenere manualmente sincronizzato con "version" in package.json (bug: bump di uno solo dei
+ * due faceva riportare uno stato aggiornato/obsoleto falso).
+ */
+function currentExtensionVersion(): string {
+  return String(extensionContext.extension.packageJSON.version ?? '0.0.0');
+}
+
 async function checkExtensionUpdate(): Promise<void> {
+  const currentVersion = currentExtensionVersion();
   try {
-    const latest = await fetchLatestExtensionVersion();
-    outputChannel.appendLine(`Extension version: ${EXTENSION_VERSION}`);
+    const latest = await fetchLatestExtensionVersion(currentVersion);
+    outputChannel.appendLine(`Extension version: ${currentVersion}`);
     outputChannel.appendLine(`Latest GitHub release folder: ${latest}`);
-    if (compareVersions(latest, EXTENSION_VERSION) <= 0) {
-      vscode.window.showInformationMessage(`AccessScope extension v${EXTENSION_VERSION} is up to date.`);
+    if (compareVersions(latest, currentVersion) <= 0) {
+      vscode.window.showInformationMessage(`AccessScope extension v${currentVersion} is up to date.`);
       return;
     }
     const downloadUrl =
-      `https://github.com/${GITHUB_REPO}/raw/develop/${RELEASES_PATH}/${latest}/AccessScope-${latest}.vsix`;
+      `https://github.com/${GITHUB_REPO}/raw/${RELEASE_BRANCH}/${RELEASES_PATH}/${latest}/AccessScope-${latest}.vsix`;
     const action = await vscode.window.showInformationMessage(
-      `AccessScope extension v${latest} is available (current: v${EXTENSION_VERSION}).`,
+      `AccessScope extension v${latest} is available (current: v${currentVersion}).`,
       'Download VSIX',
       'Open Releases',
     );
@@ -250,7 +262,7 @@ async function checkExtensionUpdate(): Promise<void> {
       await vscode.env.openExternal(vscode.Uri.parse(downloadUrl));
     } else if (action === 'Open Releases') {
       await vscode.env.openExternal(
-        vscode.Uri.parse(`https://github.com/${GITHUB_REPO}/tree/develop/${RELEASES_PATH}`),
+        vscode.Uri.parse(`https://github.com/${GITHUB_REPO}/tree/${RELEASE_BRANCH}/${RELEASES_PATH}`),
       );
     }
   } catch (error) {
@@ -259,9 +271,9 @@ async function checkExtensionUpdate(): Promise<void> {
   }
 }
 
-async function fetchLatestExtensionVersion(): Promise<string> {
+async function fetchLatestExtensionVersion(currentVersion: string): Promise<string> {
   const response = await fetch(
-    `https://api.github.com/repos/${GITHUB_REPO}/contents/${RELEASES_PATH}?ref=develop`,
+    `https://api.github.com/repos/${GITHUB_REPO}/contents/${RELEASES_PATH}?ref=${RELEASE_BRANCH}`,
     {
       headers: {
         Accept: 'application/vnd.github+json',
@@ -277,7 +289,7 @@ async function fetchLatestExtensionVersion(): Promise<string> {
     .filter((entry) => entry.type === 'dir' && /^\d+\.\d+\.\d+(\.\d+)?$/.test(entry.name))
     .map((entry) => entry.name)
     .sort(compareVersions)
-    .at(-1) ?? EXTENSION_VERSION;
+    .at(-1) ?? currentVersion;
 }
 
 function compareVersions(left: string, right: string): number {
