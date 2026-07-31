@@ -127,6 +127,116 @@ class TalkBackSimulatorTest {
         assertTrue(findings.isEmpty())
     }
 
+    // --- Regressione falsi positivi su container generici (banking app reale it.nexi.bff:
+    // 20/20 violazioni SCREEN_READER_ANNOUNCEMENT erano su RelativeLayout/ScrollView/ViewGroup/
+    // RecyclerView/ViewPager/HorizontalScrollView/FrameLayout/LinearLayout, mai su widget reali) ---
+
+    @Test
+    fun simulate_clickableRowContainerWithLabeledChild_isNotFlaggedSilent() {
+        // Riga cliccabile senza cd/text proprio (pattern comune: RelativeLayout come "card" di
+        // lista) ma con una TextView figlia non focalizzabile che porta il vero contenuto —
+        // TalkBack reale annuncerebbe il testo del figlio, non il silenzio.
+        val row = snap(
+            className = "android.widget.RelativeLayout",
+            text = null,
+            isClickable = true,
+            bounds = Rect(0, 0, 400, 120),
+        )
+        val label = snap(
+            className = "android.widget.TextView",
+            text = "Saldo disponibile: 1.250,00 €",
+            isClickable = false,
+            bounds = Rect(20, 20, 380, 100),
+        )
+        val findings = TalkBackSimulator.simulate(listOf(row, label), "it.nexi.bff", "Home")
+        assertTrue(findings.none { it.issue.contains("non avrebbe testo") })
+    }
+
+    @Test
+    fun simulate_scrollableRecyclerViewWithoutOwnLabel_isNotFlaggedSilent() {
+        // RecyclerView cliccabile (raro ma possibile) e scrollabile, senza cd/text proprio, ma
+        // con voci di lista etichettate al suo interno.
+        val list = snap(
+            className = "androidx.recyclerview.widget.RecyclerView",
+            text = null,
+            isClickable = true,
+            isScrollable = true,
+            bounds = Rect(0, 0, 400, 800),
+        )
+        val item = snap(
+            className = "android.widget.TextView",
+            text = "Bonifico a Mario Rossi",
+            isClickable = false,
+            bounds = Rect(10, 10, 390, 60),
+        )
+        val findings = TalkBackSimulator.simulate(listOf(list, item), "it.nexi.bff", "Movimenti")
+        assertTrue(findings.none { it.issue.contains("non avrebbe testo") })
+    }
+
+    @Test
+    fun simulate_scrollOnlyContainerWithoutOwnLabel_isNotAFocusCandidate() {
+        // isScrollable da solo non basta più a rendere un container un focus stop: ScrollView,
+        // ViewPager, HorizontalScrollView senza cd/text proprio e senza essere anche clickable/
+        // focusable non sono candidati — TalkBack naviga direttamente sui figli, non li ferma qui.
+        val viewPager = snap(
+            className = "androidx.viewpager.widget.ViewPager",
+            text = null,
+            isClickable = false,
+            isFocusable = false,
+            isScrollable = true,
+        )
+        val findings = TalkBackSimulator.simulate(listOf(viewPager), "it.nexi.bff", "Home")
+        assertTrue(findings.none { it.issue.contains("non avrebbe testo") })
+        // Nessun candidato al focus: la schermata risulta innavigabile (diagnostica corretta,
+        // non un finding puntuale sul container).
+        assertTrue(findings.any { it.issue.contains("Nessun elemento focalizzabile") })
+    }
+
+    @Test
+    fun simulate_scrollContainerWithOwnContentDescription_remainsFocusCandidate() {
+        // Un container scrollabile con un nome accessibile esplicito è stato reso un target
+        // intenzionale dallo sviluppatore: resta candidato e, se davvero silenzioso, va segnalato.
+        val labeled = snap(
+            className = "android.widget.ScrollView",
+            text = null,
+            contentDescription = "Lista transazioni",
+            isClickable = false,
+            isScrollable = true,
+        )
+        val findings = TalkBackSimulator.simulate(listOf(labeled), "it.nexi.bff", "Movimenti")
+        assertTrue(findings.none { it.issue.contains("non avrebbe testo") })
+        assertTrue(findings.none { it.issue.contains("Nessun elemento focalizzabile") })
+    }
+
+    @Test
+    fun simulate_clickableContainerWithoutAnyDescendant_isStillFlaggedSilent() {
+        // Precisione del fix: un container generico va escluso solo quando un discendente porta
+        // davvero il contenuto. Senza altri nodi in schermata (nessun discendente da cui ereditare
+        // un'etichetta) resta correttamente segnalato come silenzioso.
+        val emptyContainer = snap(
+            className = "android.widget.FrameLayout",
+            text = null,
+            isClickable = true,
+        )
+        val findings = TalkBackSimulator.simulate(listOf(emptyContainer), "it.nexi.bff", "Home")
+        assertTrue(findings.any { it.issue.contains("non avrebbe testo") })
+    }
+
+    @Test
+    fun simulate_unlabeledCustomClickableLeafView_isStillFlaggedSilent() {
+        // Custom View cliccabile senza figli e senza cd/text: non è un container di layout noto
+        // (non contiene "layout"/"viewgroup"/"scrollview"/ecc. nel nome classe), quindi il fix sui
+        // container non si applica — resta correttamente segnalata.
+        val customView = snap(
+            className = "it.nexi.bff.widget.TapTargetView",
+            text = null,
+            contentDescription = null,
+            isClickable = true,
+        )
+        val findings = TalkBackSimulator.simulate(listOf(customView), "it.nexi.bff", "Home")
+        assertTrue(findings.any { it.issue.contains("non avrebbe testo") })
+    }
+
     private fun snap(
         className: String = "android.widget.Button",
         text: String? = "Testo",
@@ -149,9 +259,10 @@ class TalkBackSimulatorTest {
         rangeCurrent: Float? = null,
         rangeMin: Float? = null,
         rangeMax: Float? = null,
+        bounds: Rect = Rect(0, 0, 200, 80),
     ) = NodeSnapshot(
         className = className,
-        bounds = Rect(0, 0, 200, 80),
+        bounds = bounds,
         viewId = null,
         text = text,
         contentDescription = contentDescription,

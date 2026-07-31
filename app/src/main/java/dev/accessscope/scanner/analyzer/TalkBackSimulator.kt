@@ -42,6 +42,7 @@ object TalkBackSimulator {
         focusable.forEach { snap ->
             val announced = buildAnnouncement(snap)
             if (announced.isNullOrBlank()) {
+                if (isGenericContainerWithLabeledContent(snap, snapshots)) return@forEach
                 silentCount++
                 findings += ScreenReaderFinding(
                     packageName = packageName,
@@ -90,9 +91,43 @@ object TalkBackSimulator {
         return findings
     }
 
-    /** Stessi criteri usati storicamente per il focus TalkBack (nessun cambio comportamentale qui). */
-    private fun isFocusCandidate(snap: NodeSnapshot): Boolean =
-        snap.isFocusable || snap.isClickable || snap.isCheckable || snap.isEditable || snap.isScrollable
+    /**
+     * Candidato al focus TalkBack: interattivo (click/check/edit) o esplicitamente focalizzabile.
+     *
+     * `isScrollable` da solo non qualifica più un container: verificato su banking app reale
+     * (it.nexi.bff), dove 20/20 violazioni SCREEN_READER_ANNOUNCEMENT erano su container generici
+     * (RelativeLayout, ScrollView, RecyclerView, ViewPager, HorizontalScrollView, ecc.), mai su
+     * widget reali. TalkBack reale non ferma il focus su un contenitore solo perché scorre — naviga
+     * direttamente sui figli (`AccessibilityNodeInfoUtils.isActionableForAccessibility` non include
+     * `isScrollable`). Un contenitore scrollabile resta candidato solo se ha già un nome accessibile
+     * proprio, cioè è stato reso un target intenzionale dallo sviluppatore.
+     */
+    private fun isFocusCandidate(snap: NodeSnapshot): Boolean {
+        if (snap.isFocusable || snap.isClickable || snap.isCheckable || snap.isEditable) return true
+        return snap.isScrollable && snap.hasAccessibleName()
+    }
+
+    /**
+     * `true` se un container strutturale/scroll generico non ha nome accessibile proprio ma un
+     * discendente porta già un'etichetta reale.
+     *
+     * TalkBack aggrega il testo dei figli non focalizzabili nell'annuncio del genitore quando lo
+     * mette a fuoco (es. una riga RelativeLayout cliccabile che avvolge una TextView con l'importo);
+     * [buildAnnouncement] non lo modella perché lavora sul singolo nodo senza risalire l'albero.
+     * Limitato a classi container note (layout/scroll): un ImageButton o una custom View realmente
+     * muti restano segnalati normalmente.
+     *
+     * @param snap Nodo container candidato, con annuncio simulato vuoto.
+     * @param all Tutti gli snapshot della schermata, per la ricerca di discendenti etichettati.
+     */
+    private fun isGenericContainerWithLabeledContent(snap: NodeSnapshot, all: List<NodeSnapshot>): Boolean {
+        val isGenericContainer = PrecisionRules.isLayoutContainer(snap.className) ||
+            PrecisionRules.isScrollContainer(snap) ||
+            snap.className.contains("GridView", ignoreCase = true)
+        if (!isGenericContainer) return false
+        return PrecisionRules.hasLabeledDescendant(snap, all) ||
+            PrecisionRules.hasLabeledDescendantInScroll(snap, all)
+    }
 
     /**
      * Ricostruisce il testo che TalkBack annuncerebbe per un nodo.

@@ -6,7 +6,44 @@
 **Package:** `dev.accessscope.scanner`  
 **Branch principale sviluppo:** `develop`  
 **Branch release stabile:** `main`  
-**Ultimo aggiornamento:** 1 agosto 2026 (Settimana 4 piano pre-mortem: plugin, collegato il broadcast SCAN_COMPLETE)
+**Ultimo aggiornamento:** 1 agosto 2026 (Settimana 4: TalkBack, corretti i falsi positivi su container generici)
+
+### Settimana 4 — TalkBack: corretti i falsi positivi su container generici (1 agosto 2026)
+
+Test su device reale su una banking app (`it.nexi.bff`, MPS) dopo il collegamento al punteggio
+di Settimana 3: 20 violazioni `SCREEN_READER_ANNOUNCEMENT`, **100% su classi container generiche**
+(`RelativeLayout` 6, `ScrollView` 4, `ViewGroup` 4, `RecyclerView` 2, `ViewPager` 1,
+`HorizontalScrollView` 1, `FrameLayout` 1, `LinearLayout` 1), zero su widget reali — punteggio
+sceso 76→49 senza alcuna regressione reale, solo rumore appena reso scoreable. Causa doppia in
+`TalkBackSimulator.isFocusCandidate`/`simulate`:
+
+- `isScrollable` da solo qualificava un container come focus stop TalkBack. Non riflette il
+  comportamento reale: `AccessibilityNodeInfoUtils.isActionableForAccessibility` (usata da
+  TalkBack) non include `isScrollable` — un container scorre, ma TalkBack naviga direttamente sui
+  figli, non si ferma sul contenitore solo perché scrolla. Coprivano da soli `ScrollView`,
+  `HorizontalScrollView`, `RecyclerView`, `ViewPager` (8/20). Fix: `isScrollable` qualifica solo se
+  il nodo ha già un nome accessibile proprio (contentDescription/text/hint) — cioè è stato reso un
+  target intenzionale dallo sviluppatore.
+- Per i container generici rimasti candidati perché anche `clickable` (righe/card cliccabili:
+  `RelativeLayout`, `FrameLayout`, `LinearLayout`, `ViewGroup`, 12/20 restanti): `buildAnnouncement`
+  valuta solo il nodo, mai i discendenti — ma TalkBack reale aggrega il testo dei figli non
+  focalizzabili nell'annuncio del genitore quando lo mette a fuoco (es. riga cliccabile che avvolge
+  una `TextView` con l'importo). Fix: nuovo `isGenericContainerWithLabeledContent`, che riusa gli
+  stessi helper già usati per l'analogo problema su `MISSING_LABEL`
+  (`PrecisionRules.hasLabeledDescendant`/`hasLabeledDescendantInScroll`, limitati a
+  `isLayoutContainer`/`isScrollContainer`) — un container silenzioso non genera più finding se un
+  discendente porta già un'etichetta reale.
+
+Entrambi i fix sono mirati (nessuna blacklist per nome classe fine a sé stessa) e non toccano i
+widget reali: un `ImageButton`/custom `View` cliccabile senza `contentDescription` e senza figli
+resta segnalato come prima. 6 test nuovi in `TalkBackSimulatorTest.kt`: riga cliccabile e
+`RecyclerView` con figlio etichettato (non più segnalati), `ViewPager` solo-scroll senza figli
+(non più candidato al focus), `ScrollView` con contentDescription esplicita (resta candidato),
+container vuoto senza discendenti e custom `View` cliccabile senza testo/cd (restano segnalati —
+verifica che il fix non mascheri difetti reali).
+
+Verifica: `./gradlew :app:testDebugUnitTest :app:assembleDebug` verde (288 test, nessuna
+regressione sulla suite esistente).
 
 ### Settimana 4 — Plugin: collegato il segnale di fine scansione (push invece di solo polling) (1 agosto 2026)
 
