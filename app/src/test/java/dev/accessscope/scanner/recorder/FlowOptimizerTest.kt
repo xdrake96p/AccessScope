@@ -176,4 +176,30 @@ class FlowOptimizerTest {
         assertEquals(2, result.size)
         assertTrue(result.none { it is RecordedAction.Scroll })
     }
+
+    @Test
+    fun dropNoiseScrolls_multipleScrollsWithAnimationWaitsBetween_allKept() {
+        // Bug reale (flusso AXA registrato): dropNoiseScrolls gira sia in optimize() sia di
+        // nuovo in sanitizeForPlay(), ma tra le due passate WaitPlanner inserisce un
+        // WaitForAnimation dopo ogni scroll. Alla seconda passata, un cammino indietro che
+        // tollera solo Scroll consecutivi si fermava sul wait appena inserito e trattava come
+        // "rumore post-PIN" ogni scroll tranne il primo — 4 scroll reali diventavano 1 solo
+        // scroll + 4 waitForAnimationToEnd orfani nello YAML, perdendo la distanza di scroll
+        // necessaria a raggiungere il target ("POLIZZA N. 404347818", ben oltre la prima
+        // schermata di una lista lunga).
+        val actions = listOf(
+            RecordedAction.Tap("com.app", text = "NON ORA"),
+            RecordedAction.Scroll("com.app"),
+            RecordedAction.WaitForAnimation("com.app", timeoutMs = 800L),
+            RecordedAction.Scroll("com.app"),
+            RecordedAction.WaitForAnimation("com.app", timeoutMs = 800L),
+            RecordedAction.Scroll("com.app"),
+            RecordedAction.WaitForAnimation("com.app", timeoutMs = 800L),
+            RecordedAction.Scroll("com.app"),
+            RecordedAction.WaitForAnimation("com.app", timeoutMs = 800L),
+            RecordedAction.Tap("com.app", text = "POLIZZA N.  404347818"),
+        )
+        val result = FlowOptimizer.dropNoiseScrolls(actions)
+        assertEquals(4, result.count { it is RecordedAction.Scroll })
+    }
 }

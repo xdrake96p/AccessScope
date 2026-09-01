@@ -37,16 +37,22 @@ object NoiseActionFilter {
             // Scroll tra tap accordion/section header: chiude la sezione appena aperta.
             if (isSectionHeaderTap(prev) || isSectionHeaderTap(next)) return@filterIndexed false
             // Scroll dopo input/wait (IME / lista): rumore tipico post-PIN.
+            //
+            // Bug reale (flusso AXA registrato): questo filtro gira sia in optimize() sia di
+            // nuovo in sanitizeForPlay() — ma tra le due passate WaitPlanner inserisce un
+            // WaitForAnimation dopo OGNI scroll. Alla seconda passata, camminare indietro solo
+            // attraverso Scroll consecutivi si fermava sul wait appena inserito e trattava come
+            // "rumore post-PIN" ogni scroll di una sequenza reale di scroll multipli tranne il
+            // primo — 4 scroll reali diventavano 1 solo scroll + 4 waitForAnimationToEnd orfani
+            // nello YAML esportato, perdendo la distanza di scroll necessaria a raggiungere il
+            // target. Ora la camminata indietro tollera anche i wait-like interposti, per
+            // trovare il vero innesco della sequenza indipendentemente da quante volte il
+            // filtro è già passato su azioni via via arricchite.
             var i = index - 1
-            while (i >= 0 && actions[i] is RecordedAction.Scroll) i--
-            when (actions.getOrNull(i)) {
-                is RecordedAction.InputText,
-                is RecordedAction.Wait,
-                is RecordedAction.WaitForAnimation,
-                is RecordedAction.HideKeyboard,
-                -> return@filterIndexed false
-                else -> Unit
-            }
+            while (i >= 0 && (actions[i] is RecordedAction.Scroll || isWaitLike(actions[i]))) i--
+            // Il salto sopra assorbe già Wait/WaitForAnimation/HideKeyboard: qui può arrivare
+            // solo InputText (o qualunque altra azione reale, che non è rumore).
+            if (actions.getOrNull(i) is RecordedAction.InputText) return@filterIndexed false
             true
         }
     }

@@ -6,7 +6,39 @@
 **Package:** `dev.accessscope.scanner`  
 **Branch principale sviluppo:** `develop`  
 **Branch release stabile:** `main`  
-**Ultimo aggiornamento:** 1 settembre 2026 (Maestro: perché il replay saltava i passaggi — scroll bidirezionale + soglia dedup)
+**Ultimo aggiornamento:** 1 settembre 2026 (Maestro: perché serviva tanto ritocco a mano — scroll multipli persi in export)
+
+### Maestro: scroll multipli persi in export — il bug dietro il "ritocco a mano" (1 settembre 2026)
+
+Segnalazione utente: la creazione dei test Maestro non è precisa, "va ritoccata parecchio a mano
+invece dovrebbe copiare passo passo i passaggi fatti in registrazione". Analizzando una nuova
+registrazione AXA reale (`6fe74baf`) trovato il bug più impattante di tutta questa serie: **4
+scroll reali, necessari a raggiungere una polizza in fondo a una lista lunga, diventavano 1 solo
+scroll nello YAML esportato** — con 4 `waitForAnimationToEnd` orfani lasciati dietro come prova
+del danno. Un test così non raggiunge mai il target reale: va corretto a mano ogni volta.
+
+Causa: `NoiseActionFilter.dropNoiseScrolls` gira **due volte** nella pipeline (in `optimize()` e
+di nuovo in `sanitizeForPlay()`, quest'ultima ora eseguita anche per l'export dopo l'unificazione
+pipeline della settimana scorsa). Tra le due passate, `WaitPlanner` inserisce un
+`WaitForAnimation` dopo ogni scroll. Alla seconda passata, il filtro camminava indietro
+tollerando solo altri `Scroll` consecutivi per trovare "cosa ha innescato" questo scroll — si
+fermava sul `WaitForAnimation` appena inserito e trattava come "rumore tipico post-PIN" ogni
+scroll della sequenza tranne il primo, anche quando la sequenza era una ricerca reale e
+deliberata attraverso una lista lunga.
+
+- La camminata indietro ora tollera anche `Wait`/`WaitForAnimation`/`HideKeyboard` interposti
+  (riusa `isWaitLike`, già esistente per `dropDuplicateTapsAcrossWaits`), per trovare il vero
+  innesco della sequenza indipendentemente da quante volte il filtro è già passato su azioni via
+  via arricchite da stadi successivi della pipeline. Semplificato anche il codice: i tre rami
+  `Wait`/`WaitForAnimation`/`HideKeyboard` nel controllo finale erano diventati irraggiungibili
+  (il salto li assorbe già prima), rimossi.
+- Nuovo test di regressione in `FlowOptimizerTest.kt` che riproduce esattamente il pattern reale
+  (4 scroll con `WaitForAnimation` intreccati, target in fondo) — verifica che tutti e 4
+  sopravvivano. Il test esistente sul caso stretto (scroll consecutivi subito dopo un PIN, senza
+  wait in mezzo) resta verde invariato.
+
+Verifica: `./gradlew :app:testDebugUnitTest :app:assembleDebug` verde. Verifica reale sul device
+in corso (reinstall + nuova registrazione con scroll multipli).
 
 ### Maestro: replay che si fermava a metà — diagnosi da device reale + fix (1 settembre 2026)
 
