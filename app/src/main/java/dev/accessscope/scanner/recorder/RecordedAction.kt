@@ -68,6 +68,11 @@ sealed class RecordedAction {
         val text: String,
         val viewId: String? = null,
         val isPassword: Boolean = false,
+        /**
+         * `Optional` per re-inserimenti dubbi (es. PIN + conferma): Play non fallisce se il
+         * campo non è più editabile o il secondo inserimento non serve.
+         */
+        val executionMode: StepExecutionMode = StepExecutionMode.Required,
         override val timestampMs: Long = System.currentTimeMillis(),
     ) : RecordedAction()
 
@@ -189,6 +194,14 @@ data class SavedFlow(
     val stepCount: Int,
     val yamlRelativePath: String,
     val hasActionsJson: Boolean = false,
+    /** Timestamp ultimo Play/Validate registrato. */
+    val lastPlayAtMs: Long? = null,
+    /** Esito ultimo run (`true` = OK). */
+    val lastPlaySuccess: Boolean? = null,
+    /** Step OK nell'ultimo run. */
+    val lastPlayPassedSteps: Int? = null,
+    /** Step totali nell'ultimo run. */
+    val lastPlayTotalSteps: Int? = null,
 )
 
 /**

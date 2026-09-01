@@ -71,6 +71,10 @@ object WaitPlanner {
                     ) {
                         continue
                     }
+                    // Digitazione pad: niente wait tra cifre consecutive (stesso tasto o run pad).
+                    if (isPinPadDigitTap(a) && next is RecordedAction.Tap && isPinPadDigitTap(next)) {
+                        continue
+                    }
                     if (next !is RecordedAction.Tap &&
                         next !is RecordedAction.InputText &&
                         next !is RecordedAction.Scroll &&
@@ -368,4 +372,8 @@ object WaitPlanner {
             }
         }
     }
+
+    private fun isPinPadDigitTap(tap: RecordedAction.Tap): Boolean =
+        MaestroSelectorHeuristics.isPinPadKey(tap.viewId, tap.text) ||
+            MaestroSelectorHeuristics.isPinPadDigitTap(tap.text, tap.viewId)
 }

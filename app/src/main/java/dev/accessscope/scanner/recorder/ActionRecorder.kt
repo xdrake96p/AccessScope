@@ -114,7 +114,12 @@ class ActionRecorder {
                     // #endregion
                 } else {
                     val key = tapKey(tap)
-                    if (key == lastTapKey && now - lastTapAtMs < TAP_DEBOUNCE_MS) {
+                    val pinPadDigit = tap is RecordedAction.Tap &&
+                        (
+                            MaestroSelectorHeuristics.isPinPadKey(tap.viewId, tap.text) ||
+                                MaestroSelectorHeuristics.isPinPadDigitTap(tap.text, tap.viewId)
+                            )
+                    if (!pinPadDigit && key == lastTapKey && now - lastTapAtMs < TAP_DEBOUNCE_MS) {
                         // #region agent log
                         DebugSessionLog.log(
                             "R2",
@@ -225,13 +230,17 @@ class ActionRecorder {
                 }
             }
             AccessibilityEvent.TYPE_VIEW_SCROLLED -> {
-                // Dopo Back / comparsa popup, scroll di layout non devono diventare step spurî.
+                // Dopo Back / comparsa popup / tap, scroll di layout non devono diventare step spurî.
                 if (now - lastBackAtMs < SCROLL_SUPPRESS_AFTER_BACK_MS) {
                     logDiscard(event.eventType, packageName, "scroll_after_back")
                     return out
                 }
                 if (now - lastPopupAssertAtMs < SCROLL_SUPPRESS_AFTER_POPUP_MS) {
                     logDiscard(event.eventType, packageName, "scroll_after_popup")
+                    return out
+                }
+                if (now - lastTapAtMs < SCROLL_SUPPRESS_AFTER_TAP_MS) {
+                    logDiscard(event.eventType, packageName, "scroll_after_tap")
                     return out
                 }
                 val direction = scrollDirectionOrNull(event) ?: run {
@@ -369,17 +378,17 @@ class ActionRecorder {
             pending != null && !samePendingField(pending.viewId, viewId) -> "field_change"
             // Password login: NON trattare ****==**** come re-entry (evita N duplicati).
             loginPassword -> null
-            // PIN: stesso testo o accorciato dopo pausa → nuovo inserimento.
+            // Stesso campo + stesso testo completo → nuovo step (PIN + conferma), senza attendere gap.
+            pending != null &&
+                !loginPassword &&
+                samePendingField(pending.viewId, viewId) &&
+                pending.text == storedText -> "duplicate_complete"
+            // PIN: accorciato / cifra singola dopo pausa → nuovo inserimento.
             pending != null &&
                 pinLike &&
                 samePendingField(pending.viewId, viewId) &&
-                (pending.text == storedText || storedText.length < pending.text.length || storedText.length <= 1) &&
+                (storedText.length < pending.text.length || storedText.length <= 1) &&
                 now - pending.timestampMs >= 800L -> "pin_reentry"
-            pending != null &&
-                !loginPassword &&
-                pending.text == storedText &&
-                now - pending.timestampMs >= 1_500L &&
-                samePendingField(pending.viewId, viewId) -> "reentry_gap"
             else -> null
         }
         if (reason != null) {
@@ -965,15 +974,16 @@ class ActionRecorder {
         } else {
             0
         }
-        val indexChanged = event.fromIndex >= 0 &&
-            event.toIndex >= 0 &&
-            event.fromIndex != event.toIndex
-        // Soglia più alta: micro-delta da layout/dialog → non sono scroll utente.
-        if (kotlin.math.abs(dy) < SCROLL_MIN_DELTA_PX &&
-            kotlin.math.abs(dx) < SCROLL_MIN_DELTA_PX &&
-            !indexChanged
-        ) {
-            return null
+        val hasPhysicalDelta = kotlin.math.abs(dy) >= SCROLL_MIN_DELTA_PX ||
+            kotlin.math.abs(dx) >= SCROLL_MIN_DELTA_PX
+        if (android.os.Build.VERSION.SDK_INT >= 28) {
+            // Solo `fromIndex`/`toIndex` (RecyclerView bind/prefetch) ≠ scroll utente.
+            if (!hasPhysicalDelta) return null
+        } else {
+            val indexChanged = event.fromIndex >= 0 &&
+                event.toIndex >= 0 &&
+                event.fromIndex != event.toIndex
+            if (!indexChanged) return null
         }
         return when {
             kotlin.math.abs(dy) >= kotlin.math.abs(dx) ->
@@ -1079,6 +1089,7 @@ class ActionRecorder {
         private const val SCROLL_DEBOUNCE_MS = 600L
         private const val SCROLL_SUPPRESS_AFTER_BACK_MS = 700L
         private const val SCROLL_SUPPRESS_AFTER_POPUP_MS = 900L
+        private const val SCROLL_SUPPRESS_AFTER_TAP_MS = 800L
         private const val SCROLL_MIN_DELTA_PX = 12
         private const val POPUP_ASSERT_DEBOUNCE_MS = 1_500L
         private val POPUP_TITLE_HINTS = listOf(

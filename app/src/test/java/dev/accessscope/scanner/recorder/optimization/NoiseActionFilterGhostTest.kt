@@ -40,6 +40,19 @@ class NoiseActionFilterGhostTest {
     }
 
     @Test
+    fun pinPadDigitTaps_notCollapsedAcrossWaits() {
+        val pkg = "it.nexi.bff"
+        val raw = (1..6).flatMap { i ->
+            listOf(
+                RecordedAction.Tap(pkg, viewId = "$pkg:id/uno", text = "1", timestampMs = 1_000L + i * 150L),
+                RecordedAction.WaitForAnimation(pkg, timeoutMs = 500L, timestampMs = 1_050L + i * 150L),
+            )
+        }
+        val out = NoiseActionFilter.dropDuplicateTapsAcrossWaits(raw)
+        assertEquals(6, out.count { it is RecordedAction.Tap })
+    }
+
+    @Test
     fun sameTextTaps_withinGap_areMerged_matchesRealAxaRecording() {
         // Gap reale osservato su un flusso AXA registrato: doppi tap umani per incertezza sul
         // primo, tutti a 0.8-1.8s di distanza — ampiamente sotto il tetto di 4s.

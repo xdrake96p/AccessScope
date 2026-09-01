@@ -52,6 +52,46 @@ class FlowOptimizerTest {
     }
 
     @Test
+    fun coalesceInputText_keepsDuplicatePinAsOptionalOnSecond() {
+        val actions = listOf(
+            RecordedAction.InputText("com.app", "1111", viewId = "com.app:id/pincode", timestampMs = 1_000L),
+            RecordedAction.InputText("com.app", "1111", viewId = "com.app:id/pincode", timestampMs = 1_100L),
+        )
+        val result = FlowOptimizer.coalesceInputText(actions)
+        assertEquals(2, result.size)
+        assertEquals(
+            dev.accessscope.scanner.recorder.model.StepExecutionMode.Required,
+            (result[0] as RecordedAction.InputText).executionMode,
+        )
+        assertEquals(
+            dev.accessscope.scanner.recorder.model.StepExecutionMode.Optional,
+            (result[1] as RecordedAction.InputText).executionMode,
+        )
+    }
+
+    @Test
+    fun coalesceInputText_keepsDuplicateGenericFieldWithoutMerging() {
+        val actions = listOf(
+            RecordedAction.InputText("com.app", "1111", viewId = "com.app:id/code", timestampMs = 1_000L),
+            RecordedAction.InputText("com.app", "1111", viewId = "com.app:id/code", timestampMs = 1_200L),
+        )
+        assertEquals(2, FlowOptimizer.coalesceInputText(actions).size)
+    }
+
+    @Test
+    fun coalesceInputText_exportsOptionalDuplicatePinInYaml() {
+        val actions = FlowOptimizer.coalesceInputText(
+            listOf(
+                RecordedAction.InputText("com.app", "1111", viewId = "com.app:id/pincode", timestampMs = 1_000L),
+                RecordedAction.InputText("com.app", "1111", viewId = "com.app:id/pincode", timestampMs = 2_000L),
+            ),
+        )
+        val yaml = MaestroYamlExporter.export("com.app", "PIN", actions)
+        assertEquals(2, yaml.split("inputText").size - 1)
+        assertTrue(yaml.contains("optional: true"))
+    }
+
+    @Test
     fun coalesceInputText_mergesIncrementalTyping() {
         val actions = listOf(
             RecordedAction.InputText("com.app", "12", viewId = "com.app:id/pincode", timestampMs = 1_000L),
@@ -72,6 +112,47 @@ class FlowOptimizerTest {
         )
         val result = FlowOptimizer.dedupeTaps(actions)
         assertEquals(1, result.size)
+    }
+
+    @Test
+    fun dropNoiseScrolls_isolatedScrollAfterTap_isDropped() {
+        val actions = listOf(
+            RecordedAction.Tap("com.app", text = "SEZIONE", timestampMs = 1_000L),
+            RecordedAction.Scroll("com.app", timestampMs = 1_300L),
+            RecordedAction.Tap("com.app", text = "DETTAGLIO", timestampMs = 1_600L),
+        )
+        val result = FlowOptimizer.dropNoiseScrolls(actions)
+        assertEquals(2, result.size)
+        assertTrue(result.none { it is RecordedAction.Scroll })
+    }
+
+    @Test
+    fun dropNoiseScrolls_isolatedScrollAfterHideKeyboard_isDropped() {
+        val actions = listOf(
+            RecordedAction.HideKeyboard("com.app", timestampMs = 1_000L),
+            RecordedAction.Scroll("com.app", timestampMs = 1_100L),
+            RecordedAction.Tap("com.app", text = "OK", timestampMs = 1_500L),
+        )
+        val result = FlowOptimizer.dropNoiseScrolls(actions)
+        assertEquals(2, result.size)
+        assertTrue(result.none { it is RecordedAction.Scroll })
+    }
+
+    @Test
+    fun dropNoiseScrolls_intentionalMultiScrollRun_isKept() {
+        val actions = listOf(
+            RecordedAction.Tap("com.app", text = "NON ORA", timestampMs = 1_000L),
+            RecordedAction.Scroll("com.app", timestampMs = 1_200L),
+            RecordedAction.Scroll("com.app", timestampMs = 1_400L),
+            RecordedAction.Tap(
+                "com.app",
+                viewId = "com.app:id/policy_row",
+                text = "404347818",
+                timestampMs = 2_000L,
+            ),
+        )
+        val result = FlowOptimizer.dropNoiseScrolls(actions)
+        assertEquals(2, result.count { it is RecordedAction.Scroll })
     }
 
     @Test

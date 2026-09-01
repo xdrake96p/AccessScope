@@ -29,7 +29,9 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.outlined.Assessment
 import androidx.compose.material.icons.outlined.Delete
+import androidx.compose.material.icons.outlined.DriveFileRenameOutline
 import androidx.compose.material.icons.outlined.Download
 import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.FiberManualRecord
@@ -66,7 +68,9 @@ import dev.accessscope.scanner.AccessScopeApp
 import dev.accessscope.scanner.R
 import dev.accessscope.scanner.recorder.MaestroImportResult
 import dev.accessscope.scanner.recorder.MaestroYamlImporter
+import dev.accessscope.scanner.recorder.PlayReportFormatter
 import dev.accessscope.scanner.recorder.RecordedAction
+import dev.accessscope.scanner.recorder.model.PlayExecutionReport
 import dev.accessscope.scanner.recorder.SavedFlow
 import dev.accessscope.scanner.ui.components.AccessScopeCard
 import dev.accessscope.scanner.ui.components.AccessScopeTopBar
@@ -123,6 +127,11 @@ fun FlowsScreen(
     var vaultPromptClear by remember { mutableStateOf(false) }
     var vaultPin by remember { mutableStateOf("") }
     var vaultPassword by remember { mutableStateOf("") }
+    var renameFlow by remember { mutableStateOf<SavedFlow?>(null) }
+    var renameName by remember { mutableStateOf("") }
+    var reportFlow by remember { mutableStateOf<SavedFlow?>(null) }
+    var reportText by remember { mutableStateOf<String?>(null) }
+    var reportHistory by remember { mutableStateOf<List<PlayExecutionReport>>(emptyList()) }
 
     fun refresh() {
         ioScope.launch {
@@ -386,6 +395,20 @@ fun FlowsScreen(
                             refresh()
                         }
                     },
+                    onRename = {
+                        renameFlow = flow
+                        renameName = flow.name
+                    },
+                    onReport = {
+                        reportFlow = flow
+                        reportText = null
+                        ioScope.launch {
+                            val reports = withContext(Dispatchers.IO) { app.listPlayReports(flow.id) }
+                            reportHistory = reports
+                            reportText = reports.firstOrNull()?.let { PlayReportFormatter.formatFull(it) }
+                                ?: "Nessun test eseguito per questo flusso.\nAvvia Play o Valida dall'editor per generare un report."
+                        }
+                    },
                 )
             }
         }
@@ -617,6 +640,104 @@ fun FlowsScreen(
             },
         )
     }
+
+    renameFlow?.let { flow ->
+        AlertDialog(
+            onDismissRequest = { renameFlow = null },
+            title = { Text("Rinomina flusso") },
+            text = {
+                OutlinedTextField(
+                    value = renameName,
+                    onValueChange = { renameName = it },
+                    label = { Text("Nome") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        ioScope.launch {
+                            val updated = withContext(Dispatchers.IO) {
+                                app.renameFlow(flow.id, renameName)
+                            }
+                            renameFlow = null
+                            if (updated != null) {
+                                refresh()
+                                Toast.makeText(context, "Rinominato: ${updated.name}", Toast.LENGTH_SHORT).show()
+                            } else {
+                                Toast.makeText(context, "Rinomina fallita", Toast.LENGTH_SHORT).show()
+                            }
+                        }
+                    },
+                    enabled = renameName.trim().isNotBlank(),
+                ) { Text("Salva") }
+            },
+            dismissButton = {
+                TextButton(onClick = { renameFlow = null }) { Text("Annulla") }
+            },
+        )
+    }
+
+    reportFlow?.let { flow ->
+        AlertDialog(
+            onDismissRequest = { reportFlow = null },
+            title = { Text("Report test — ${flow.name}") },
+            text = {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = 480.dp)
+                        .verticalScroll(rememberScrollState()),
+                ) {
+                    if (reportHistory.size > 1) {
+                        Text(
+                            "Run recenti: ${reportHistory.size}",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = contentSecondary(),
+                        )
+                        Spacer(Modifier.height(4.dp))
+                        reportHistory.take(5).forEachIndexed { idx, r ->
+                            val label = SimpleDateFormat("dd/MM HH:mm", Locale.ITALY)
+                                .format(Date(r.finishedAtMs))
+                            TextButton(
+                                onClick = {
+                                    reportText = PlayReportFormatter.formatFull(r)
+                                },
+                            ) {
+                                Text(
+                                    "${if (r.success) "OK" else "KO"} · $label · " +
+                                        "${r.passedSteps}/${r.totalSteps} step",
+                                )
+                            }
+                        }
+                        Spacer(Modifier.height(8.dp))
+                    }
+                    Text(
+                        reportText ?: "Caricamento…",
+                        style = CodeTextStyle,
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        val text = reportText ?: return@TextButton
+                        val share = Intent(Intent.ACTION_SEND).apply {
+                            type = "text/plain"
+                            putExtra(Intent.EXTRA_SUBJECT, "Report Maestro — ${flow.name}")
+                            putExtra(Intent.EXTRA_TEXT, text)
+                        }
+                        context.startActivity(Intent.createChooser(share, "Condividi report"))
+                    },
+                    enabled = reportText != null && reportHistory.isNotEmpty(),
+                ) { Text("Condividi") }
+            },
+            dismissButton = {
+                TextButton(onClick = { reportFlow = null }) { Text("Chiudi") }
+            },
+        )
+    }
 }
 
 @Composable
@@ -642,6 +763,8 @@ private fun FlowListCard(
     onPlay: () -> Unit,
     onPlayClean: () -> Unit,
     onEdit: () -> Unit,
+    onRename: () -> Unit,
+    onReport: () -> Unit,
     onScanWithFlow: () -> Unit,
     onPreview: () -> Unit,
     onShare: () -> Unit,
@@ -650,6 +773,14 @@ private fun FlowListCard(
 ) {
     val date = remember(flow.createdAtMs) {
         SimpleDateFormat("dd MMM yyyy · HH:mm", Locale.ITALY).format(Date(flow.createdAtMs))
+    }
+    val lastPlayLabel = remember(flow.lastPlayAtMs, flow.lastPlaySuccess) {
+        flow.lastPlayAtMs?.let { ts ->
+            val whenStr = SimpleDateFormat("dd/MM HH:mm", Locale.ITALY).format(Date(ts))
+            val steps = "${flow.lastPlayPassedSteps ?: "?"}/${flow.lastPlayTotalSteps ?: flow.stepCount}"
+            val ok = flow.lastPlaySuccess == true
+            Triple(whenStr, steps, ok)
+        }
     }
     val actionsEnabled = flow.hasActionsJson && !playbackBusy
     AccessScopeCard(modifier = Modifier.fillMaxWidth()) {
@@ -660,6 +791,17 @@ private fun FlowListCard(
             style = CodeTextStyle,
             color = contentSecondary(),
         )
+        lastPlayLabel?.let { (whenStr, steps, ok) ->
+            Text(
+                "Ultimo test: ${if (ok) "OK" else "KO"} ($steps step) · $whenStr",
+                style = MaterialTheme.typography.labelSmall,
+                color = if (ok) {
+                    MaterialTheme.colorScheme.primary
+                } else {
+                    MaterialTheme.colorScheme.error
+                },
+            )
+        }
         if (!flow.hasActionsJson) {
             Text(
                 "Solo YAML — Play/Edit non disponibili (ri-registra o re-importa)",
@@ -695,6 +837,12 @@ private fun FlowListCard(
             }
             IconButton(onClick = onEdit, enabled = actionsEnabled) {
                 Icon(Icons.Outlined.Edit, contentDescription = "Modifica step")
+            }
+            IconButton(onClick = onRename) {
+                Icon(Icons.Outlined.DriveFileRenameOutline, contentDescription = "Rinomina flusso")
+            }
+            IconButton(onClick = onReport) {
+                Icon(Icons.Outlined.Assessment, contentDescription = "Report test")
             }
             IconButton(onClick = onScanWithFlow, enabled = actionsEnabled) {
                 Image(

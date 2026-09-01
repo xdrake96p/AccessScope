@@ -36,6 +36,7 @@ data class PlayOutcome(
     val selectorWins: List<SelectorWin> = emptyList(),
     val validateFailures: List<Int> = emptyList(),
     val divergences: List<String> = emptyList(),
+    val stepResults: List<PlayStepResult> = emptyList(),
 ) {
     val isSuccess: Boolean get() = error == null && validateFailures.isEmpty()
 }

@@ -6,7 +6,58 @@
 **Package:** `dev.accessscope.scanner`  
 **Branch principale sviluppo:** `develop`  
 **Branch release stabile:** `main`  
-**Ultimo aggiornamento:** 1 settembre 2026 (Riscrittura pipeline Maestro — Fase 3: ZeroEditGate riconosce step spariti)
+**Ultimo aggiornamento:** 1 settembre 2026 (Maestro: report test Play + rinomina flussi)
+
+### Maestro — report esecuzione test (1 settembre 2026)
+
+Ogni **Play** o **Validate** genera un report persistente `{id}.reports.json` con:
+
+- metadati run (data, durata, app, cold launch);
+- **dettaglio step** (descrizione, dati mascherati, OK/KO/skip optional);
+- note CI / divergenze;
+- condivisione testo via **Condividi** dalla lista flussi (icona report).
+
+In lista: badge **Ultimo test: OK/KO** con conteggio step. **Rinomina** flusso dalla lista
+(icona matita nome) senza aprire l’editor.
+
+### Maestro — pad PIN: una cifra = uno step (1 settembre 2026)
+
+Premendo 6 volte «1» sul tastierino PIN compariva un solo step (tap deduplicato + coalescenza
+in un `inputText`).
+
+- **`ActionRecorder`**: niente debounce su tap pad numerico (ogni cifra conta).
+- **`dedupeTaps`**: non collassa tap pad consecutivi sullo stesso tasto.
+- **`preservePinPadDigitTaps`**: run pad → N `tapOn` (**tutti Required**).
+- **`dropDuplicateTapsAcrossWaits`**: non collassa tap pad identici separati da wait (bug: 6×`uno` → 1 step).
+- **`WaitPlanner`**: niente wait tra cifre pad consecutive.
+- **Play**: fallback append su `pincode` se slot `editN` assenti; errore se cifra pad non inserita.
+- **Slot `edit1`…`edit6`**: una cifra per slot resta N step; merge solo se ogni slot ha lo
+  stesso codice completo (≥4 cifre). Tap pad ridondanti eliminati solo dopo codice completo.
+
+### Maestro — scroll spurî: filtro più aggressivo (1 settembre 2026)
+
+Scroll isolati (layout post-tap, IME, launch, solo `fromIndex`/`toIndex` senza delta) finivano
+nello YAML anche quando non servivano al replay.
+
+- **`ActionRecorder`**: ignora scroll entro 800ms da un tap; su API 28+ richiede delta fisico
+  ≥12px (niente scroll da RecyclerView bind/prefetch).
+- **`NoiseActionFilter.dropNoiseScrolls`**: elimina scroll **non** in run multiplo (≥2 scroll
+  stessa direzione) se preceduti da hideKeyboard/launch/back/waitForAnimation o inseriti tra due tap /
+  subito dopo un tap (<900ms).
+- Run multipli reali (liste lunghe AXA/Nexi) restano intatti — vedi test regressione.
+
+
+Registrazioni con PIN inserito più volte (es. `1111` + conferma) mostravano un solo
+`inputText` nello YAML: il recorder sovrascriveva il pending senza flush e la pipeline
+collassava per gap temporale.
+
+- **`ActionRecorder`**: flush immediato su stesso campo + stesso testo completo
+  (`duplicate_complete`), senza attendere gap — password login resta coalesceda in un solo `****`.
+- **`FlowOptimizationPipeline`**: coalesce **solo** digitazione incrementale (prefisso stretto);
+  duplicati completi restano due step; il secondo (e successivi) marcato **`Optional`**.
+- **`InputText.executionMode`**: export YAML `optional: true`; Play salta l’input se il campo
+  non è più disponibile.
+- Test: `FlowOptimizerTest` (PIN×2, YAML con `optional`, campo generico non merge).
 
 ### Riscrittura pipeline Maestro — Fase 3: `ZeroEditGate` impara a riconoscere step spariti (1 settembre 2026)
 

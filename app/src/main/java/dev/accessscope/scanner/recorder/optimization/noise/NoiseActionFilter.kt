@@ -13,6 +13,8 @@ import dev.accessscope.scanner.util.DebugSessionLog
  */
 object NoiseActionFilter {
 
+    private const val SCROLL_AFTER_TAP_NOISE_MS = 900L
+
     private val KEYBOARD_PKG_HINTS = listOf(
         "com.google.android.inputmethod",
         "com.samsung.android.honeyboard",
@@ -34,8 +36,13 @@ object NoiseActionFilter {
             val prev = actions.getOrNull(index - 1)
             val next = actions.getOrNull(index + 1)
             if (prev is RecordedAction.InputText || next is RecordedAction.InputText) return@filterIndexed false
-            // Scroll tra tap accordion/section header: chiude la sezione appena aperta.
-            if (isSectionHeaderTap(prev) || isSectionHeaderTap(next)) return@filterIndexed false
+            // Scroll tra tap accordion/section header: chiude la sezione appena aperta — solo se
+            // scroll isolato; un run multiplo verso una riga lista resta intatto.
+            if ((isSectionHeaderTap(prev) || isSectionHeaderTap(next)) &&
+                !isIntentionalScrollRun(actions, index)
+            ) {
+                return@filterIndexed false
+            }
             // Scroll dopo input/wait (IME / lista): rumore tipico post-PIN.
             //
             // Bug reale (flusso AXA registrato): questo filtro gira sia in optimize() sia di
@@ -53,8 +60,53 @@ object NoiseActionFilter {
             // Il salto sopra assorbe già Wait/WaitForAnimation/HideKeyboard: qui può arrivare
             // solo InputText (o qualunque altra azione reale, che non è rumore).
             if (actions.getOrNull(i) is RecordedAction.InputText) return@filterIndexed false
+            // Scroll isolato (non run multiplo): spesso layout/IME post-tap o post-launch.
+            if (!isIntentionalScrollRun(actions, index)) {
+                when {
+                    prev is RecordedAction.HideKeyboard -> return@filterIndexed false
+                    prev is RecordedAction.LaunchApp -> return@filterIndexed false
+                    prev is RecordedAction.Back -> return@filterIndexed false
+                    prev is RecordedAction.WaitForAnimation -> return@filterIndexed false
+                    prev is RecordedAction.Tap && next is RecordedAction.Tap -> return@filterIndexed false
+                    prev is RecordedAction.Tap &&
+                        action.timestampMs - prev.timestampMs <= SCROLL_AFTER_TAP_NOISE_MS ->
+                        return@filterIndexed false
+                }
+            }
             true
         }
+    }
+
+    /**
+     * True se [index] fa parte di una sequenza di ≥2 scroll nella stessa direzione
+     * (wait/hideKeyboard interposti ammessi — pattern scroll reali tipo liste lunghe).
+     */
+    internal fun isIntentionalScrollRun(actions: List<RecordedAction>, index: Int): Boolean {
+        val scroll = actions.getOrNull(index) as? RecordedAction.Scroll ?: return false
+        val dir = scroll.direction
+        var i = index - 1
+        while (i >= 0) {
+            when (val a = actions[i]) {
+                is RecordedAction.Scroll -> return a.direction == dir
+                is RecordedAction.Wait,
+                is RecordedAction.WaitForAnimation,
+                is RecordedAction.HideKeyboard,
+                -> i--
+                else -> break
+            }
+        }
+        var j = index + 1
+        while (j < actions.size) {
+            when (val a = actions[j]) {
+                is RecordedAction.Scroll -> return a.direction == dir
+                is RecordedAction.Wait,
+                is RecordedAction.WaitForAnimation,
+                is RecordedAction.HideKeyboard,
+                -> j++
+                else -> break
+            }
+        }
+        return false
     }
 
     /** Tap su header sezione / accordion (etichetta generica). */
@@ -272,6 +324,10 @@ object NoiseActionFilter {
                     val onlyWaitsBetween = out.subList(lastTapIdx + 1, out.size).all { isWaitLike(it) }
                     val withinGap = action.timestampMs - prev.timestampMs <= DUPLICATE_TAP_MAX_GAP_MS
                     if (onlyWaitsBetween && withinGap && sameLogicalTap(prev, action)) {
+                        if (isPinPadDigitAction(prev) || isPinPadDigitAction(action)) {
+                            out += action
+                            continue
+                        }
                         continue
                     }
                 }
@@ -322,11 +378,10 @@ object NoiseActionFilter {
 
     /**
      * Per OTP/PIN su `edit1`…`edit6` (EditText reali):
-     * 1) collassa N `inputText` sugli slot in **un solo** `inputText` su `edit1` col codice;
-     * 2) **elimina** i tap del pad (`uno`/`due`/…) subito dopo (SET_TEXT sugli slot basta;
-     *    i tap optional facevano aspettare 10s e riscrivevano le cifre);
-     * 3) collassa sequenze di soli tap pad (4–8 cifre) in un `inputText` su `edit1`
-     *    (es. conferma PIN senza TEXT_CHANGED registrati).
+     * 1) collassa N `inputText` con **codice completo ripetuto** (≥4 cifre) in un solo step su `edit1`;
+     *    una cifra per slot resta **N step** separati (pad che riempie edit1…edit6);
+     * 2) elimina tap pad ridondanti solo dopo un input **completo** su slot (SET_TEXT basta);
+     * 3) sequenze tap pad → **un tapOn per cifra** (tutti Required per Play affidabile).
      *
      * @param actions Azioni in ingresso.
      * @return Azioni ripulite per Play affidabile.
@@ -335,7 +390,7 @@ object NoiseActionFilter {
         if (actions.isEmpty()) return actions
         val coalesced = coalesceDigitSlotInputs(actions)
         val withoutPadDupes = dropRedundantPinPadKeysAndWaits(coalesced)
-        val out = coalescePinPadDigitTaps(withoutPadDupes)
+        val out = preservePinPadDigitTaps(withoutPadDupes)
         // #region agent log
         runCatching {
             val slotIns = out.count {
@@ -400,16 +455,21 @@ object NoiseActionFilter {
                 val code = resolveOtpOrPinCode(run)
                 val first = run.first()
                 val pkg = first.packageName
-                val baseId = first.viewId?.substringBeforeLast('/')?.let { "$it/edit1" }
-                    ?: first.viewId
-                out += RecordedAction.InputText(
-                    packageName = pkg,
-                    text = code,
-                    viewId = baseId,
-                    isPassword = first.isPassword,
-                    timestampMs = first.timestampMs,
-                )
-                i = j
+                if (!shouldCoalesceDigitSlotRun(run)) {
+                    run.forEach { out += it }
+                    i = j
+                } else {
+                    val baseId = first.viewId?.substringBeforeLast('/')?.let { "$it/edit1" }
+                        ?: first.viewId
+                    out += RecordedAction.InputText(
+                        packageName = pkg,
+                        text = code,
+                        viewId = baseId,
+                        isPassword = first.isPassword,
+                        timestampMs = first.timestampMs,
+                    )
+                    i = j
+                }
             } else {
                 out += a
                 i++
@@ -444,8 +504,18 @@ object NoiseActionFilter {
     }
 
     /**
-     * Elimina tap pad e wait su id pad subito dopo un input su slot,
-     * fino a CONTINUA/Conferma/OK. Evita doppia scrittura e timeout su pad assente.
+     * Unisce slot solo se ogni slot porta lo stesso codice completo (≥4 cifre).
+     * Una cifra per slot (pad che avanza edit1…editN) resta N step distinti.
+     */
+    internal fun shouldCoalesceDigitSlotRun(run: List<RecordedAction.InputText>): Boolean {
+        val texts = run.map { it.text.trim() }.filter { it.isNotEmpty() }
+        if (texts.isEmpty()) return false
+        if (texts.all { it.length == 1 && it[0].isDigit() }) return false
+        return texts.distinct().size == 1 && texts.first().length >= 4
+    }
+
+    /**
+     * Elimina tap pad ridondanti solo dopo input **completo** su slot (≥4 cifre / mascherato).
      */
     private fun dropRedundantPinPadKeysAndWaits(actions: List<RecordedAction>): List<RecordedAction> {
         var dropPads = false
@@ -453,7 +523,7 @@ object NoiseActionFilter {
             if (action is RecordedAction.InputText &&
                 MaestroSelectorHeuristics.isPinPadDigitSlot(action.viewId)
             ) {
-                dropPads = true
+                dropPads = action.text.length >= 4 || action.text == "****"
                 return@mapNotNull action
             }
             if (dropPads && action is RecordedAction.Tap &&
@@ -480,9 +550,9 @@ object NoiseActionFilter {
     }
 
     /**
-     * Sequenza di 4–8 tap pad → un `inputText` su `edit1` (Play distribuisce le cifre).
+     * Run di tap pad: un [RecordedAction.Tap] per cifra, tutti Required.
      */
-    private fun coalescePinPadDigitTaps(actions: List<RecordedAction>): List<RecordedAction> {
+    private fun preservePinPadDigitTaps(actions: List<RecordedAction>): List<RecordedAction> {
         val out = mutableListOf<RecordedAction>()
         var i = 0
         while (i < actions.size) {
@@ -501,21 +571,10 @@ object NoiseActionFilter {
                         else -> break
                     }
                 }
-                val digits = run.mapNotNull { tapToDigit(it) }
-                if (digits.size in 4..8) {
-                    val first = run.first()
-                    val pkg = first.packageName
-                    out += RecordedAction.InputText(
-                        packageName = pkg,
-                        text = digits.joinToString(""),
-                        viewId = "$pkg:id/edit1",
-                        timestampMs = first.timestampMs,
-                    )
-                    i = j
-                } else {
-                    out += a
-                    i++
+                run.forEach { tap ->
+                    out += tap
                 }
+                i = j
             } else {
                 out += a
                 i++
@@ -527,24 +586,6 @@ object NoiseActionFilter {
     private fun isPinPadDigitAction(action: RecordedAction.Tap): Boolean =
         MaestroSelectorHeuristics.isPinPadKey(action.viewId, action.text) ||
             MaestroSelectorHeuristics.isPinPadDigitTap(action.text, action.viewId)
-
-    private fun tapToDigit(action: RecordedAction.Tap): String? {
-        action.text?.trim()?.takeIf { it.length == 1 && it[0].isDigit() }?.let { return it }
-        val short = MaestroSelectorHeuristics.shortViewId(action.viewId)?.lowercase().orEmpty()
-        return when (short) {
-            "zero" -> "0"
-            "uno" -> "1"
-            "due" -> "2"
-            "tre" -> "3"
-            "quattro" -> "4"
-            "cinque" -> "5"
-            "sei" -> "6"
-            "sette" -> "7"
-            "otto" -> "8"
-            "nove" -> "9"
-            else -> Regex("(\\d)$").find(short)?.groupValues?.get(1)
-        }
-    }
 
     /**
      * Collassa run consecutive di [RecordedAction.WaitForAnimation] tenendo il timeout più lungo.

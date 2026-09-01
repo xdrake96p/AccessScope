@@ -3,6 +3,7 @@ package dev.accessscope.scanner.recorder
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
@@ -48,5 +49,64 @@ class FlowStoreTest {
         // salvataggio si aspettano le azioni originali, non quelle già sanificate per Play.
         val storedActions = store.readActions(flow.id)
         assertEquals(2, storedActions?.size)
+    }
+
+    @Test
+    fun savePlayReport_updatesIndexAndPersists() {
+        val store = FlowStore(RuntimeEnvironment.getApplication())
+        val flow = store.saveFlow(
+            name = "Report test",
+            appId = "com.example.app",
+            appLabel = "Example",
+            actions = listOf(
+                RecordedAction.LaunchApp("com.example.app"),
+                RecordedAction.Tap("com.example.app", text = "OK"),
+            ),
+            optimize = false,
+            enforceZeroEdit = false,
+        )
+        val report = dev.accessscope.scanner.recorder.model.PlayExecutionReport(
+            runId = "run01",
+            flowId = flow.id,
+            flowName = flow.name,
+            appId = flow.appId,
+            appLabel = flow.appLabel,
+            kind = dev.accessscope.scanner.recorder.model.PlayRunKind.PLAY,
+            startedAtMs = 1_000L,
+            finishedAtMs = 2_000L,
+            totalSteps = 2,
+            passedSteps = 2,
+            failedSteps = 0,
+            skippedOptionalSteps = 0,
+            success = true,
+            steps = listOf(
+                dev.accessscope.scanner.recorder.model.PlayStepResult(
+                    0, "launchApp", "LaunchApp",
+                    dev.accessscope.scanner.recorder.model.PlayStepStatus.PASSED,
+                ),
+            ),
+        )
+        store.savePlayReport(report)
+        val updated = store.getFlow(flow.id)
+        assertEquals(true, updated?.lastPlaySuccess)
+        assertEquals(2, updated?.lastPlayPassedSteps)
+        assertEquals(1, store.listPlayReports(flow.id).size)
+    }
+
+    @Test
+    fun renameFlow_updatesNameAndYamlHeader() {
+        val store = FlowStore(RuntimeEnvironment.getApplication())
+        val flow = store.saveFlow(
+            name = "Vecchio nome",
+            appId = "com.example.app",
+            appLabel = "Example",
+            actions = listOf(RecordedAction.LaunchApp("com.example.app")),
+            optimize = false,
+            enforceZeroEdit = false,
+        )
+        val renamed = store.renameFlow(flow.id, "Nuovo nome cliente")
+        assertEquals("Nuovo nome cliente", renamed?.name)
+        val yaml = store.readYaml(renamed!!)
+        assertTrue(yaml!!.contains("Nuovo nome cliente"))
     }
 }

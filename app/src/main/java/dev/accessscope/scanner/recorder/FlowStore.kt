@@ -9,6 +9,7 @@ package dev.accessscope.scanner.recorder
 import android.content.Context
 import dev.accessscope.scanner.recorder.model.OptimizationContext
 import dev.accessscope.scanner.recorder.model.FlowTelemetry
+import dev.accessscope.scanner.recorder.model.PlayExecutionReport
 import dev.accessscope.scanner.recorder.optimization.selector.SelectorRanker
 import dev.accessscope.scanner.recorder.quality.ZeroEditGate
 import dev.accessscope.scanner.recorder.quality.ZeroEditIssue
@@ -237,15 +238,77 @@ class FlowStore(context: Context) {
         return list.takeIf { it.isNotEmpty() || file.length() > 2 }
     }
 
-    /** Elimina flusso, YAML e actions.json. */
+    /** Elimina flusso, YAML, actions.json e report. */
     fun deleteFlow(id: String) {
         val current = loadIndex()
         val target = current.find { it.id == id } ?: return
         File(rootDir, target.yamlRelativePath).delete()
         actionsFile(id).delete()
         telemetryFile(id).delete()
+        reportsFile(id).delete()
         writeIndex(current.filterNot { it.id == id })
     }
+
+    /**
+     * Rinomina un flusso senza toccare azioni/YAML.
+     *
+     * @param id Id flusso.
+     * @param newName Nuovo nome (non blank).
+     * @return Flusso aggiornato o `null`.
+     */
+    fun renameFlow(id: String, newName: String): SavedFlow? {
+        val trimmed = newName.trim()
+        if (trimmed.isBlank()) return null
+        val current = loadIndex()
+        val existing = current.find { it.id == id } ?: return null
+        val actions = readActions(id) ?: return null
+        val stepCount = writeArtifacts(id, existing.appId, trimmed, actions, OptimizationContext(appId = existing.appId))
+        val updated = existing.copy(name = trimmed, stepCount = stepCount)
+        writeIndex(current.map { if (it.id == id) updated.copy(hasActionsJson = false) else it })
+        return updated.withActionsFlag()
+    }
+
+    /**
+     * Persiste un report di esecuzione Play/Validate e aggiorna metadati indice.
+     *
+     * @param report Report completo.
+     * @param maxReports Numero massimo report conservati per flusso.
+     */
+    fun savePlayReport(report: PlayExecutionReport, maxReports: Int = MAX_REPORTS_PER_FLOW) {
+        val current = loadIndex()
+        val existing = current.find { it.id == report.flowId } ?: return
+        val file = reportsFile(report.flowId)
+        val previous = if (file.exists()) {
+            PlayReportCodec.fromJsonArray(file.readText(Charsets.UTF_8))
+        } else {
+            emptyList()
+        }
+        val merged = (listOf(report) + previous).take(maxReports)
+        file.writeText(PlayReportCodec.toJsonArray(merged), Charsets.UTF_8)
+        val updated = existing.copy(
+            lastPlayAtMs = report.finishedAtMs,
+            lastPlaySuccess = report.success,
+            lastPlayPassedSteps = report.passedSteps,
+            lastPlayTotalSteps = report.totalSteps,
+        )
+        writeIndex(current.map { if (it.id == report.flowId) updated.copy(hasActionsJson = false) else it })
+        AppFileLogger.info(
+            "FlowStore",
+            "play_report id=${report.flowId} run=${report.runId} ok=${report.success} " +
+                "steps=${report.passedSteps}/${report.totalSteps}",
+        )
+    }
+
+    /** Elenco report del flusso (più recente per primo). */
+    fun listPlayReports(flowId: String): List<PlayExecutionReport> {
+        val file = reportsFile(flowId)
+        if (!file.exists()) return emptyList()
+        return PlayReportCodec.fromJsonArray(file.readText(Charsets.UTF_8))
+    }
+
+    /** Ultimo report o `null`. */
+    fun latestPlayReport(flowId: String): PlayExecutionReport? =
+        listPlayReports(flowId).firstOrNull()
 
     fun getFlow(id: String): SavedFlow? = loadIndex().find { it.id == id }?.withActionsFlag()
 
@@ -292,6 +355,8 @@ class FlowStore(context: Context) {
 
     private fun telemetryFile(id: String): File = File(rootDir, "$id.telemetry.json")
 
+    private fun reportsFile(id: String): File = File(rootDir, "$id.reports.json")
+
     private fun SavedFlow.withActionsFlag(): SavedFlow =
         copy(hasActionsJson = hasActions(id))
 
@@ -311,6 +376,10 @@ class FlowStore(context: Context) {
                             createdAtMs = o.getLong("createdAtMs"),
                             stepCount = o.getInt("stepCount"),
                             yamlRelativePath = o.getString("yamlRelativePath"),
+                            lastPlayAtMs = o.optLong("lastPlayAtMs").takeIf { o.has("lastPlayAtMs") },
+                            lastPlaySuccess = if (o.has("lastPlaySuccess")) o.getBoolean("lastPlaySuccess") else null,
+                            lastPlayPassedSteps = if (o.has("lastPlayPassedSteps")) o.getInt("lastPlayPassedSteps") else null,
+                            lastPlayTotalSteps = if (o.has("lastPlayTotalSteps")) o.getInt("lastPlayTotalSteps") else null,
                         ),
                     )
                 }
@@ -330,6 +399,10 @@ class FlowStore(context: Context) {
                     put("createdAtMs", f.createdAtMs)
                     put("stepCount", f.stepCount)
                     put("yamlRelativePath", f.yamlRelativePath)
+                    f.lastPlayAtMs?.let { put("lastPlayAtMs", it) }
+                    f.lastPlaySuccess?.let { put("lastPlaySuccess", it) }
+                    f.lastPlayPassedSteps?.let { put("lastPlayPassedSteps", it) }
+                    f.lastPlayTotalSteps?.let { put("lastPlayTotalSteps", it) }
                 },
             )
         }
@@ -339,5 +412,6 @@ class FlowStore(context: Context) {
     companion object {
         private const val DIR_NAME = "maestro_flows"
         private const val INDEX_NAME = "index.json"
+        private const val MAX_REPORTS_PER_FLOW = 30
     }
 }

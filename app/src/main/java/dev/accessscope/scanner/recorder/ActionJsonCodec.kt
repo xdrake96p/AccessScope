@@ -95,6 +95,9 @@ object ActionJsonCodec {
                 put("text", action.text)
                 putOpt("viewId", action.viewId)
                 put("isPassword", action.isPassword)
+                if (action.executionMode != StepExecutionMode.Required) {
+                    put("executionMode", action.executionMode.name)
+                }
             }
             is RecordedAction.EraseText -> putOpt("viewId", action.viewId)
             is RecordedAction.Scroll -> put("direction", action.direction.name)
@@ -182,6 +185,9 @@ object ActionJsonCodec {
                 text = o.optString("text", ""),
                 viewId = o.optStringOrNull("viewId"),
                 isPassword = o.optBoolean("isPassword", false),
+                executionMode = runCatching {
+                    StepExecutionMode.valueOf(o.optString("executionMode", "Required"))
+                }.getOrDefault(StepExecutionMode.Required),
                 timestampMs = ts,
             )
             "EraseText" -> RecordedAction.EraseText(

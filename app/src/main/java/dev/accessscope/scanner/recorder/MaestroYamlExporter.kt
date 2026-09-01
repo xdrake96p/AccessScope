@@ -169,6 +169,7 @@ object MaestroYamlExporter {
         is RecordedAction.InputText -> {
             val shortId = MaestroSelectorHeuristics.shortViewId(action.viewId)
             val isSecret = isSecretInput(action)
+            val optional = action.executionMode == StepExecutionMode.Optional
             val placeholder = when {
                 isPinSecret(action) -> CredentialVault.PLACEHOLDER_PIN
                 isSecret -> CredentialVault.PLACEHOLDER_PASSWORD
@@ -178,16 +179,17 @@ object MaestroYamlExporter {
                 isSecret && !shortId.isNullOrBlank() -> buildString {
                     appendLine("- tapOn:")
                     appendLine("    id: ${yamlString(escapeMaestroText(shortId))}")
-                    appendLine("- inputText: ${yamlString(placeholder)}")
+                    append(formatInputTextBlock(placeholder, optional))
                     append("# secret placeholder — resolve via env / CredentialVault")
                 }.trimEnd()
-                isSecret -> "- inputText: ${yamlString(placeholder)}"
+                isSecret -> formatInputTextBlock(placeholder, optional) +
+                    "\n# secret placeholder — resolve via env / CredentialVault"
                 !shortId.isNullOrBlank() -> buildString {
                     appendLine("- tapOn:")
                     appendLine("    id: ${yamlString(escapeMaestroText(shortId))}")
-                    append("- inputText: ${yamlString(action.text)}")
+                    append(formatInputTextBlock(action.text, optional))
                 }.trimEnd()
-                else -> "- inputText: ${yamlString(action.text)}"
+                else -> formatInputTextBlock(action.text, optional)
             }
         }
         is RecordedAction.EraseText -> {
@@ -389,6 +391,19 @@ object MaestroYamlExporter {
 
     /** Percentuali intere: Maestro non accetta decimali su `swipe.start/end` (verificato con `maestro check-syntax`). */
     private fun fmtPercent(v: Float): String = Math.round(v).toString()
+
+    /**
+     * Blocco `inputText` one-line o espanso con `optional: true` (Maestro CLI).
+     */
+    private fun formatInputTextBlock(text: String, optional: Boolean): String {
+        if (!optional) return "- inputText: ${yamlString(text)}\n"
+        return buildString {
+            appendLine("- inputText:")
+            appendLine("    text: ${yamlString(text)}")
+            append("    optional: true")
+            append('\n')
+        }.toString()
+    }
 
     private val MAESTRO_REGEX_METACHARS = "\\.^$*+?()[]{}|".toCharArray()
 

@@ -8,6 +8,7 @@ package dev.accessscope.scanner.recorder.optimization
 
 import dev.accessscope.scanner.recorder.MaestroSelectorHeuristics
 import dev.accessscope.scanner.recorder.RecordedAction
+import dev.accessscope.scanner.recorder.model.StepExecutionMode
 import dev.accessscope.scanner.recorder.model.OptimizationContext
 import dev.accessscope.scanner.recorder.optimization.AssertPlanner
 import dev.accessscope.scanner.recorder.optimization.conditional.BlockingOverlayOrderHealer
@@ -27,8 +28,6 @@ import dev.accessscope.scanner.util.DebugSessionLog
 object FlowOptimizationPipeline {
 
     private const val TAP_DEDUPE_MS = 800L
-    /** Gap oltre il quale due input uguali sullo stesso campo restano due step (PIN confirm). */
-    private const val REENTRY_INPUT_GAP_MS = 1_500L
 
     /**
      * Ottimizza azioni con contesto telemetria/scan.
@@ -154,7 +153,7 @@ object FlowOptimizationPipeline {
 
     /**
      * Coalesce solo digitazione incrementale sullo stesso campo.
-     * Non unisce due inserimenti completi uguali/distanti (es. PIN + conferma PIN).
+     * Duplicati completi (es. PIN + conferma) restano due step; il secondo diventa Optional.
      */
     fun coalesceInputText(actions: List<RecordedAction>): List<RecordedAction> {
         if (actions.isEmpty()) return actions
@@ -164,17 +163,27 @@ object FlowOptimizationPipeline {
             val a = actions[i]
             if (a is RecordedAction.InputText) {
                 var last: RecordedAction.InputText = a
+                var pendingEmit = true
                 var j = i + 1
                 while (j < actions.size) {
-                    val next = actions[j] as? RecordedAction.InputText
-                    if (next != null && shouldCoalesceInput(last, next)) {
-                        last = next
-                        j++
-                    } else {
-                        break
+                    val next = actions[j] as? RecordedAction.InputText ?: break
+                    when {
+                        shouldCoalesceInput(last, next) -> {
+                            last = next
+                            pendingEmit = true
+                            j++
+                        }
+                        isDuplicateCompleteInput(last, next) -> {
+                            if (pendingEmit) out += last
+                            out += next.copy(executionMode = StepExecutionMode.Optional)
+                            last = next
+                            pendingEmit = false
+                            j++
+                        }
+                        else -> break
                     }
                 }
-                out += last
+                if (pendingEmit) out += last
                 i = j
             } else {
                 out += a
@@ -182,6 +191,22 @@ object FlowOptimizationPipeline {
             }
         }
         return out
+    }
+
+    /**
+     * Due inserimenti completi identici sullo stesso campo (PIN re-entry / conferma).
+     */
+    internal fun isDuplicateCompleteInput(
+        prev: RecordedAction.InputText,
+        next: RecordedAction.InputText,
+    ): Boolean {
+        if (!sameInputField(prev, next) || prev.text != next.text) return false
+        if (prev.isPassword || next.isPassword) {
+            val pinPrev = MaestroSelectorHeuristics.isPinLikeField(prev.viewId)
+            val pinNext = MaestroSelectorHeuristics.isPinLikeField(next.viewId)
+            if (!pinPrev && !pinNext) return false
+        }
+        return true
     }
 
     /**
@@ -194,33 +219,19 @@ object FlowOptimizationPipeline {
             val pinPrev = MaestroSelectorHeuristics.isPinLikeField(prev.viewId)
             val pinNext = MaestroSelectorHeuristics.isPinLikeField(next.viewId)
             if (!pinPrev && !pinNext) {
-                val incremental = next.text.startsWith(prev.text) || prev.text.startsWith(next.text)
-                return incremental || prev.text == next.text
+                return isIncrementalInputTyping(prev.text, next.text) || prev.text == next.text
             }
         }
-        // PIN: non collassare due inserimenti completi (anche uguali).
-        if (MaestroSelectorHeuristics.isPinLikeField(prev.viewId) ||
-            MaestroSelectorHeuristics.isPinLikeField(next.viewId)
-        ) {
-            val incremental = next.text.startsWith(prev.text) || prev.text.startsWith(next.text)
-            if (incremental && prev.text != next.text) return true
-            // #region agent log
-            DebugSessionLog.log(
-                "H3",
-                "FlowOptimizationPipeline.shouldCoalesceInput",
-                "keep_pin_like",
-                mapOf("viewId" to prev.viewId, "isPassword" to prev.isPassword),
-            )
-            // #endregion
-            return false
-        }
-        val gap = kotlin.math.abs(next.timestampMs - prev.timestampMs)
-        if (prev.text == next.text && gap >= REENTRY_INPUT_GAP_MS) {
-            return false
-        }
-        if (next.text.startsWith(prev.text) || prev.text.startsWith(next.text)) return true
-        if (gap < REENTRY_INPUT_GAP_MS) return true
-        return false
+        // PIN e campi generici: solo digitazione incrementale, mai duplicati completi.
+        if (prev.text == next.text) return false
+        return isIncrementalInputTyping(prev.text, next.text)
+    }
+
+    /** Prefisso stretto = keystroke/correzione, non PIN+conferma. */
+    internal fun isIncrementalInputTyping(prev: String, next: String): Boolean {
+        if (prev == next) return false
+        return (next.startsWith(prev) && next.length > prev.length) ||
+            (prev.startsWith(next) && prev.length > next.length)
     }
 
     /**
@@ -251,11 +262,17 @@ object FlowOptimizationPipeline {
     }
 
     private fun isDuplicateTap(prev: RecordedAction, next: RecordedAction): Boolean {
+        if (prev is RecordedAction.Tap && isPinPadDigitTap(prev)) return false
+        if (next is RecordedAction.Tap && isPinPadDigitTap(next)) return false
         val (pSel, pTs) = tapSelector(prev) ?: return false
         val (nSel, nTs) = tapSelector(next) ?: return false
         if (pSel != nSel) return false
         return kotlin.math.abs(nTs - pTs) <= TAP_DEDUPE_MS
     }
+
+    private fun isPinPadDigitTap(tap: RecordedAction.Tap): Boolean =
+        MaestroSelectorHeuristics.isPinPadKey(tap.viewId, tap.text) ||
+            MaestroSelectorHeuristics.isPinPadDigitTap(tap.text, tap.viewId)
 
     private fun tapSelector(action: RecordedAction): Pair<String, Long>? = when (action) {
         is RecordedAction.Tap -> tapKey(

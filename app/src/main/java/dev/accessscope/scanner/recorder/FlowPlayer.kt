@@ -12,6 +12,8 @@ import android.os.Bundle
 import android.view.accessibility.AccessibilityNodeInfo
 import dev.accessscope.scanner.recorder.capture.FieldInputTargetResolver
 import dev.accessscope.scanner.recorder.model.PlayOutcome
+import dev.accessscope.scanner.recorder.model.PlayStepResult
+import dev.accessscope.scanner.recorder.model.PlayStepStatus
 import dev.accessscope.scanner.recorder.model.SelectorCandidate
 import dev.accessscope.scanner.recorder.model.SelectorWin
 import dev.accessscope.scanner.recorder.model.StepExecutionMode
@@ -32,6 +34,9 @@ class FlowPlayer(
 
     private val selectorWins = mutableListOf<SelectorWin>()
     private var currentStepIndex: Int = 0
+    /** Dati usati nell'ultimo step (per report cliente, mascherati). */
+    private var lastStepDataUsed: String? = null
+    private val stepResults = mutableListOf<PlayStepResult>()
 
     /**
      * Note di divergenza rispetto al `maestro` CLI, raccolte durante `play()`. Il Play in-app ha
@@ -62,6 +67,7 @@ class FlowPlayer(
     ): PlayOutcome {
         selectorWins.clear()
         divergences.clear()
+        stepResults.clear()
         if (actions.isEmpty()) return PlayOutcome(error = "Flusso vuoto")
         val appId = actions.firstOrNull()?.packageName?.takeIf { it.isNotBlank() }
             ?: actions.filterIsInstance<RecordedAction.LaunchApp>().firstOrNull()?.packageName
@@ -161,6 +167,7 @@ class FlowPlayer(
             )
             // #endregion
             val err = runCatching {
+                lastStepDataUsed = null
                 when {
                     clearState && action is RecordedAction.LaunchApp ->
                         launchApp(action.packageName, coldStart = true)
@@ -178,38 +185,69 @@ class FlowPlayer(
                 // #endregion
                 if (isOptionalStep(action)) {
                     AppFileLogger.info("FlowPlayer", "skip_optional i=$index err=$err")
+                    recordStepResult(action, index, PlayStepStatus.SKIPPED_OPTIONAL, err)
                     continue
                 }
                 AppFileLogger.info("FlowPlayer", "step_fail i=$index err=$err")
+                recordStepResult(action, index, PlayStepStatus.FAILED, err)
+                stepResults += notRunSteps(actions, fromIndex = index + 1)
                 return PlayOutcome(
                     error = "Step ${index + 1}: $err",
                     selectorWins = selectorWins.toList(),
                     divergences = divergences.toList(),
+                    stepResults = stepResults.toList(),
                 )
             }
+            recordStepResult(action, index, PlayStepStatus.PASSED, note = stepDivergenceNote(index))
             delay(BETWEEN_STEPS_MS)
         }
-        return PlayOutcome(selectorWins = selectorWins.toList(), divergences = divergences.toList())
+        return PlayOutcome(
+            selectorWins = selectorWins.toList(),
+            divergences = divergences.toList(),
+            stepResults = stepResults.toList(),
+        )
     }
 
     /**
      * Dry-run: verifica che i target Tap/Assert siano trovabili senza gesture.
      */
     suspend fun validate(actions: List<RecordedAction>): PlayOutcome {
+        stepResults.clear()
         val failures = mutableListOf<Int>()
         val svc = service() ?: return PlayOutcome(error = "Servizio accessibilità non collegato")
         for ((index, action) in actions.withIndex()) {
-            when (action) {
-                is RecordedAction.Tap -> if (!canResolveTap(svc, action)) failures += index
+            val ok = when (action) {
+                is RecordedAction.Tap -> canResolveTap(svc, action)
                 is RecordedAction.AssertVisible -> {
                     val node = findNode(svc, action.viewId, action.text, null)
-                    if (node == null) failures += index else node.recycle()
+                    val found = node != null
+                    node?.recycle()
+                    found
                 }
-                else -> Unit
+                else -> true
+            }
+            if (!ok) {
+                failures += index
+                recordStepResult(
+                    action,
+                    index,
+                    PlayStepStatus.FAILED,
+                    "Target non trovato (validate)",
+                )
+            } else {
+                recordStepResult(action, index, PlayStepStatus.PASSED)
             }
             delay(50)
         }
-        return PlayOutcome(validateFailures = failures)
+        return PlayOutcome(
+            validateFailures = failures,
+            stepResults = stepResults.toList(),
+            error = if (failures.isNotEmpty()) {
+                "Validate: ${failures.size} step non trovati"
+            } else {
+                null
+            },
+        )
     }
 
     /**
@@ -253,8 +291,71 @@ class FlowPlayer(
         when (action) {
             is RecordedAction.Tap -> action.executionMode == StepExecutionMode.Optional
             is RecordedAction.AssertVisible -> action.executionMode == StepExecutionMode.Optional
+            is RecordedAction.InputText -> action.executionMode == StepExecutionMode.Optional
             else -> false
         }
+
+    private fun recordStepResult(
+        action: RecordedAction,
+        index: Int,
+        status: PlayStepStatus,
+        error: String? = null,
+        note: String? = null,
+    ) {
+        stepResults += PlayStepResult(
+            index = index,
+            summary = RecordingLivePreview.summarize(action),
+            actionType = action::class.simpleName.orEmpty(),
+            status = status,
+            dataUsed = lastStepDataUsed ?: dataUsedHint(action),
+            error = error,
+            note = note,
+        )
+    }
+
+    private fun notRunSteps(actions: List<RecordedAction>, fromIndex: Int): List<PlayStepResult> =
+        actions.drop(fromIndex).mapIndexed { offset, action ->
+            PlayStepResult(
+                index = fromIndex + offset,
+                summary = RecordingLivePreview.summarize(action),
+                actionType = action::class.simpleName.orEmpty(),
+                status = PlayStepStatus.NOT_RUN,
+                dataUsed = dataUsedHint(action),
+            )
+        }
+
+    private fun stepDivergenceNote(index: Int): String? {
+        val prefix = "step ${index + 1}:"
+        return divergences.lastOrNull { it.startsWith(prefix, ignoreCase = true) }
+            ?.removePrefix(prefix)
+            ?.trim()
+            ?.takeIf { it.isNotBlank() }
+    }
+
+    private fun dataUsedHint(action: RecordedAction): String? = when (action) {
+        is RecordedAction.InputText -> when {
+            action.isPassword || action.text == "****" -> "****"
+            action.text == CredentialVault.PLACEHOLDER_PIN -> "\${PIN}"
+            action.text == CredentialVault.PLACEHOLDER_PASSWORD -> "\${PASSWORD}"
+            else -> "\"${action.text.take(32)}\""
+        }
+        is RecordedAction.Tap -> action.text?.takeIf { it.isNotBlank() }?.let { "\"$it\"" }
+        is RecordedAction.AssertVisible -> action.text?.takeIf { it.isNotBlank() }
+            ?: MaestroSelectorHeuristics.shortViewId(action.viewId)?.let { "id=$it" }
+        else -> null
+    }
+
+    private fun maskDataForReport(resolved: String, action: RecordedAction.InputText): String = when {
+        action.isPassword || action.text == "****" || resolved == "****" -> "****"
+        resolved == CredentialVault.PLACEHOLDER_PIN || action.text == CredentialVault.PLACEHOLDER_PIN ->
+            "\${PIN} (${resolved.length} cifre)".takeIf { resolved != CredentialVault.PLACEHOLDER_PIN }
+                ?: "\${PIN} (non risolto)"
+        resolved == CredentialVault.PLACEHOLDER_PASSWORD ||
+            action.text == CredentialVault.PLACEHOLDER_PASSWORD ->
+            "\${PASSWORD} (non risolto)"
+        resolved.all { it.isDigit() } && resolved.length in 4..12 -> "PIN (${resolved.length} cifre)"
+        else -> "\"${resolved.take(32)}\""
+    }
 
     private suspend fun execute(action: RecordedAction) {
         when (action) {
@@ -494,9 +595,9 @@ class FlowPlayer(
             "tap_skip_not_found id=${action.viewId} text=${action.text} chain=${chain.size}",
         )
         // Pad custom assente dall’albero: digita la cifra sul prossimo EditText editN.
-        if (MaestroSelectorHeuristics.isPinPadKey(action.viewId, action.text) ||
+        val isPinPadTap = MaestroSelectorHeuristics.isPinPadKey(action.viewId, action.text) ||
             MaestroSelectorHeuristics.isPinPadDigitTap(action.text, action.viewId)
-        ) {
+        if (isPinPadTap) {
             val digit = action.text?.trim()?.takeIf { it.length == 1 && it[0].isDigit() }
                 ?: pinPadKeyToDigit(action.viewId)
             val ok = !digit.isNullOrBlank() && inputPinDigitOnSlots(svc, digit.orEmpty())
@@ -524,6 +625,7 @@ class FlowPlayer(
                 return
             }
             AppFileLogger.info("FlowPlayer", "pin_digit_fallback digit=$digit ok=false")
+            error("Cifra pad non inserita ($digit) id=${action.viewId} text=${action.text}")
         }
         if (action.executionMode == StepExecutionMode.Optional) return
         error("Tap non trovato id=${action.viewId} text=${action.text}")
@@ -681,9 +783,64 @@ class FlowPlayer(
                 )
                 // #endregion
             }
+            // Campo PIN singolo (pincode) senza slot editN: append cifra.
+            if (appendPinDigitOnPinLikeField(roots, digit)) {
+                return true
+            }
             return false
         } finally {
             roots.forEach { it.recycle() }
+        }
+    }
+
+    /**
+     * Append su EditText pin-like (es. `pincode`) quando non ci sono slot edit1…editN.
+     */
+    private fun appendPinDigitOnPinLikeField(roots: List<AccessibilityNodeInfo>, digit: String): Boolean {
+        for (root in roots) {
+            val candidates = mutableListOf<AccessibilityNodeInfo>()
+            collectEditables(root, candidates)
+            val pinField = candidates.firstOrNull { node ->
+                MaestroSelectorHeuristics.isPinLikeField(node.viewIdResourceName)
+            } ?: candidates.firstOrNull { it.isPassword }
+            candidates.forEach { if (it !== pinField) it.recycle() }
+            val editable = pinField ?: continue
+            try {
+                val viewId = editable.viewIdResourceName
+                val current = editable.text?.toString().orEmpty()
+                val next = current + digit
+                editable.performAction(AccessibilityNodeInfo.ACTION_FOCUS)
+                val args = Bundle().apply {
+                    putCharSequence(
+                        AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE,
+                        next,
+                    )
+                }
+                if (editable.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args)) {
+                    DebugSessionLog.log(
+                        "C",
+                        "FlowPlayer.appendPinDigitOnPinLikeField",
+                        "appended",
+                        mapOf("viewId" to viewId, "len" to next.length),
+                    )
+                    AppFileLogger.info("FlowPlayer", "pin_field_append id=$viewId len=${next.length}")
+                    return true
+                }
+            } finally {
+                editable.recycle()
+            }
+        }
+        return false
+    }
+
+    private fun collectEditables(node: AccessibilityNodeInfo, out: MutableList<AccessibilityNodeInfo>) {
+        if (node.isEditable) {
+            out += AccessibilityNodeInfo.obtain(node)
+        }
+        for (i in 0 until node.childCount) {
+            val child = node.getChild(i) ?: continue
+            collectEditables(child, out)
+            child.recycle()
         }
     }
 
@@ -1120,6 +1277,7 @@ class FlowPlayer(
             isPassword = action.isPassword,
             viewId = action.viewId,
         )
+        lastStepDataUsed = maskDataForReport(resolvedText, action)
         val node = waitForInputTarget(svc, action.viewId, INPUT_FIND_TIMEOUT_MS)
         // #region agent log
         DebugSessionLog.log(
@@ -1169,12 +1327,24 @@ class FlowPlayer(
                 "pin_code_distributed ok=$ok len=${resolvedText.length}",
             )
             // #endregion
-            if (!ok) error("Impossibile inserire PIN/OTP sugli slot (${action.viewId})")
+            if (!ok) {
+                if (action.executionMode == StepExecutionMode.Optional) return
+                error("Impossibile inserire PIN/OTP sugli slot (${action.viewId})")
+            }
             hideSoftInputBestEffort()
             delay(200)
             return
         }
-        if (node == null) error("Campo testo non trovato (${action.viewId ?: "no-id"})")
+        if (node == null) {
+            if (action.executionMode == StepExecutionMode.Optional) {
+                AppFileLogger.info(
+                    "FlowPlayer",
+                    "skip_optional_input id=${action.viewId} textLen=${action.text.length}",
+                )
+                return
+            }
+            error("Campo testo non trovato (${action.viewId ?: "no-id"})")
+        }
         try {
             // Molti EditText/Compose richiedono CLICK prima di accettare SET_TEXT.
             val clicked = node.performAction(AccessibilityNodeInfo.ACTION_CLICK)

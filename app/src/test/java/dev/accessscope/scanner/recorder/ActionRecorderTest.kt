@@ -128,6 +128,26 @@ class ActionRecorderTest {
     }
 
     @Test
+    fun scroll_indexOnlyWithoutDelta_discardedOnApi28() {
+        val event = AccessibilityEvent.obtain(AccessibilityEvent.TYPE_VIEW_SCROLLED).apply {
+            packageName = "com.example"
+            fromIndex = 0
+            toIndex = 2
+            if (android.os.Build.VERSION.SDK_INT >= 28) {
+                runCatching {
+                    AccessibilityEvent::class.java.getMethod("setScrollDeltaY", Int::class.javaPrimitiveType)
+                        .invoke(this, 0)
+                    AccessibilityEvent::class.java.getMethod("setScrollDeltaX", Int::class.javaPrimitiveType)
+                        .invoke(this, 0)
+                }
+            }
+        }
+        val actions = recorder.onEvent(event, 1080, 1920)
+        event.recycle()
+        assertTrue(actions.isEmpty())
+    }
+
+    @Test
     fun scroll_withDelta_producesScrollAction() {
         val event = AccessibilityEvent.obtain(AccessibilityEvent.TYPE_VIEW_SCROLLED).apply {
             packageName = "com.example"

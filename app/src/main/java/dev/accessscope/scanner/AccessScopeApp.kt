@@ -27,8 +27,11 @@ import dev.accessscope.scanner.recorder.RecordingSessionController
 import dev.accessscope.scanner.recorder.SavedFlow
 import dev.accessscope.scanner.recorder.SelectorChainHealer
 import dev.accessscope.scanner.recorder.SelectorFailRateStore
+import dev.accessscope.scanner.recorder.model.PlayExecutionReport
 import dev.accessscope.scanner.recorder.model.PlayOutcome
+import dev.accessscope.scanner.recorder.model.PlayRunKind
 import dev.accessscope.scanner.service.AccessScopeAccessibilityService
+import java.util.UUID
 import dev.accessscope.scanner.service.PlaybackOverlayService
 import dev.accessscope.scanner.service.RecordingOverlayService
 import dev.accessscope.scanner.service.ScanOverlayService
@@ -417,6 +420,8 @@ class AccessScopeApp : Application() {
         )
         playbackJob?.cancel()
         playbackJob = applicationScope.launch(Dispatchers.Default) {
+            val startedAt = System.currentTimeMillis()
+            val runId = UUID.randomUUID().toString().take(8)
             val outcome = runCatching {
                 player.play(sanitized, clearState = clearState) { index, total ->
                     playbackController.onStep(index, total)
@@ -424,6 +429,22 @@ class AccessScopeApp : Application() {
                 }
             }.getOrElse { e ->
                 PlayOutcome(error = e.message ?: "Playback fallito")
+            }
+            val finishedAt = System.currentTimeMillis()
+            runCatching {
+                val report = PlayExecutionReport.fromOutcome(
+                    runId = runId,
+                    flow = flow,
+                    kind = PlayRunKind.PLAY,
+                    startedAtMs = startedAt,
+                    finishedAtMs = finishedAt,
+                    clearState = clearState,
+                    totalSteps = sanitized.size,
+                    outcome = outcome,
+                )
+                flowStore.savePlayReport(report)
+            }.onFailure { e ->
+                AppFileLogger.info("AccessScopeApp", "play_report_save_fail ${e.message}")
             }
             if (outcome.error == null && outcome.selectorWins.isNotEmpty()) {
                 runCatching { flowStore.applySelectorWins(flow.id, outcome.selectorWins) }
@@ -575,7 +596,24 @@ class AccessScopeApp : Application() {
             ?: return "Flusso senza azioni tipizzate"
         val sanitized = FlowOptimizer.sanitizeForPlay(actions)
         val player = FlowPlayer(this, { AccessScopeAccessibilityService.instance }, credentialVault)
+        val startedAt = System.currentTimeMillis()
+        val runId = UUID.randomUUID().toString().take(8)
         val outcome = player.validate(sanitized)
+        val finishedAt = System.currentTimeMillis()
+        runCatching {
+            flowStore.savePlayReport(
+                PlayExecutionReport.fromOutcome(
+                    runId = runId,
+                    flow = flow,
+                    kind = PlayRunKind.VALIDATE,
+                    startedAtMs = startedAt,
+                    finishedAtMs = finishedAt,
+                    clearState = false,
+                    totalSteps = sanitized.size,
+                    outcome = outcome,
+                ),
+            )
+        }
         if (outcome.error != null) return outcome.error
         return if (outcome.validateFailures.isEmpty()) {
             "Validate OK (${sanitized.size} step)"
@@ -583,6 +621,14 @@ class AccessScopeApp : Application() {
             "Validate: ${outcome.validateFailures.size} step non trovati (indici ${outcome.validateFailures.map { it + 1 }})"
         }
     }
+
+    /** Rinomina un flusso salvato. */
+    fun renameFlow(flowId: String, newName: String): SavedFlow? =
+        flowStore.renameFlow(flowId, newName)
+
+    /** Report esecuzione per flusso (più recente per primo). */
+    fun listPlayReports(flowId: String): List<PlayExecutionReport> =
+        flowStore.listPlayReports(flowId)
 
     /**
      * Salva PIN/password nel vault locale per [appId] (Play resolve `${PIN}` / `${PASSWORD}`).
