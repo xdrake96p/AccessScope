@@ -10,6 +10,29 @@ import org.junit.Test
 class MaestroYamlExporterTest {
 
     @Test
+    fun export_trustsUpstreamFiltering_doesNotReFilterChromeTapsItself() {
+        // L'exporter non ha più un proprio controllo "è un tap SystemUI/chrome" — era una quarta
+        // copia dello stesso controllo già applicato a monte da optimize()/sanitizeForPlay()
+        // (l'unico chiamante di produzione, FlowStore.writeArtifacts, passa sempre azioni già
+        // filtrate da entrambi). Documenta esplicitamente il contratto: se l'exporter viene
+        // chiamato direttamente con un tap SystemUI non filtrato (solo nei test, mai in
+        // produzione), ora compare nello YAML invece di sparire in silenzio — un canary se in
+        // futuro qualcuno bypassasse la pipeline di sanitizzazione prima di chiamare export().
+        val yaml = MaestroYamlExporter.export(
+            appId = "com.example.app",
+            flowName = "Demo",
+            actions = listOf(
+                RecordedAction.Tap(
+                    packageName = "com.android.systemui",
+                    viewId = "com.android.systemui:id/back",
+                    text = "Indietro",
+                ),
+            ),
+        )
+        assertTrue(yaml.contains("Indietro"))
+    }
+
+    @Test
     fun export_includesBetaHeaderAndLaunchApp() {
         val yaml = MaestroYamlExporter.export(
             appId = "com.example.app",

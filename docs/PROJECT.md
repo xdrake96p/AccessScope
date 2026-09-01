@@ -6,7 +6,32 @@
 **Package:** `dev.accessscope.scanner`  
 **Branch principale sviluppo:** `develop`  
 **Branch release stabile:** `main`  
-**Ultimo aggiornamento:** 1 settembre 2026 (Riscrittura pipeline Maestro — Fase 1: test di idempotenza sulle fasi condivise)
+**Ultimo aggiornamento:** 1 settembre 2026 (Riscrittura pipeline Maestro — Fase 2: rimossa quarta copia morta del filtro chrome)
+
+### Riscrittura pipeline Maestro — Fase 2: un controllo "tap chrome" invece di quattro copie (1 settembre 2026)
+
+Verificando il codice per consolidare `isNoiseTap`/`isSystemChromeTap`/`isForeignUiPackage`
+(segnalati come "3 versioni indipendenti" dalla mappa architetturale di Fase 1), trovato che
+**non erano affatto divergenti**: sono già una gerarchia ben fatta in `MaestroSelectorHeuristics`
+(`isForeignUiPackage` ⊂ `isSystemChromeTap` ⊂ `isNoiseTap`), tutti i chiamanti (capture, optimize,
+sanitizeForPlay) invocano la stessa funzione condivisa. Il vero problema era una **quarta copia**
+non contata nella mappa iniziale: `MaestroYamlExporter.export()` aveva un proprio controllo
+inline `isSystemChromeTap` (righe 45-66) — provabilmente morto, dato che l'unico chiamante di
+produzione (`FlowStore.writeArtifacts`) passa sempre l'output di `sanitizeForPlay`, che ha già
+rimosso qualunque tap che l'exporter avrebbe scartato di nuovo.
+
+- Rimossa la copia morta nell'exporter.
+- Nuovo test `export_trustsUpstreamFiltering_doesNotReFilterChromeTapsItself` in
+  `MaestroYamlExporterTest.kt`: documenta esplicitamente il contratto (l'exporter si fida del
+  filtraggio a monte) — un canary se in futuro qualcuno chiamasse `export()` bypassando la
+  pipeline di sanitizzazione.
+- **Rimandato**: le due implementazioni duplicate di "riempi il wait cieco col prossimo target"
+  (`WaitPlanner.attachBlindWaitsToNextTarget` vs `FlowLintAutoFix.waitForNextTarget`) sono
+  risultate più divergenti del previsto (soglie ed esclusioni diverse, ricostruzione del `Wait`
+  diversa) — fonderle ora rischierebbe di cambiare comportamento su casi limite non coperti dai
+  test esistenti. Rimandato a un giro dedicato con più tempo per verificare ogni differenza.
+
+Verifica: `./gradlew :app:testDebugUnitTest :app:assembleDebug` verde.
 
 ### Riscrittura pipeline Maestro — Fase 1: idempotenza delle fasi condivise (1 settembre 2026)
 

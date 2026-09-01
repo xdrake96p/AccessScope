@@ -42,28 +42,12 @@ object MaestroYamlExporter {
         var i = 0
         while (i < actions.size) {
             val action = actions[i]
-            if (action is RecordedAction.Tap &&
-                MaestroSelectorHeuristics.isSystemChromeTap(
-                    action.packageName,
-                    action.viewId,
-                    action.text,
-                    action.contentDescription,
-                )
-            ) {
-                i++
-                continue
-            }
-            if (action is RecordedAction.LongPress &&
-                MaestroSelectorHeuristics.isSystemChromeTap(
-                    action.packageName,
-                    action.viewId,
-                    action.text,
-                    action.contentDescription,
-                )
-            ) {
-                i++
-                continue
-            }
+            // Niente filtro "è chrome/systemUI" qui: sarebbe una quarta copia dello stesso
+            // controllo (MaestroSelectorHeuristics.isSystemChromeTap) già applicato a monte da
+            // dropForeignUiActions/dropNoiseTaps (optimize) e dropPlaybackNoiseTaps
+            // (sanitizeForPlay) — l'unico chiamante di produzione (FlowStore.writeArtifacts)
+            // passa sempre azioni già filtrate da entrambe. Rimosso: era codice morto che
+            // duplicava una decisione già presa, mai l'unica fonte di verità.
             // eraseText su un campo specifico è due comandi Maestro (tapOn per portare il
             // focus, poi eraseText senza selettore — eraseText non accetta `id:`).
             if (action is RecordedAction.EraseText && !action.viewId.isNullOrBlank()) {
