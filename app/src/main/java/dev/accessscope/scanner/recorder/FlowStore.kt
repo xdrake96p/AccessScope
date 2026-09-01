@@ -9,6 +9,18 @@ package dev.accessscope.scanner.recorder
 import android.content.Context
 import dev.accessscope.scanner.recorder.model.OptimizationContext
 import dev.accessscope.scanner.recorder.model.FlowTelemetry
+import dev.accessscope.scanner.recorder.model.RecordingVisualContext
+import dev.accessscope.scanner.recorder.review.FlowReviewApplier
+import dev.accessscope.scanner.recorder.review.FlowReviewLintSummary
+import dev.accessscope.scanner.recorder.review.FlowReviewRawRestorer
+import dev.accessscope.scanner.recorder.review.FlowReviewReportCodec
+import dev.accessscope.scanner.recorder.review.FlowReviewReportPayload
+import dev.accessscope.scanner.recorder.review.FlowReviewRequest
+import dev.accessscope.scanner.recorder.review.FlowReviewResult
+import dev.accessscope.scanner.recorder.review.FlowYamlReconciler
+import dev.accessscope.scanner.recorder.review.GeminiFlashFlowReviewer
+import dev.accessscope.scanner.recorder.review.PresentedYamlSource
+import dev.accessscope.scanner.recorder.review.YamlReconcileResult
 import dev.accessscope.scanner.recorder.optimization.selector.SelectorRanker
 import dev.accessscope.scanner.recorder.quality.ZeroEditGate
 import dev.accessscope.scanner.recorder.quality.ZeroEditIssue
@@ -41,12 +53,20 @@ class FlowStore(context: Context) {
     fun listFlows(): List<SavedFlow> =
         loadIndex().map { it.withActionsFlag() }.sortedByDescending { it.createdAtMs }
 
+    /** Ultimo esito revisione AI (thread UI / IO save). */
+    @Volatile
+    var lastReviewResult: FlowReviewResult? = null
+        private set
+
+    /** Ultimo gate confronto YAML Gemini vs app. */
+    @Volatile
+    var lastYamlReconcile: YamlReconcileResult? = null
+        private set
+
     /**
-     * Salva un nuovo flusso da azioni (applica [FlowOptimizer] + gate ZeroEdit).
+     * Salva un nuovo flusso da azioni (applica [FlowOptimizer] + revisione Gemini + gate ZeroEdit).
      *
-     * @param enforceZeroEdit Se `true` (default), heal + lint Error bloccano YAML “sporco”
-     *   (salva comunque gli artifacts heal-ati e logga il report; l’UI può leggere [lastZeroEditReport]).
-     * @return [SavedFlow] creato.
+     * @param onReviewProgress Callback fasi revisione AI (UI).
      */
     fun saveFlow(
         name: String,
@@ -57,17 +77,90 @@ class FlowStore(context: Context) {
         optimizationContext: OptimizationContext? = null,
         telemetry: FlowTelemetry? = null,
         enforceZeroEdit: Boolean = true,
+        visualContext: RecordingVisualContext? = null,
+        geminiReviewer: GeminiFlashFlowReviewer? = null,
+        onReviewProgress: ((String) -> Unit)? = null,
+        sessionLogSinceMs: Long? = null,
     ): SavedFlow {
+        val sessionStartedMs = sessionLogSinceMs ?: System.currentTimeMillis()
         val id = UUID.randomUUID().toString().take(8)
         val safeName = name.ifBlank {
             "Flusso ${SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.ITALY).format(Date())}"
         }
         val ctx = optimizationContext ?: OptimizationContext(appId = appId, telemetry = telemetry)
         val optimized = if (optimize) FlowOptimizer.optimize(actions, ctx) else actions
-        val baseReport = if (enforceZeroEdit && optimize) {
+        val reviewInput = if (optimize) FlowReviewRawRestorer.restore(actions, optimized) else optimized
+
+        val appBaseReport = if (enforceZeroEdit && optimize) {
             ZeroEditGate.evaluate(optimized, healFirst = true)
         } else {
             ZeroEditReport(issues = emptyList(), actions = optimized)
+        }
+
+        val reviewResult = if (optimize && geminiReviewer != null) {
+            val yamlDraft = MaestroYamlExporter.export(
+                appId,
+                safeName,
+                FlowOptimizer.sanitizeForPlay(reviewInput),
+                ctx.scanIntel,
+                ctx.telemetry,
+            )
+            val draftLintSummary = FlowReviewLintSummary.format(reviewInput)
+            geminiReviewer.review(
+                FlowReviewRequest(
+                    appId = appId,
+                    flowName = safeName,
+                    rawActions = actions,
+                    optimizedActions = reviewInput,
+                    yamlDraft = yamlDraft,
+                    telemetry = ctx.telemetry,
+                    visualContext = visualContext,
+                    scanIntel = ctx.scanIntel,
+                    draftLintSummary = draftLintSummary,
+                    yamlSyntaxReference = yamlDraft,
+                ),
+                onProgress = onReviewProgress,
+            )
+        } else {
+            null
+        }
+        lastReviewResult = reviewResult
+
+        val geminiActions = if (reviewResult != null) {
+            FlowReviewApplier.apply(reviewInput, reviewResult)
+        } else {
+            reviewInput
+        }
+        val geminiUsable = reviewResult != null && !reviewResult.usedFallback
+        val geminiReport = if (geminiUsable) {
+            ZeroEditGate.evaluate(geminiActions, healFirst = false)
+        } else {
+            ZeroEditReport(issues = emptyList(), actions = geminiActions)
+        }
+
+        val reconcile = FlowYamlReconciler.reconcile(
+            raw = actions,
+            appActions = appBaseReport.actions,
+            geminiActions = geminiReport.actions,
+            appReport = appBaseReport,
+            geminiReport = geminiReport,
+            geminiUsable = geminiUsable,
+        )
+        lastYamlReconcile = reconcile
+
+        if (reviewResult != null) {
+            AppFileLogger.info(
+                "FlowStore",
+                "gemini_review id=$id fallback=${reviewResult.usedFallback} presented=${reconcile.presentedSource.name} " +
+                    "changes=${reviewResult.changes.size} model=${reviewResult.modelUsed}",
+            )
+        }
+
+        val presentedActions = reconcile.presentedActions
+        val baseReport = when (reconcile.presentedSource) {
+            PresentedYamlSource.APP -> appBaseReport.copy(actions = presentedActions)
+            PresentedYamlSource.GEMINI -> geminiReport.copy(actions = presentedActions)
+            PresentedYamlSource.MERGED -> geminiReport.copy(actions = presentedActions)
         }
         // Non dentro ZeroEditGate (valuta solo la lista già ottimizzata, per responsabilità
         // documentata) — un confronto grezzo/ottimizzato serve la lista pre-optimize, che solo
@@ -103,6 +196,35 @@ class FlowStore(context: Context) {
         if (telemetry != null) {
             telemetryFile(id).writeText(FlowTelemetryCodec.toJson(telemetry), Charsets.UTF_8)
         }
+        if (reviewResult != null) {
+            reviewFile(id).writeText(
+                FlowReviewReportCodec.toJson(
+                    FlowReviewReportPayload(review = reviewResult, reconcile = reconcile),
+                ),
+                Charsets.UTF_8,
+            )
+        }
+        MaestroSaveSessionLogWriter.write(
+            flowsRoot = rootDir,
+            snapshot = MaestroSaveSessionSnapshot(
+                flowId = id,
+                flowName = safeName,
+                appId = appId,
+                appLabel = appLabel,
+                sessionStartedMs = sessionStartedMs,
+                rawActions = actions,
+                optimizedActions = optimized,
+                reviewInputActions = reviewInput,
+                appActions = appBaseReport.actions,
+                geminiActions = geminiReport.actions,
+                presentedActions = finalActions,
+                visualContext = visualContext,
+                reviewResult = reviewResult,
+                reconcile = reconcile,
+                zeroEditReport = report,
+                optimize = optimize,
+            ),
+        )
         val flow = SavedFlow(
             id = id,
             name = safeName,
@@ -244,6 +366,7 @@ class FlowStore(context: Context) {
         File(rootDir, target.yamlRelativePath).delete()
         actionsFile(id).delete()
         telemetryFile(id).delete()
+        reviewFile(id).delete()
         writeIndex(current.filterNot { it.id == id })
     }
 
@@ -291,6 +414,8 @@ class FlowStore(context: Context) {
     private fun actionsFile(id: String): File = File(rootDir, "$id.actions.json")
 
     private fun telemetryFile(id: String): File = File(rootDir, "$id.telemetry.json")
+
+    private fun reviewFile(id: String): File = File(rootDir, "$id.review.json")
 
     private fun SavedFlow.withActionsFlag(): SavedFlow =
         copy(hasActionsJson = hasActions(id))

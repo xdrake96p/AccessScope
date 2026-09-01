@@ -35,6 +35,7 @@ import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.FiberManualRecord
 import androidx.compose.material.icons.outlined.Share
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
@@ -61,12 +62,15 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.core.content.FileProvider
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.accessscope.scanner.AccessScopeApp
 import dev.accessscope.scanner.R
 import dev.accessscope.scanner.recorder.MaestroImportResult
 import dev.accessscope.scanner.recorder.MaestroYamlImporter
 import dev.accessscope.scanner.recorder.RecordedAction
+import dev.accessscope.scanner.recorder.review.PresentedYamlSource
 import dev.accessscope.scanner.recorder.SavedFlow
 import dev.accessscope.scanner.ui.components.AccessScopeCard
 import dev.accessscope.scanner.ui.components.AccessScopeTopBar
@@ -106,6 +110,7 @@ fun FlowsScreen(
     val app = context.applicationContext as AccessScopeApp
     val recording by app.recordingController.state.collectAsStateWithLifecycle()
     val playback by app.playbackController.state.collectAsStateWithLifecycle()
+    val saveProgress by app.maestroSaveProgress.collectAsStateWithLifecycle()
     val appListState by viewModel.appListUiState.collectAsStateWithLifecycle()
     // Niente I/O in composizione: la lista si carica su IO al primo frame e a ogni refresh.
     var flows by remember { mutableStateOf<List<SavedFlow>>(emptyList()) }
@@ -123,14 +128,28 @@ fun FlowsScreen(
     var vaultPromptClear by remember { mutableStateOf(false) }
     var vaultPin by remember { mutableStateOf("") }
     var vaultPassword by remember { mutableStateOf("") }
+    var testingGeminiKey by remember { mutableStateOf(false) }
+    var highlightFlowId by remember { mutableStateOf<String?>(null) }
 
-    fun refresh() {
-        ioScope.launch {
-            flows = withContext(Dispatchers.IO) { app.flowStore.listFlows() }
-        }
+    suspend fun refreshFlows() {
+        flows = withContext(Dispatchers.IO) { app.flowStore.listFlows() }
     }
 
-    LaunchedEffect(Unit) { refresh() }
+    fun refresh() {
+        ioScope.launch { refreshFlows() }
+    }
+
+    LaunchedEffect(Unit) { refreshFlows() }
+
+    LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
+        refresh()
+    }
+
+    LaunchedEffect(saveProgress.lastSavedFlowId) {
+        val id = saveProgress.lastSavedFlowId ?: return@LaunchedEffect
+        refreshFlows()
+        highlightFlowId = id
+    }
 
     fun startPlay(flow: SavedFlow, clearState: Boolean) {
         if (app.needsMaestroCredentials(flow)) {
@@ -218,6 +237,10 @@ fun FlowsScreen(
         }
     }
 
+    if (saveProgress.active) {
+        // Card «Lavorazione in corso» renderizzata nella LazyColumn sotto.
+    }
+
     Scaffold(
         topBar = {
             AccessScopeTopBar(
@@ -253,12 +276,38 @@ fun FlowsScreen(
                     Text(
                         "Registra passaggi, importa/crea YAML dal menu ☰, riproduci con Play, " +
                             "modifica gli step e avvia Scan+Flusso. " +
-                            "Per timeout e selettori più affidabili, esegui prima una scan WCAG sull’app. " +
-                            "Step opzionali (popup) sono esportati con optional: true nel YAML. " +
+                            "Dopo STOP REC, Gemini Flash allinea il YAML alla registrazione (screenshot + azioni). " +
+                            "Configura la API key in Impostazioni → Maestro AI. " +
                             "Dopo un update APK: disattiva e riattiva AccessScope in Accessibilità.",
                         style = MaterialTheme.typography.bodyMedium,
                         color = contentSecondary(),
                     )
+                    Spacer(Modifier.height(8.dp))
+                    OutlinedButton(
+                        onClick = {
+                            if (testingGeminiKey) return@OutlinedButton
+                            if (!app.maestroReviewSettingsStore.hasApiKey()) {
+                                Toast.makeText(
+                                    context,
+                                    "API key mancante — Impostazioni → Maestro AI",
+                                    Toast.LENGTH_LONG,
+                                ).show()
+                                return@OutlinedButton
+                            }
+                            testingGeminiKey = true
+                            ioScope.launch {
+                                val result = withContext(Dispatchers.IO) {
+                                    app.geminiFlowReviewer.testConnection()
+                                }
+                                testingGeminiKey = false
+                                Toast.makeText(context, result.message, Toast.LENGTH_LONG).show()
+                            }
+                        },
+                        enabled = !testingGeminiKey && !recording.isRecording && !saveProgress.active,
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Text(if (testingGeminiKey) "Test API Gemini…" else "Test API Gemini")
+                    }
                 }
             }
 
@@ -267,19 +316,33 @@ fun FlowsScreen(
                 if (recording.isRecording) {
                     Button(
                         onClick = {
-                            val saved = app.stopRecordingSession(save = true)
-                            val finalActions = app.recordingController.state.value.actions
-                            val real = app.recordingController.realStepCount(finalActions)
-                            val status = app.recordingController.state.value.statusMessage
-                            refresh()
-                            val msg = when {
-                                real == 0 -> status
-                                    ?: "Nessun tap/testo catturato. Disattiva e riattiva AccessScope in Accessibilità, poi riprova."
-                                saved != null -> "YAML salvato: ${saved.stepCount} step"
-                                else -> status ?: "Registrazione terminata"
+                            if (saveProgress.active) return@Button
+                            ioScope.launch {
+                                val saved = app.stopRecordingSession(save = true)
+                                refreshFlows()
+                                val review = app.flowStore.lastReviewResult
+                                val reconcile = app.flowStore.lastYamlReconcile
+                                val msg = when {
+                                    saved == null -> "Registrazione non salvata"
+                                    reconcile?.presentedSource == PresentedYamlSource.GEMINI ->
+                                        "YAML AI Gemini: ${saved.stepCount} step · ${review?.changes?.size ?: 0} correzioni"
+                                    reconcile?.presentedSource == PresentedYamlSource.MERGED ->
+                                        "YAML ibrido AI+app: ${saved.stepCount} step"
+                                    reconcile?.presentedSource == PresentedYamlSource.APP &&
+                                        review?.usedFallback == true -> {
+                                        val reason = review.errorMessage?.replace('_', ' ').orEmpty()
+                                        "YAML pipeline app ($reason)"
+                                    }
+                                    reconcile?.presentedSource == PresentedYamlSource.APP ->
+                                        "YAML pipeline app: ${saved.stepCount} step"
+                                    review != null && !review.usedFallback ->
+                                        "YAML salvato: ${saved.stepCount} step · AI: ${review.changes.size} correzioni"
+                                    else -> "YAML salvato: ${saved.stepCount} step"
+                                }
+                                Toast.makeText(context, msg, Toast.LENGTH_LONG).show()
                             }
-                            Toast.makeText(context, msg, Toast.LENGTH_LONG).show()
                         },
+                        enabled = !saveProgress.active,
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(56.dp),
@@ -307,14 +370,21 @@ fun FlowsScreen(
             }
 
             item(key = "list_header") {
+                val extra = if (saveProgress.active) " · 1 in lavorazione" else ""
                 Text(
-                    "Registrazioni (${flows.size})",
+                    "Registrazioni (${flows.size})$extra",
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.SemiBold,
                 )
             }
 
-            if (flows.isEmpty()) {
+            if (saveProgress.active) {
+                item(key = "processing") {
+                    MaestroProcessingCard(saveProgress)
+                }
+            }
+
+            if (flows.isEmpty() && !saveProgress.active) {
                 item(key = "empty") {
                     Text(
                         "Nessuna registrazione. Tocca «Registra con Maestro» oppure apri ☰ " +
@@ -329,6 +399,7 @@ fun FlowsScreen(
             items(flows, key = { it.id }) { flow ->
                 FlowListCard(
                     flow = flow,
+                    highlighted = flow.id == highlightFlowId,
                     playbackBusy = playback.isPlaying,
                     onPlay = { startPlay(flow, clearState = false) },
                     onPlayClean = { playCleanFlow = flow },
@@ -620,6 +691,37 @@ fun FlowsScreen(
 }
 
 @Composable
+private fun MaestroProcessingCard(progress: dev.accessscope.scanner.recorder.MaestroSaveProgress) {
+    AccessScopeCard(modifier = Modifier.fillMaxWidth()) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            CircularProgressIndicator(modifier = Modifier.size(36.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    "Lavorazione in corso",
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                Text(
+                    buildString {
+                        progress.appLabel?.let { append("$it · ") }
+                        append(progress.phase.ifBlank { "Gemini sta generando il YAML…" })
+                        if (progress.stepCount > 0) append(" ($progress.stepCount step)")
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = contentSecondary(),
+                )
+            }
+        }
+    }
+}
+
+@Composable
 private fun BetaChip() {
     Text(
         "BETA",
@@ -638,6 +740,7 @@ private fun BetaChip() {
 @Composable
 private fun FlowListCard(
     flow: SavedFlow,
+    highlighted: Boolean = false,
     playbackBusy: Boolean,
     onPlay: () -> Unit,
     onPlayClean: () -> Unit,
@@ -652,7 +755,29 @@ private fun FlowListCard(
         SimpleDateFormat("dd MMM yyyy · HH:mm", Locale.ITALY).format(Date(flow.createdAtMs))
     }
     val actionsEnabled = flow.hasActionsJson && !playbackBusy
-    AccessScopeCard(modifier = Modifier.fillMaxWidth()) {
+    AccessScopeCard(
+        modifier = Modifier
+            .fillMaxWidth()
+            .then(
+                if (highlighted) {
+                    Modifier.background(
+                        MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.35f),
+                        CardShape,
+                    )
+                } else {
+                    Modifier
+                },
+            ),
+    ) {
+        if (highlighted) {
+            Text(
+                "Appena salvato",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.primary,
+                fontWeight = FontWeight.Bold,
+            )
+            Spacer(Modifier.height(4.dp))
+        }
         Text(flow.name, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
         Text(flow.appLabel, style = MaterialTheme.typography.bodySmall, color = contentSecondary())
         Text(

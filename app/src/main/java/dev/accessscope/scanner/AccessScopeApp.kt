@@ -27,6 +27,7 @@ import dev.accessscope.scanner.recorder.RecordingSessionController
 import dev.accessscope.scanner.recorder.SavedFlow
 import dev.accessscope.scanner.recorder.SelectorChainHealer
 import dev.accessscope.scanner.recorder.SelectorFailRateStore
+import dev.accessscope.scanner.recorder.model.OptimizationContext
 import dev.accessscope.scanner.recorder.model.PlayOutcome
 import dev.accessscope.scanner.service.AccessScopeAccessibilityService
 import dev.accessscope.scanner.service.PlaybackOverlayService
@@ -36,7 +37,9 @@ import dev.accessscope.scanner.util.AppFileLogger
 import dev.accessscope.scanner.util.DebugSessionLog
 import dev.accessscope.scanner.recorder.ScanRecorderMutexPolicy
 import dev.accessscope.scanner.recorder.intelligence.ScanIntelligenceProvider
-import dev.accessscope.scanner.recorder.model.OptimizationContext
+import dev.accessscope.scanner.recorder.MaestroSaveProgress
+import dev.accessscope.scanner.recorder.review.GeminiFlashFlowReviewer
+import dev.accessscope.scanner.recorder.review.MaestroReviewSettingsStore
 import dev.accessscope.scanner.util.PermissionHelper
 import dev.accessscope.scanner.util.FavoriteAppsStore
 import dev.accessscope.scanner.util.ScanHistoryStore
@@ -49,6 +52,11 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -84,8 +92,20 @@ class AccessScopeApp : Application() {
     val credentialVault: CredentialVault by lazy { CredentialVault(this) }
     val selectorFailRateStore: SelectorFailRateStore by lazy { SelectorFailRateStore(this) }
 
+    /** Impostazioni revisione AI Maestro (API key Gemini). */
+    val maestroReviewSettingsStore: MaestroReviewSettingsStore by lazy { MaestroReviewSettingsStore(this) }
+
+    /** Client revisione YAML con Gemini Flash. */
+    val geminiFlowReviewer: GeminiFlashFlowReviewer by lazy {
+        GeminiFlashFlowReviewer(maestroReviewSettingsStore)
+    }
+
     /** Sessione di registrazione azioni utente → YAML Maestro (Beta). */
     val recordingController = RecordingSessionController(this)
+
+    private val _maestroSaveProgress = MutableStateFlow(MaestroSaveProgress())
+    /** Progresso save/review visibile in [dev.accessscope.scanner.ui.screen.FlowsScreen]. */
+    val maestroSaveProgress: StateFlow<MaestroSaveProgress> = _maestroSaveProgress.asStateFlow()
 
     /** Playback in-app flussi Maestro (Beta). */
     val playbackController = FlowPlaybackController()
@@ -322,48 +342,132 @@ class AccessScopeApp : Application() {
     }
 
     /**
-     * Termina la registrazione, salva il flusso se richiesto e chiude l’overlay.
+     * Termina la registrazione, revisione AI Gemini, salva YAML e chiude l’overlay.
      *
      * @param save Se true salva YAML in [FlowStore].
      * @return [SavedFlow] se salvato, altrimenti null.
      */
-    fun stopRecordingSession(save: Boolean = true): SavedFlow? {
-        RecordingOverlayService.stop(this)
+    suspend fun stopRecordingSession(save: Boolean = true): SavedFlow? = withContext(Dispatchers.IO) {
+        RecordingOverlayService.stop(this@AccessScopeApp)
         if (!recordingController.isRecording && recordingController.state.value.actions.isEmpty()) {
-            return null
+            return@withContext null
         }
-        val actions = if (recordingController.isRecording) {
+        val pkgEarly = recordingController.state.value.targetPackage
+        val labelEarly = recordingController.state.value.targetLabel ?: pkgEarly
+        val stepPreview = recordingController.realStepCount(recordingController.state.value.actions)
+        if (save && stepPreview > 0) {
+            _maestroSaveProgress.value = MaestroSaveProgress(
+                active = true,
+                phase = "Preparazione registrazione…",
+                appLabel = labelEarly,
+                stepCount = stepPreview,
+            )
+        }
+        val saveSessionStartedMs = if (save && stepPreview > 0) System.currentTimeMillis() else null
+        waitForVisualCapturesIdle()
+        if (save) {
+            _maestroSaveProgress.update {
+                it.copy(phase = "Acquisizione screenshot…")
+            }
+        }
+        val stopResult = if (recordingController.isRecording) {
             recordingController.stop()
         } else {
-            recordingController.state.value.actions
+            RecordingSessionController.StopRecordingResult(
+                actions = recordingController.state.value.actions,
+                telemetry = recordingController.buildTelemetry(),
+            )
         }
-        val pkg = recordingController.state.value.targetPackage ?: return null
+        val actions = stopResult.actions
+        val pkg = recordingController.state.value.targetPackage ?: run {
+            clearMaestroSaveProgress()
+            return@withContext null
+        }
         val label = recordingController.state.value.targetLabel ?: pkg
         if (!save || actions.isEmpty()) {
             recordingController.cancel()
-            return null
+            recordingController.clearVisualBuffer()
+            clearMaestroSaveProgress()
+            return@withContext null
         }
-        val telemetry = recordingController.buildTelemetry()
-        val intel = ScanIntelligenceProvider(scanHistoryStore).load(
-            pkg,
-            scanRepository.state.value.takeIf { it.isScanning },
-        )
-        val optimizationContext = OptimizationContext(
-            appId = pkg,
-            telemetry = telemetry,
-            scanIntel = intel,
-        )
-        val flow = flowStore.saveFlow(
-            name = "Flusso $label",
-            appId = pkg,
-            appLabel = label,
-            actions = actions,
-            optimize = true,
-            optimizationContext = optimizationContext,
-            telemetry = telemetry,
-        )
-        AppFileLogger.info("AccessScopeApp", "recording_saved id=${flow.id} steps=${flow.stepCount}")
-        return flow
+        val visualContext = recordingController.visualBuffer.toContext()
+        try {
+            _maestroSaveProgress.update {
+                it.copy(
+                    active = true,
+                    phase = "Ottimizzazione e revisione Gemini Flash…",
+                    appLabel = label,
+                    stepCount = recordingController.realStepCount(actions),
+                )
+            }
+            val intel = ScanIntelligenceProvider(scanHistoryStore).load(
+                pkg,
+                scanRepository.state.value.takeIf { it.isScanning },
+            )
+            val optimizationContext = OptimizationContext(
+                appId = pkg,
+                telemetry = stopResult.telemetry,
+                scanIntel = intel,
+            )
+            _maestroSaveProgress.update { it.copy(phase = "Salvataggio YAML…") }
+            val flow = flowStore.saveFlow(
+                name = "Flusso $label",
+                appId = pkg,
+                appLabel = label,
+                actions = actions,
+                optimize = true,
+                optimizationContext = optimizationContext,
+                telemetry = stopResult.telemetry,
+                visualContext = visualContext,
+                geminiReviewer = geminiFlowReviewer,
+                onReviewProgress = { phase ->
+                    _maestroSaveProgress.update { it.copy(phase = phase) }
+                },
+                sessionLogSinceMs = saveSessionStartedMs,
+            )
+            _maestroSaveProgress.value = MaestroSaveProgress(
+                active = false,
+                phase = "",
+                appLabel = label,
+                stepCount = flow.stepCount,
+                lastSavedFlowId = flow.id,
+            )
+            AppFileLogger.info(
+                "AccessScopeApp",
+                "recording_saved id=${flow.id} steps=${flow.stepCount} aiFallback=${flowStore.lastReviewResult?.usedFallback}",
+            )
+            flow
+        } catch (e: Exception) {
+            AppFileLogger.info("AccessScopeApp", "recording_save_failed ${e.message}")
+            clearMaestroSaveProgress()
+            throw e
+        } finally {
+            recordingController.clearVisualBuffer()
+        }
+    }
+
+    private fun clearMaestroSaveProgress() {
+        _maestroSaveProgress.value = MaestroSaveProgress()
+    }
+
+    private suspend fun waitForVisualCapturesIdle() {
+        repeat(80) {
+            if (recordingController.isVisualCaptureIdle) return
+            delay(100)
+        }
+    }
+
+    /**
+     * Avvia save REC + revisione AI su scope applicazione (overlay / UI).
+     */
+    fun scheduleStopRecordingSession(
+        save: Boolean = true,
+        onComplete: (SavedFlow?) -> Unit = {},
+    ) {
+        applicationScope.launch {
+            val flow = stopRecordingSession(save)
+            onComplete(flow)
+        }
     }
 
     /**

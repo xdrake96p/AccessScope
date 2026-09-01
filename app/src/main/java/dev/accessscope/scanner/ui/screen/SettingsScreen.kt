@@ -20,6 +20,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.AccessibilityNew
+import androidx.compose.material.icons.outlined.AutoAwesome
 import androidx.compose.material.icons.outlined.Chat
 import androidx.compose.material.icons.outlined.DeleteForever
 import androidx.compose.material.icons.outlined.FactCheck
@@ -38,6 +39,7 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
@@ -46,18 +48,23 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import android.widget.Toast
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import dev.accessscope.scanner.AccessScopeApp
 import dev.accessscope.scanner.data.ViolationArea
+import dev.accessscope.scanner.recorder.review.MaestroReviewSettingsStore
 import dev.accessscope.scanner.service.AccessScopeAccessibilityService
 import dev.accessscope.scanner.ui.components.AccessScopeTopBar
 import dev.accessscope.scanner.ui.components.SettingsAccordion
@@ -68,6 +75,9 @@ import dev.accessscope.scanner.ui.theme.Warning
 import dev.accessscope.scanner.ui.theme.contentSecondary
 import dev.accessscope.scanner.ui.viewmodel.ScanViewModel
 import dev.accessscope.scanner.util.PermissionHelper
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /**
  * Schermata delle impostazioni (tab zona principale) con sezioni espandibili.
@@ -83,6 +93,13 @@ fun SettingsScreen(
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val scope = uiState.scanScope
     val context = LocalContext.current
+    val uriHandler = LocalUriHandler.current
+    val app = context.applicationContext as AccessScopeApp
+    val maestroSettings = app.maestroReviewSettingsStore
+    val settingsScope = rememberCoroutineScope()
+    var geminiApiKey by remember { mutableStateOf(maestroSettings.apiKey) }
+    var geminiPreferredModel by remember { mutableStateOf(maestroSettings.preferredModel) }
+    var testingGemini by remember { mutableStateOf(false) }
     var exportingLogs by remember { mutableStateOf(false) }
     var showClearHistoryDialog by remember { mutableStateOf(false) }
 
@@ -401,6 +418,86 @@ fun SettingsScreen(
                 ) {
                     Icon(Icons.Outlined.Feedback, contentDescription = null)
                     Text("Invia feedback su GitHub", modifier = Modifier.padding(start = 8.dp))
+                }
+            }
+
+            // —— Maestro AI (Gemini Flash) ——
+            SettingsAccordion(
+                title = "Maestro AI",
+                icon = Icons.Outlined.AutoAwesome,
+                badge = if (maestroSettings.hasApiKey()) "ON" else "KEY",
+            ) {
+                Text(
+                    "Dopo ogni registrazione, Gemini Flash (gratis via Google AI Studio) confronta screenshot, albero UI e azioni grezze con il YAML generato dall’app e lo corregge. Su schermate secure (PIN/password) usa wireframe sintetico e transcript testuale.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = contentSecondary(),
+                )
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    "Modello",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = contentSecondary(),
+                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    listOf(
+                        MaestroReviewSettingsStore.MODEL_AUTO to "Auto",
+                        "gemini-3.5-flash" to "3.5 Flash",
+                        "gemini-3.5-flash-lite" to "Lite",
+                    ).forEach { (value, label) ->
+                        FilterChip(
+                            selected = geminiPreferredModel == value,
+                            onClick = {
+                                geminiPreferredModel = value
+                                maestroSettings.preferredModel = value
+                            },
+                            label = { Text(label) },
+                        )
+                    }
+                }
+                Spacer(Modifier.height(8.dp))
+                OutlinedTextField(
+                    value = geminiApiKey,
+                    onValueChange = {
+                        geminiApiKey = it
+                        maestroSettings.apiKey = it
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text("API key Google AI Studio") },
+                    visualTransformation = PasswordVisualTransformation(),
+                    singleLine = true,
+                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    OutlinedButton(
+                        onClick = {
+                            uriHandler.openUri("https://aistudio.google.com/apikey")
+                        },
+                        modifier = Modifier.weight(1f),
+                    ) {
+                        Text("Ottieni key gratis")
+                    }
+                    Button(
+                        onClick = {
+                            if (testingGemini) return@Button
+                            testingGemini = true
+                            settingsScope.launch {
+                                val result = withContext(Dispatchers.IO) {
+                                    app.geminiFlowReviewer.testConnection()
+                                }
+                                testingGemini = false
+                                Toast.makeText(context, result.message, Toast.LENGTH_LONG).show()
+                            }
+                        },
+                        enabled = !testingGemini && geminiApiKey.isNotBlank(),
+                        modifier = Modifier.weight(1f),
+                    ) {
+                        Text(if (testingGemini) "Test…" else "Test")
+                    }
                 }
             }
 

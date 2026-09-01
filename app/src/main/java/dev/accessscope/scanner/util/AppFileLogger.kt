@@ -100,6 +100,17 @@ object AppFileLogger {
     /** Testo completo per export o anteprima. */
     fun liveText(): String = _liveEntries.value.joinToString("\n") { it.formatLine() }
 
+    /**
+     * Righe di log dal buffer live filtrate per tempo e tag (diagnostica sessione Maestro).
+     *
+     * @param sinceMs Timestamp minimo inclusivo.
+     * @param tags Tag ammessi; `null` = tutti.
+     */
+    fun entriesSince(sinceMs: Long, tags: Set<String>? = null): List<LogEntry> =
+        _liveEntries.value.filter { entry ->
+            entry.timestampMs >= sinceMs && (tags == null || entry.tag in tags)
+        }
+
     /** Restituisce il file di log corrente, se inizializzato. */
     fun currentLogFile(): File? = logFile?.takeIf { it.exists() && it.length() > 0 }
 

@@ -6,7 +6,30 @@
 **Package:** `dev.accessscope.scanner`  
 **Branch principale sviluppo:** `develop`  
 **Branch release stabile:** `main`  
-**Ultimo aggiornamento:** 1 settembre 2026 (Riscrittura pipeline Maestro — Fase 3: ZeroEditGate riconosce step spariti)
+**Ultimo aggiornamento:** 1 settembre 2026 (Maestro: revisione Gemini con contexto ricco, reconcile YAML, secure wireframe)
+
+### Maestro — revisione AI Gemini Flash dopo ogni REC (1 settembre 2026)
+
+Branch: `feature/maestro-gemini-review`. Dopo STOP REC la pipeline salva YAML solo **dopo** un confronto incrociato con **Gemini 2.0 Flash** (Google AI Studio, tier gratuito, API key utente in Impostazioni → Maestro AI).
+
+**Cattura ricca in REC (solo RAM):**
+- Screenshot JPEG scalato per ogni azione (API a11y, riuso `AccessibilityScreenshotCapture`).
+- **Schermate secure (FLAG_SECURE):** niente JPEG reale → **wireframe sintetico** da bounds a11y (`SecureStepWireframeRenderer`) + **transcript semantico** per step (`StepSemanticTranscriptBuilder`, sezione prompt **[A6]**).
+- Albero a11y compatto (~60 nodi; ~120 su secure: id, testo, cd, ruolo, bounds, clickable/editable/password).
+- Telemetria esistente (fingerprint, transizioni, quiescence) + conteggio `CONTENT_CHANGED` per gap.
+- Timeline grezza vs azioni ottimizzate vs YAML draft in prompt strutturato; sezione **[A0]** con step persi dall'ottimizzatore.
+
+**Pipeline save:** `optimize` → **`FlowReviewRawRestorer`** (reinserisce tap/input persi) → lint draft → export YAML → review Gemini **chunked** (`FlowReviewChunkPlanner`, max ~4 chiamate free tier, overlap 2) con budget **`GeminiReviewBudget`** → **`FlowReviewValidator`** (changes non vuoti, draft modificato, tap/input ≥ raw) → doppio path app/Gemini (`ZeroEditGate` heal solo app) → **`FlowYamlReconciler`** (presenta il migliore: **AI / app / merged**) → persist. Report `{id}.review.json` con `yamlReconcile`, `modelUsed`, `apiCalls`. Toast in Flussi indica sorgente YAML presentata. Screenshot **dispose obbligatorio** post-save.
+
+**Impostazioni:** Impostazioni → Maestro AI — API key + modello **Auto** / **3.5 Flash** / **Lite** (`MaestroReviewSettingsStore.preferredModel`; Auto preferisce `lastWorkingModel` e `gemini-3.5-flash-lite` su flussi ≥40 step). Retry API su rate limit (*high demand*): backoff 2s/4s/8s, fino a 3 tentativi per modello, poi modello alternativo.
+
+**Fallback:** key assente / rete / parse JSON → salva con pipeline deterministica + messaggio UI.
+
+**Diagnostica temporanea:** ogni save scrive anche `{id}.session.log` (conteggi azioni, review Gemini, reconcile, step secure/wireframe, tail log live). Disabilitabile con `MaestroSaveSessionLogWriter.ENABLED = false`.
+
+**Moduli:** `recorder/capture/` (`RecordingVisualBuffer`, `CompactTreeExtractor`, `RecordingVisualCapture`, `SecureStepWireframeRenderer`, `StepSemanticTranscriptBuilder`), `recorder/review/` (prompt, client REST chunked, parser, applier, reconciler, raw restorer). Test JVM: `FlowReviewTest.kt`.
+
+**Fix correlato:** `RecordingSessionController.stop()` costruisce telemetria **prima** del reset collector (prima poteva risultare vuota).
 
 ### Riscrittura pipeline Maestro — Fase 3: `ZeroEditGate` impara a riconoscere step spariti (1 settembre 2026)
 

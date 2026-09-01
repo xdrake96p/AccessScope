@@ -5,6 +5,8 @@ package dev.accessscope.scanner.recorder
 
 import android.content.Context
 import android.view.accessibility.AccessibilityEvent
+import dev.accessscope.scanner.recorder.capture.RecordingVisualBuffer
+import dev.accessscope.scanner.recorder.capture.RecordingVisualCapture
 import dev.accessscope.scanner.recorder.model.FlowTelemetry
 import dev.accessscope.scanner.recorder.telemetry.RecordingTelemetry
 import dev.accessscope.scanner.util.AppFileLogger
@@ -25,8 +27,20 @@ class RecordingSessionController(
 
     private val recorder = ActionRecorder()
     private val telemetryCollector = RecordingTelemetry()
+    /** Snapshot JPEG + albero a11y per revisione Gemini (solo RAM). */
+    val visualBuffer = RecordingVisualBuffer()
     private val _state = MutableStateFlow(RecordingState())
     val state: StateFlow<RecordingState> = _state.asStateFlow()
+
+    /** Provider screenshot async dal servizio a11y (impostato a runtime). */
+    @Volatile
+    var screenshotProvider: RecordingVisualCapture.ScreenshotProvider? = null
+
+    /** Contatore catture screenshot in volo (per attendere prima del save). */
+    @Volatile
+    private var visualCapturesInFlight: Int = 0
+
+    val isVisualCaptureIdle: Boolean get() = visualCapturesInFlight == 0
 
     val isRecording: Boolean get() = _state.value.isRecording
 
@@ -47,6 +61,7 @@ class RecordingSessionController(
         if (_state.value.isRecording) return false
         recorder.reset()
         telemetryCollector.reset()
+        visualBuffer.clear()
         pickActionKind = PickActionKind.TAP
         val launch = RecordedAction.LaunchApp(packageName = targetPackage)
         _state.value = RecordingState(
@@ -64,14 +79,27 @@ class RecordingSessionController(
     }
 
     /**
+     * Esito stop registrazione con telemetria preservata.
+     *
+     * @property actions Azioni finali.
+     * @property telemetry Telemetria costruita prima del reset collector.
+     */
+    data class StopRecordingResult(
+        val actions: List<RecordedAction>,
+        val telemetry: FlowTelemetry,
+    )
+
+    /**
      * Ferma la registrazione e flush del testo pendente.
      *
-     * @return Azioni finali (copia).
+     * @return Azioni finali + telemetria (il buffer visivo resta fino a [clearVisualBuffer]).
      */
-    fun stop(): List<RecordedAction> {
+    fun stop(): StopRecordingResult {
         val flushed = recorder.flush()
         val finalActions = _state.value.actions + flushed
         val real = realStepCount(finalActions)
+        val timestamps = finalActions.map { it.timestampMs }
+        val telemetry = telemetryCollector.build(timestamps)
         _state.update {
             it.copy(
                 isRecording = false,
@@ -88,13 +116,19 @@ class RecordingSessionController(
         AppFileLogger.info("RecordingSession", "stop realSteps=$real total=${finalActions.size}")
         recorder.reset()
         telemetryCollector.reset()
-        return finalActions
+        return StopRecordingResult(finalActions, telemetry)
+    }
+
+    /** Libera RAM screenshot/alberi post-revisione AI. */
+    fun clearVisualBuffer() {
+        visualBuffer.clear()
     }
 
     /** Annulla senza salvare. */
     fun cancel() {
         recorder.reset()
         telemetryCollector.reset()
+        visualBuffer.clear()
         _state.value = RecordingState()
     }
 
@@ -172,7 +206,7 @@ class RecordingSessionController(
     }
 
     /**
-     * Telemetria raccolta durante la registrazione (snapshot + transizioni).
+     * Telemetria dall'ultima sessione (preferire [StopRecordingResult.telemetry] da [stop]).
      */
     fun buildTelemetry(): FlowTelemetry {
         val timestamps = _state.value.actions.map { it.timestampMs }
@@ -251,6 +285,8 @@ class RecordingSessionController(
         val newActions = recorder.onEvent(event, screenWidthPx, screenHeightPx, rootProvider)
         if (event.eventType == AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED) {
             telemetryCollector.onContentChanged(System.currentTimeMillis())
+            val gapIndex = (_state.value.actions.size - 1).coerceAtLeast(0)
+            visualBuffer.noteContentChanged(gapIndex)
         }
         // #region agent log
         if (isClick || isWindow) {
@@ -278,13 +314,7 @@ class RecordingSessionController(
             return
         }
         _state.update { it.copy(actions = it.actions + newActions) }
-        val lastIndex = _state.value.actions.size - 1
-        telemetryCollector.capture(
-            rootProvider.root(),
-            target,
-            lastIndex,
-            System.currentTimeMillis(),
-        )
+        captureVisualForNewActions(newActions.size, rootProvider)
         publishPreview()
         AppFileLogger.info(
             "RecordingSession",
@@ -297,12 +327,13 @@ class RecordingSessionController(
      *
      * @param targetPackage Package app in registrazione.
      */
-    fun onHardwareBack(targetPackage: String) {
+    fun onHardwareBack(targetPackage: String, rootProvider: AccessibilityRootProvider) {
         val current = _state.value
         if (!current.isRecording || current.isPaused) return
         val newActions = recorder.onBackPressed(targetPackage)
         if (newActions.isEmpty()) return
         _state.update { it.copy(actions = it.actions + newActions) }
+        captureVisualForNewActions(newActions.size, rootProvider)
         publishPreview()
         AppFileLogger.info("RecordingSession", "hardware_back total=${_state.value.actions.size}")
     }
@@ -365,8 +396,58 @@ class RecordingSessionController(
             )
         }
         _state.update { it.copy(actions = it.actions + action, pickMode = false) }
+        captureVisualForNewActions(1, rootProvider)
         publishPreview()
         AppFileLogger.info("RecordingSession", "pick_add kind=$pickActionKind")
+    }
+
+    private fun captureVisualForNewActions(
+        addedCount: Int,
+        rootProvider: AccessibilityRootProvider,
+    ) {
+        if (addedCount <= 0) return
+        val actions = _state.value.actions
+        val startIndex = (actions.size - addedCount).coerceAtLeast(0)
+        for (index in startIndex until actions.size) {
+            val action = actions[index]
+            val prevTs = actions.getOrNull(index - 1)?.timestampMs ?: action.timestampMs
+            val deltaMs = (action.timestampMs - prevTs).coerceAtLeast(0L)
+            val root = rootProvider.root()
+            val title = root?.window?.title?.toString()?.trim()?.takeIf { it.isNotBlank() }
+            val rootForTelemetry = root?.let { android.view.accessibility.AccessibilityNodeInfo.obtain(it) }
+            telemetryCollector.capture(
+                rootForTelemetry,
+                action.packageName,
+                index,
+                action.timestampMs,
+            )
+            rootForTelemetry?.recycle()
+            val provider = screenshotProvider
+            if (provider != null) {
+                visualCapturesInFlight++
+                RecordingVisualCapture.captureAfterAction(
+                    actionIndex = index,
+                    action = action,
+                    root = root,
+                    windowTitle = title,
+                    deltaMs = deltaMs,
+                    screenshotProvider = provider,
+                    buffer = visualBuffer,
+                ) {
+                    visualCapturesInFlight = (visualCapturesInFlight - 1).coerceAtLeast(0)
+                }
+            } else {
+                RecordingVisualCapture.captureTreeOnly(
+                    actionIndex = index,
+                    action = action,
+                    root = root,
+                    windowTitle = title,
+                    deltaMs = deltaMs,
+                    buffer = visualBuffer,
+                )
+            }
+            root?.recycle()
+        }
     }
 
     private fun publishPreview() {

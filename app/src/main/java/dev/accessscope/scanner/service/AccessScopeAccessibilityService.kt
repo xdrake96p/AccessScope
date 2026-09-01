@@ -21,6 +21,8 @@ import dev.accessscope.scanner.service.scan.AccessibilityScreenshotCapture
 import dev.accessscope.scanner.service.scan.AccessibilityTreeScanner
 import dev.accessscope.scanner.recorder.AccessibilityRootProvider
 import dev.accessscope.scanner.recorder.MaestroSelectorHeuristics
+import dev.accessscope.scanner.recorder.RecordingSessionController
+import dev.accessscope.scanner.recorder.capture.RecordingVisualCapture
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Executors
 import java.util.concurrent.ScheduledExecutorService
@@ -109,6 +111,7 @@ class AccessScopeAccessibilityService : AccessibilityService() {
         val app = application as AccessScopeApp
         val recording = app.recordingController
         if (AccessibilityEventRouter.routesToRecording(recording.isRecording)) {
+            wireRecordingVisualCapture(recording)
             val metrics = resources.displayMetrics
             val rootProvider = recordingRootProvider()
             recording.onAccessibilityEvent(
@@ -155,11 +158,21 @@ class AccessScopeAccessibilityService : AccessibilityService() {
             if (recording?.isRecording == true) {
                 val target = recording.state.value.targetPackage
                 if (!target.isNullOrBlank()) {
-                    recording.onHardwareBack(target)
+                    recording.onHardwareBack(target, recordingRootProvider())
                 }
             }
         }
         return false
+    }
+
+    /**
+     * Collega cattura screenshot al recorder Maestro (una volta per sessione).
+     */
+    private fun wireRecordingVisualCapture(recording: RecordingSessionController) {
+        if (recording.screenshotProvider != null) return
+        recording.screenshotProvider = RecordingVisualCapture.ScreenshotProvider { onResult ->
+            screenshotCapture.capture(onResult)
+        }
     }
 
     /**

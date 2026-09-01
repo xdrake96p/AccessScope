@@ -115,7 +115,17 @@ class RecordingOverlayService : Service() {
 
     private fun stopRecordingNow(source: String) {
         AppFileLogger.info("RecordingOverlay", "stop_$source")
-        (application as AccessScopeApp).stopRecordingSession(save = true)
+        val app = application as AccessScopeApp
+        app.scheduleStopRecordingSession(save = true) { flow ->
+            if (flow != null) {
+                Toast.makeText(
+                    this,
+                    "YAML salvato: ${flow.stepCount} step — vedi lista Maestro",
+                    Toast.LENGTH_LONG,
+                ).show()
+            }
+            stopSelf()
+        }
     }
 
     private fun togglePick() {
