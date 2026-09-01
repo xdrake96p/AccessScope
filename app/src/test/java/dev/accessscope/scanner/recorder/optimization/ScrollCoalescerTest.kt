@@ -104,6 +104,44 @@ class ScrollCoalescerTest {
     }
 
     @Test
+    fun scrollsInterleavedWithWaitForAnimation_promoteToScrollUntilVisible() {
+        // Pattern reale (it.nexi.bff/MPS): scroll → waitForAnimationToEnd → scroll →
+        // waitForAnimationToEnd → scroll → tap. Prima il Wait interrompeva subito il conteggio
+        // del run (mai ≥2 scroll consecutivi contati), restava sempre "- scroll" nudo.
+        val result = ScrollCoalescer.coalesce(
+            listOf(
+                scroll(1_000),
+                RecordedAction.WaitForAnimation(packageName = "com.example.app", timestampMs = 1_400),
+                scroll(1_800),
+                RecordedAction.WaitForAnimation(packageName = "com.example.app", timestampMs = 2_200),
+                scroll(2_600),
+                RecordedAction.Tap(
+                    packageName = "com.example.app",
+                    viewId = "com.example.app:id/nav_new_payment",
+                    timestampMs = 3_000,
+                ),
+            ),
+        )
+        assertEquals(2, result.size)
+        val until = result[0] as RecordedAction.ScrollUntilVisible
+        assertEquals("com.example.app:id/nav_new_payment", until.visibleId)
+        assertTrue(result[1] is RecordedAction.Tap)
+    }
+
+    @Test
+    fun scrollsInterleavedWithWait_noPromotableTarget_reemittedUnchanged() {
+        // Nessun bersaglio recuperabile alla fine del run (solo altri wait): non si rischia,
+        // la sotto-sequenza resta esattamente com'era.
+        val actions = listOf(
+            scroll(1_000),
+            RecordedAction.WaitForAnimation(packageName = "com.example.app", timestampMs = 1_400),
+            scroll(1_800),
+        )
+        val result = ScrollCoalescer.coalesce(actions)
+        assertEquals(actions, result)
+    }
+
+    @Test
     fun nonScrollActionsBetweenScrolls_keepOrder() {
         val result = ScrollCoalescer.coalesce(
             listOf(

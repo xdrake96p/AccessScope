@@ -6,7 +6,29 @@
 **Package:** `dev.accessscope.scanner`  
 **Branch principale sviluppo:** `develop`  
 **Branch release stabile:** `main`  
-**Ultimo aggiornamento:** 1 agosto 2026 (piano pre-demo: Maestro, l'hint non finisce più in inputText)
+**Ultimo aggiornamento:** 1 agosto 2026 (piano pre-demo: Maestro, scroll mirati con scrollUntilVisible)
+
+### Pre-demo — Maestro: scroll nudi promossi a `scrollUntilVisible` mirato (1 agosto 2026)
+
+Il flusso reale su it.nexi.bff/MPS conteneva tre `- scroll` di fila senza bersaglio, fragili in
+CI. `ScrollCoalescer` sapeva già produrre `scrollUntilVisible`, ma solo se il run di scroll era
+seguito **immediatamente** da un `Tap` con selettore — nel flusso vero, tra uno scroll e l'altro
+c'era sempre un `waitForAnimationToEnd`, che interrompeva il conteggio del run prima ancora di
+arrivare a 2 scroll consecutivi: la promozione non scattava mai.
+
+- Il conteggio del run ora tollera `Wait`/`WaitForAnimation`/`HideKeyboard` interposti tra scroll
+  della stessa direzione (non li conta come scroll, non interrompono la sequenza logica).
+- Il bersaglio accettato dopo il run non è più solo `Tap`: anche `AssertVisible` e `InputText`
+  (tutti espongono `viewId`/testo). Gli elementi interposti diventano ridondanti quando la
+  promozione avviene (`scrollUntilVisible` incorpora già l'attesa implicita) e vengono scartati;
+  se **non** c'è un bersaglio promuovibile alla fine, la sotto-sequenza viene riemessa
+  esattamente com'era — mai un rischio di perdere informazione quando l'esito è incerto.
+- 2 test nuovi in `ScrollCoalescerTest.kt` sul pattern reale (scroll→wait→scroll→wait→scroll→tap
+  → `scrollUntilVisible`; stesso pattern senza bersaglio finale → invariato). I 7 test esistenti
+  restano verdi senza modifiche.
+
+Verifica: `./gradlew :app:testDebugUnitTest :app:assembleDebug` verde — include la validazione
+reale con `maestro check-syntax` (`MaestroCliSyntaxValidationTest`).
 
 ### Pre-demo — Maestro: l'hint del campo non finisce più in `inputText` (1 agosto 2026)
 

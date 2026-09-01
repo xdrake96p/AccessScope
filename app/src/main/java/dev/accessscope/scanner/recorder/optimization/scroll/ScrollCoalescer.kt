@@ -9,9 +9,14 @@ import dev.accessscope.scanner.recorder.RecordedAction
  * Collassa run di scroll ripetuti nella stessa direzione.
  *
  * Regole:
- * - run di ≥2 scroll stessa direzione seguito da un tap con selettore →
- *   un solo [RecordedAction.ScrollUntilVisible] sul target del tap + il tap;
- * - run di scroll non seguito da tap (o tap senza selettore) → un solo [RecordedAction.Scroll].
+ * - run di ≥2 scroll stessa direzione — tollerando `Wait`/`WaitForAnimation`/`HideKeyboard`
+ *   interposti, che non interrompono la sequenza logica (es. `scroll → waitForAnimationToEnd →
+ *   scroll`, il pattern reale osservato su it.nexi.bff/MPS) — seguito da un `Tap`/`AssertVisible`/
+ *   `InputText` con selettore → un solo [RecordedAction.ScrollUntilVisible] sul target + il target;
+ * - stesso caso ma senza elementi interposti e senza bersaglio utilizzabile → un solo
+ *   [RecordedAction.Scroll], comportamento storico invariato;
+ * - run con elementi interposti ma senza bersaglio promuovibile alla fine → non si rischia di
+ *   scartare informazione: la sotto-sequenza viene riemessa esattamente com'era.
  */
 object ScrollCoalescer {
 
@@ -32,39 +37,69 @@ object ScrollCoalescer {
                 i++
                 continue
             }
-            // Run di scroll consecutivi nella stessa direzione.
+            val direction = current.direction
+            val interleaved = mutableListOf<RecordedAction>()
             var end = i
             var count = 0
             while (end < actions.size) {
-                val candidate = actions[end] as? RecordedAction.Scroll
-                if (candidate == null || candidate.direction != current.direction) break
-                end++
-                count++
+                val candidate = actions[end]
+                when {
+                    candidate is RecordedAction.Scroll && candidate.direction == direction -> {
+                        end++
+                        count++
+                    }
+                    count > 0 && isBenignBetweenScrolls(candidate) -> {
+                        interleaved += candidate
+                        end++
+                    }
+                    else -> break
+                }
             }
             val next = actions.getOrNull(end)
-            if (count >= 2 && next is RecordedAction.Tap) {
-                val targetId = next.viewId
-                val targetText = next.text ?: next.contentDescription
+            val target = next?.let(::scrollTargetOf)
+            if (count >= 2 && target != null) {
+                val (targetId, targetText) = target
                 if (!targetId.isNullOrBlank() || !targetText.isNullOrBlank()) {
+                    // Gli elementi interposti (wait/hideKeyboard) diventano ridondanti:
+                    // scrollUntilVisible incorpora già l'attesa implicita di ogni passo.
                     out += RecordedAction.ScrollUntilVisible(
                         packageName = current.packageName,
                         visibleId = targetId,
                         visibleText = if (targetId.isNullOrBlank()) targetText else null,
-                        direction = current.direction,
+                        direction = direction,
                         timestampMs = current.timestampMs,
                     )
                 } else {
-                    // Tap senza selettore: non possiamo puntare a nulla → scroll singolo.
+                    // Bersaglio senza selettore utilizzabile: non possiamo puntare a nulla →
+                    // scroll singolo, ma il target resta consumato qui sotto.
                     out += current
                 }
-                out += next
+                out += next!!
                 i = end + 1
-            } else {
-                // Run senza tap selettivo: collassa in un solo scroll.
+            } else if (interleaved.isEmpty()) {
+                // Nessun elemento interposto: comportamento storico, run collassato in un solo scroll.
                 out += current
+                i = end
+            } else {
+                // Elementi interposti ma nessun bersaglio promuovibile: non rischiare, riemetti
+                // la sotto-sequenza esattamente com'era.
+                for (idx in i until end) out += actions[idx]
                 i = end
             }
         }
         return out
+    }
+
+    private fun isBenignBetweenScrolls(action: RecordedAction): Boolean =
+        action is RecordedAction.Wait ||
+            action is RecordedAction.WaitForAnimation ||
+            action is RecordedAction.HideKeyboard
+
+    /** ID o testo/cd del bersaglio su cui puntare lo scroll, se [action] ne espone uno. */
+    private fun scrollTargetOf(action: RecordedAction): Pair<String?, String?>? = when (action) {
+        is RecordedAction.Tap -> action.viewId to (action.text ?: action.contentDescription)
+        is RecordedAction.AssertVisible -> action.viewId to action.text
+        is RecordedAction.InputText -> action.viewId to null
+        else -> null
     }
 }
