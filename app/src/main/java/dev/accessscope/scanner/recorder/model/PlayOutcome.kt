@@ -26,11 +26,16 @@ data class SelectorWin(
  * @property error Messaggio errore step, o `null` se ok.
  * @property selectorWins Tap risolti con ramo non-primario della catena.
  * @property validateFailures Indici step non trovati in validate (find-only).
+ * @property divergences Note su rami "morbidi" del Play in-app che il `maestro` CLI non ha
+ * (segreto non risolto, fallback selettore/coordinate/PIN-pad, wait soft-fail) — non cambiano
+ * l'esito ([isSuccess] resta vero), ma un flusso verde qui non garantisce che `maestro test`
+ * verifichi esattamente le stesse cose.
  */
 data class PlayOutcome(
     val error: String? = null,
     val selectorWins: List<SelectorWin> = emptyList(),
     val validateFailures: List<Int> = emptyList(),
+    val divergences: List<String> = emptyList(),
 ) {
     val isSuccess: Boolean get() = error == null && validateFailures.isEmpty()
 }

@@ -33,6 +33,20 @@ class FlowPlayer(
     private var currentStepIndex: Int = 0
 
     /**
+     * Note di divergenza rispetto al `maestro` CLI, raccolte durante `play()`. Il Play in-app ha
+     * rami "morbidi" che il CLI non ha (fallback selettori, skip di segreti non risolti, wait
+     * soft-fail): un flusso può risultare tutto verde in-app pur non avendo davvero verificato
+     * ciò che verificherebbe `maestro test`. Non cambiano l'esito (verde resta verde: demo
+     * sicura), ma vengono riportate nel [PlayOutcome] così l'utente sa cosa il CLI reale
+     * potrebbe non riprodurre allo stesso modo.
+     */
+    private val divergences = mutableListOf<String>()
+
+    private fun noteDivergence(message: String) {
+        divergences += "step ${currentStepIndex + 1}: $message"
+    }
+
+    /**
      * Riproduce le azioni.
      *
      * @param actions Lista da `actions.json`.
@@ -46,6 +60,7 @@ class FlowPlayer(
         onStep: (index: Int, total: Int) -> Unit = { _, _ -> },
     ): PlayOutcome {
         selectorWins.clear()
+        divergences.clear()
         if (actions.isEmpty()) return PlayOutcome(error = "Flusso vuoto")
         val appId = actions.firstOrNull()?.packageName?.takeIf { it.isNotBlank() }
             ?: actions.filterIsInstance<RecordedAction.LaunchApp>().firstOrNull()?.packageName
@@ -168,11 +183,12 @@ class FlowPlayer(
                 return PlayOutcome(
                     error = "Step ${index + 1}: $err",
                     selectorWins = selectorWins.toList(),
+                    divergences = divergences.toList(),
                 )
             }
             delay(BETWEEN_STEPS_MS)
         }
-        return PlayOutcome(selectorWins = selectorWins.toList())
+        return PlayOutcome(selectorWins = selectorWins.toList(), divergences = divergences.toList())
     }
 
     /**
@@ -456,6 +472,10 @@ class FlowPlayer(
                         chainIndex = ci,
                     )
                 }
+                noteDivergence(
+                    "risolto via fallback coordinate (${action.viewId ?: action.text ?: "?"}) → " +
+                        "il CLI userebbe solo il selettore",
+                )
                 return
             }
         }
@@ -495,6 +515,10 @@ class FlowPlayer(
             // #endregion
             if (ok) {
                 AppFileLogger.info("FlowPlayer", "pin_digit_fallback digit=$digit ok=true")
+                noteDivergence(
+                    "tasto pad assente, cifra $digit digitata su slot edit (${action.viewId ?: action.text}) → " +
+                        "il CLI userebbe solo il selettore originale",
+                )
                 return
             }
             AppFileLogger.info("FlowPlayer", "pin_digit_fallback digit=$digit ok=false")
@@ -695,6 +719,10 @@ class FlowPlayer(
         }
         if (!clicked) {
             clickPointFallback(svc, null, null, node)
+            noteDivergence(
+                "tap eseguito via gesture su coordinate (${action.viewId ?: action.text ?: "?"}) invece di " +
+                    "ACTION_CLICK → il CLI userebbe tapOn sul selettore",
+            )
         }
     }
 
@@ -1094,6 +1122,11 @@ class FlowPlayer(
                     "FlowPlayer",
                     "password_focused_skip_set_text id=${action.viewId}",
                 )
+                val secretName = if (resolvedText == CredentialVault.PLACEHOLDER_PIN) "PIN" else "PASSWORD"
+                noteDivergence(
+                    "segreto \${$secretName} non risolto (${action.viewId ?: "no-id"}) → " +
+                        "in CI serve maestro test -e $secretName=...",
+                )
                 // #region agent log
                 DebugSessionLog.log(
                     "C",
@@ -1347,6 +1380,10 @@ class FlowPlayer(
         AppFileLogger.info(
             "FlowPlayer",
             "wait_timeout id=${action.visibleId} text=${action.visibleText}",
+        )
+        noteDivergence(
+            "wait su ${action.visibleId ?: action.visibleText} scaduto in timeout ma proseguito " +
+                "(soft-fail) → extendedWaitUntil nel CLI fallisce l'intero flusso",
         )
     }
 

@@ -457,12 +457,17 @@ class AccessScopeApp : Application() {
                 }
             }
             withContext(Dispatchers.Main) {
+                // Note su rami "morbidi" che il maestro CLI non ha (segreto non risolto,
+                // fallback selettore/coordinate/PIN-pad, wait soft-fail): il playback resta
+                // verde (demo sicura), ma un flusso verde qui non garantisce che maestro test
+                // verifichi esattamente le stesse cose — vedi PlayOutcome.divergences.
+                val ciNote = if (outcome.divergences.isNotEmpty()) " · ${outcome.divergences.size} note CI" else ""
                 val endMsg = when {
                     healMsg != null -> "${outcome.error}\n$healMsg"
                     outcome.error != null -> outcome.error
                     outcome.selectorWins.isNotEmpty() ->
-                        "Playback completato (${sanitized.size} step, ${outcome.selectorWins.size} selettori aggiornati)"
-                    else -> "Playback completato (${sanitized.size} step)"
+                        "Playback completato (${sanitized.size} step, ${outcome.selectorWins.size} selettori aggiornati)$ciNote"
+                    else -> "Playback completato (${sanitized.size} step)$ciNote"
                 }
                 playbackController.end(endMsg)
                 if (outcome.error == null) {

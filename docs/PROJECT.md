@@ -6,7 +6,34 @@
 **Package:** `dev.accessscope.scanner`  
 **Branch principale sviluppo:** `develop`  
 **Branch release stabile:** `main`  
-**Ultimo aggiornamento:** 1 agosto 2026 (piano pre-demo: Maestro, scroll mirati con scrollUntilVisible)
+**Ultimo aggiornamento:** 1 agosto 2026 (piano pre-demo: playback in-app, verde annotato con note CI)
+
+### Pre-demo — Esecuzione: il playback non mente più, verde annotato con note CI (1 agosto 2026)
+
+`FlowPlayer` ha rami "morbidi" che il `maestro` CLI non ha: su `${PIN}`/`${PASSWORD}` senza vault
+popolato, `inputText` saltava il `SET_TEXT` e **ritornava normalmente** — un flusso di login
+poteva risultare interamente verde in-app senza aver mai fatto login. Stessa dinamica per il
+fallback a coordinate quando il selettore non risolve, il fallback digit sul pad PIN, il
+gesture-invece-di-`ACTION_CLICK`, e il `waitUntil` con selettore che in timeout logga soltanto
+(soft-fail) mentre `extendedWaitUntil` nel CLI fallisce l'intero flusso. Nulla di tutto questo
+arrivava al risultato mostrato all'utente.
+
+Scelta deliberata (non un fallimento netto): il pass/fail del playback **non cambia** — la demo
+resta sicura — ma ogni ramo morbido viene annotato.
+
+- `PlayOutcome.divergences: List<String>` (default vuoto, `isSuccess` invariato) — una nota per
+  ognuno dei 5 punti sopra, con indice step e rimedio CI (es. `"step 12: segreto \${PASSWORD} non
+  risolto → in CI serve maestro test -e PASSWORD=..."`).
+- `AccessScopeApp.kt`: il messaggio di fine playback appende `· N note CI` quando presenti,
+  senza toccare il ramo di errore.
+- 3 test nuovi in `PlayOutcomeTest.kt` (nuovo file, primo test sul package `recorder/model/`):
+  le divergenze non alterano mai `isSuccess`, default vuoto, un errore resta un errore
+  indipendentemente dalle divergenze presenti.
+
+**Limite dichiarato:** `FlowPlayer` richiede un `AccessibilityService` live, non testabile su
+JVM — la verifica dei 5 punti di divergenza è il playback reale sul device, non uno unit test.
+
+Verifica: `./gradlew :app:testDebugUnitTest :app:assembleDebug` verde.
 
 ### Pre-demo — Maestro: scroll nudi promossi a `scrollUntilVisible` mirato (1 agosto 2026)
 
