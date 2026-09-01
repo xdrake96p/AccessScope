@@ -78,11 +78,14 @@ object FocusOrderAnalyzer {
         packageName: String,
         screenTitle: String,
     ): List<AccessibilityViolation> {
+        // Solo heading dichiarati dall'app (isHeading=true): il livello Android è comunque solo
+        // un booleano, dedurlo anche il candidato dall'altezza del font (looksLikeStructuralHeading,
+        // usato per HEADING_HIERARCHY altrove) produceva salti fantasma tra due TextView non
+        // heading — es. "Ragione sociale (Obbligatorio)" segnalato come salto ~H1→~H3 su un'app
+        // reale (test su it.nexi.bff/MPS). Se l'app non dichiara heading, zero violazioni qui
+        // invece di livelli inventati.
         val headings = snapshots
-            .filter {
-                (it.isHeading || it.looksLikeStructuralHeading()) &&
-                    !PrecisionRules.shouldSkipHeadingCheck(it)
-            }
+            .filter { it.isHeading && !PrecisionRules.shouldSkipHeadingCheck(it) }
             .map { snap ->
                 val level = if (snap.headingLevel > 0) snap.headingLevel
                 else estimateFromBounds(snap.bounds.height())

@@ -13,6 +13,13 @@ internal object PrecisionHeadingSkips {
             return true
         }
         if (isListFieldLabel(snap)) return true
+        // Etichetta di campo obbligatorio (es. "Ragione sociale (Obbligatorio)"): non è un
+        // heading, è testo di form — riusa lo stesso helper già usato per il contrasto, prima
+        // mai collegato a questo path (test su it.nexi.bff/MPS: veniva segnalata come salto di
+        // livello heading).
+        if (PrecisionLabels.isRequiredFieldHint(snap.hintText, snap.text, snap.contentDescription)) {
+            return true
+        }
         val text = snap.text?.trim().orEmpty()
         if (text.isNotEmpty() && text == text.uppercase() && text.length <= 24 &&
             snap.bounds.height() <= snap.minTouchTargetPx

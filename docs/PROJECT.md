@@ -6,7 +6,28 @@
 **Package:** `dev.accessscope.scanner`  
 **Branch principale sviluppo:** `develop`  
 **Branch release stabile:** `main`  
-**Ultimo aggiornamento:** 1 agosto 2026 (Settimana 4: TalkBack, corretti i falsi positivi su container generici)
+**Ultimo aggiornamento:** 1 agosto 2026 (piano pre-demo: heading dedotti dal font corretti)
+
+### Pre-demo — Scanner: heading level dedotti dal font, non da isHeading (1 agosto 2026)
+
+Secondo test reale su it.nexi.bff/MPS (stesso giorno, dopo il fix container generici): 17
+`HEADING_LEVEL_SKIP`, incluso `"Ragione sociale (Obbligatorio)"` — un'etichetta di campo —
+segnalata come salto `~H1 → ~H3`. Causa: Android espone solo un booleano `isHeading`, nessun
+livello; `FocusOrderAnalyzer.analyzeHeadingLevels` ammetteva come candidato anche qualunque
+TextView non cliccabile ≤12 parole (`looksLikeStructuralHeading()`) e ne deduceva il livello
+dall'altezza del font — due label che differiscono di pochi px producevano salti fantasma.
+
+- `FocusOrderAnalyzer.analyzeHeadingLevels`: candidati ristretti ai soli heading **dichiarati**
+  (`isHeading == true`). Se un'app non dichiara heading, zero violazioni invece di livelli
+  inventati. `looksLikeStructuralHeading()` resta invariato per l'unico altro uso (`HEADING_HIERARCHY`
+  in `NodeStructureSingleChecker`, dove serve proprio a rilevare un titolo NON marcato heading).
+- `PrecisionHeadingSkips.shouldSkipHeadingCheck`: nuova guardia con `PrecisionLabels.
+  isRequiredFieldHint` (già esistente per il contrasto, mai collegata qui) — un'etichetta di
+  campo obbligatorio non è mai un heading. Protegge anche `HEADING_HIERARCHY`, che passa dallo
+  stesso helper.
+- 3 test nuovi in `FocusOrderHeadingLevelTest.kt`.
+
+Verifica: `./gradlew :app:testDebugUnitTest :app:assembleDebug` verde.
 
 ### Settimana 4 — TalkBack: corretti i falsi positivi su container generici (1 agosto 2026)
 
