@@ -123,6 +123,36 @@ object FlowOptimizationPipeline {
     }
 
     /**
+     * Confronta gli `Scroll` grezzi con quelli sopravvissuti dopo [optimize]/[sanitizeForPlay],
+     * per accorgersi se della distanza di scroll necessaria a raggiungere un target è andata
+     * persa senza una `ScrollUntilVisible` a spiegarlo — bug reale trovato su un flusso AXA
+     * registrato (4 scroll diventati 1, vedi `docs/PROJECT.md`), che [dev.accessscope.scanner.recorder.quality.ZeroEditGate]
+     * non poteva scoprire perché valuta solo la lista già ottimizzata, senza mai un confronto
+     * con quella grezza, e [dev.accessscope.scanner.recorder.optimization.lint.FlowLinter] non
+     * ispeziona affatto gli `Scroll`.
+     *
+     * Una `ScrollUntilVisible` sopravvissuta spiega sempre una riduzione (è esattamente il suo
+     * scopo, collassare un run di scroll in un solo gesto mirato) — l'avviso scatta solo quando
+     * gli scroll diminuiscono **senza** che nessuna sia stata promossa.
+     *
+     * @param before Azioni grezze, prima di [optimize].
+     * @param after Azioni dopo [optimize] (o [sanitizeForPlay]).
+     * @return Avvisi in linguaggio naturale, vuoto se nessuna perdita sospetta.
+     */
+    fun auditScrollCardinality(before: List<RecordedAction>, after: List<RecordedAction>): List<String> {
+        val rawScrollCount = before.count { it is RecordedAction.Scroll }
+        if (rawScrollCount == 0) return emptyList()
+        val finalScrollUntilVisibleCount = after.count { it is RecordedAction.ScrollUntilVisible }
+        if (finalScrollUntilVisibleCount > 0) return emptyList()
+        val finalScrollCount = after.count { it is RecordedAction.Scroll }
+        if (finalScrollCount >= rawScrollCount) return emptyList()
+        return listOf(
+            "Possibile perdita di distanza di scroll: $rawScrollCount scroll registrati, " +
+                "$finalScrollCount rimasti nel flusso ottimizzato — nessuna scrollUntilVisible a spiegare la riduzione.",
+        )
+    }
+
+    /**
      * Coalesce solo digitazione incrementale sullo stesso campo.
      * Non unisce due inserimenti completi uguali/distanti (es. PIN + conferma PIN).
      */

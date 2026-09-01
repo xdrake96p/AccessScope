@@ -11,7 +11,9 @@ import dev.accessscope.scanner.recorder.model.OptimizationContext
 import dev.accessscope.scanner.recorder.model.FlowTelemetry
 import dev.accessscope.scanner.recorder.optimization.selector.SelectorRanker
 import dev.accessscope.scanner.recorder.quality.ZeroEditGate
+import dev.accessscope.scanner.recorder.quality.ZeroEditIssue
 import dev.accessscope.scanner.recorder.quality.ZeroEditReport
+import dev.accessscope.scanner.recorder.quality.ZeroEditSeverity
 import dev.accessscope.scanner.recorder.telemetry.FlowTelemetryCodec
 import dev.accessscope.scanner.util.AppFileLogger
 import dev.accessscope.scanner.util.DebugSessionLog
@@ -62,10 +64,32 @@ class FlowStore(context: Context) {
         }
         val ctx = optimizationContext ?: OptimizationContext(appId = appId, telemetry = telemetry)
         val optimized = if (optimize) FlowOptimizer.optimize(actions, ctx) else actions
-        val report = if (enforceZeroEdit && optimize) {
+        val baseReport = if (enforceZeroEdit && optimize) {
             ZeroEditGate.evaluate(optimized, healFirst = true)
         } else {
             ZeroEditReport(issues = emptyList(), actions = optimized)
+        }
+        // Non dentro ZeroEditGate (valuta solo la lista già ottimizzata, per responsabilità
+        // documentata) — un confronto grezzo/ottimizzato serve la lista pre-optimize, che solo
+        // FlowStore ha entrambe sotto mano qui.
+        val scrollWarnings = if (optimize) {
+            FlowOptimizer.auditScrollCardinality(actions, baseReport.actions)
+        } else {
+            emptyList()
+        }
+        val report = if (scrollWarnings.isEmpty()) {
+            baseReport
+        } else {
+            baseReport.copy(
+                issues = baseReport.issues + scrollWarnings.map { message ->
+                    ZeroEditIssue(
+                        stepIndex = -1,
+                        code = "SCROLL_CARDINALITY_LOSS",
+                        severity = ZeroEditSeverity.Warning,
+                        message = message,
+                    )
+                },
+            )
         }
         lastZeroEditReport = report
         val finalActions = report.actions

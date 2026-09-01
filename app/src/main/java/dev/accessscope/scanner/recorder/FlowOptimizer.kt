@@ -63,6 +63,14 @@ object FlowOptimizer {
         NoiseActionFilter.dropNoiseWaits(actions)
 
     /**
+     * Segnala se degli `Scroll` sono spariti tra [actions] grezze e [optimized] senza una
+     * `ScrollUntilVisible` a spiegare la riduzione — vedi
+     * [dev.accessscope.scanner.recorder.optimization.FlowOptimizationPipeline.auditScrollCardinality].
+     */
+    fun auditScrollCardinality(actions: List<RecordedAction>, optimized: List<RecordedAction>): List<String> =
+        FlowOptimizationPipeline.auditScrollCardinality(actions, optimized)
+
+    /**
      * Inserisce wait dopo launch/navigazione (non hideKeyboard automatico dopo input).
      */
     fun enrich(actions: List<RecordedAction>): List<RecordedAction> {

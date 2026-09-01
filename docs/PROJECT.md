@@ -6,7 +6,31 @@
 **Package:** `dev.accessscope.scanner`  
 **Branch principale sviluppo:** `develop`  
 **Branch release stabile:** `main`  
-**Ultimo aggiornamento:** 1 settembre 2026 (Riscrittura pipeline Maestro — Fase 2: rimossa quarta copia morta del filtro chrome)
+**Ultimo aggiornamento:** 1 settembre 2026 (Riscrittura pipeline Maestro — Fase 3: ZeroEditGate riconosce step spariti)
+
+### Riscrittura pipeline Maestro — Fase 3: `ZeroEditGate` impara a riconoscere step spariti (1 settembre 2026)
+
+`ZeroEditGate.evaluate` valuta solo la lista **già ottimizzata** — nessun confronto con la lista
+grezza pre-ottimizzazione — e `FlowLinter` non ispeziona affatto `RecordedAction.Scroll`. Il gate
+di qualità pre-salvataggio dell'app non aveva modo di accorgersi se 4 scroll diventano 1 senza
+una `ScrollUntilVisible` a spiegare la riduzione (esattamente il bug reale di stanotte).
+
+- Nuova `FlowOptimizationPipeline.auditScrollCardinality(before, after): List<String>`
+  (delegata via `FlowOptimizer.auditScrollCardinality`): confronta scroll grezzi vs scroll +
+  `ScrollUntilVisible` finali. Nessun avviso se sopravvive almeno una `ScrollUntilVisible` (è
+  esattamente il suo scopo, collassare un run in un solo gesto mirato — non è una perdita).
+  Avviso solo quando gli scroll diminuiscono **senza** nessuna promozione a spiegarlo.
+- Chiamata da `FlowStore.saveFlow` subito dopo `optimize()` — non dentro `ZeroEditGate`, che
+  resta per la sua responsabilità già documentata ("azioni già passate da optimize"); solo
+  `FlowStore` ha sotto mano sia la lista grezza sia quella ottimizzata. Gli avvisi confluiscono
+  nello stesso `ZeroEditReport.issues` mostrato all'utente, nuovo codice
+  `SCROLL_CARDINALITY_LOSS`, severità Warning (non bloccante).
+- 3 test nuovi in `FlowOptimizerTest.kt`: nessun avviso con promozione a `ScrollUntilVisible`;
+  avviso quando gli scroll spariscono senza promozione (stessa fixture del bug reale già usata
+  nel test di regressione di `dropNoiseScrolls`); nessun avviso se non c'erano scroll da
+  confrontare.
+
+Verifica: `./gradlew :app:testDebugUnitTest :app:assembleDebug` verde.
 
 ### Riscrittura pipeline Maestro — Fase 2: un controllo "tap chrome" invece di quattro copie (1 settembre 2026)
 

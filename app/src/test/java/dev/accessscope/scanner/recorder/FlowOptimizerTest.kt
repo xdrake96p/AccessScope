@@ -202,4 +202,52 @@ class FlowOptimizerTest {
         val result = FlowOptimizer.dropNoiseScrolls(actions)
         assertEquals(4, result.count { it is RecordedAction.Scroll })
     }
+
+    @Test
+    fun auditScrollCardinality_noLossWhenScrollsPromotedToScrollUntilVisible() {
+        // Il caso corretto: ScrollCoalescer collassa un run di scroll in UNA sola
+        // scrollUntilVisible — è esattamente il suo scopo, non una perdita.
+        val raw = listOf(
+            RecordedAction.Scroll("com.app"),
+            RecordedAction.Scroll("com.app"),
+            RecordedAction.Scroll("com.app"),
+            RecordedAction.Scroll("com.app"),
+            RecordedAction.Tap("com.app", text = "POLIZZA N.  404347818"),
+        )
+        val optimized = listOf(
+            RecordedAction.ScrollUntilVisible("com.app", visibleText = "POLIZZA N.  404347818"),
+            RecordedAction.Tap("com.app", text = "POLIZZA N.  404347818"),
+        )
+        assertTrue(FlowOptimizer.auditScrollCardinality(raw, optimized).isEmpty())
+    }
+
+    @Test
+    fun auditScrollCardinality_warnsWhenScrollsDisappearWithoutPromotion() {
+        // Il bug reale (Fase 3 della riscrittura pipeline): 4 scroll grezzi, ma il flusso
+        // ottimizzato ne ha solo 1 e nessuna scrollUntilVisible a spiegare la riduzione — la
+        // distanza di scroll necessaria a raggiungere il target è andata persa in silenzio.
+        val raw = listOf(
+            RecordedAction.Scroll("com.app"),
+            RecordedAction.Scroll("com.app"),
+            RecordedAction.Scroll("com.app"),
+            RecordedAction.Scroll("com.app"),
+            RecordedAction.Tap("com.app", text = "POLIZZA N.  404347818"),
+        )
+        val optimizedWithLoss = listOf(
+            RecordedAction.Scroll("com.app"),
+            RecordedAction.WaitForAnimation("com.app"),
+            RecordedAction.WaitForAnimation("com.app"),
+            RecordedAction.WaitForAnimation("com.app"),
+            RecordedAction.Tap("com.app", text = "POLIZZA N.  404347818"),
+        )
+        val warnings = FlowOptimizer.auditScrollCardinality(raw, optimizedWithLoss)
+        assertEquals(1, warnings.size)
+        assertTrue(warnings.first().contains("scroll"))
+    }
+
+    @Test
+    fun auditScrollCardinality_noRawScrolls_neverWarns() {
+        val raw = listOf(RecordedAction.Tap("com.app", text = "OK"))
+        assertTrue(FlowOptimizer.auditScrollCardinality(raw, raw).isEmpty())
+    }
 }
