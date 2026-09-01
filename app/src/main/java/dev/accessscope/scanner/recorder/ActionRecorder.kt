@@ -8,6 +8,7 @@ import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
 import dev.accessscope.scanner.recorder.capture.AlertOverlayResolver
 import dev.accessscope.scanner.recorder.capture.FieldInputTargetResolver
+import dev.accessscope.scanner.recorder.capture.InferredSelectionDetector
 import dev.accessscope.scanner.recorder.capture.PickerSession
 import dev.accessscope.scanner.recorder.capture.TapIdentityResolver
 import dev.accessscope.scanner.recorder.model.SelectorCandidate
@@ -52,6 +53,20 @@ class ActionRecorder {
     private var pendingDialog: PendingDialog? = null
     /** Stato sheet picker rubrica/IBAN durante REC. */
     private val pickerSession = PickerSession()
+    /** Ultimi valori campo noti: baseline per [captureScreenStateAndInfer]. */
+    private var lastFieldValues: Map<String, String> = emptyMap()
+
+    /**
+     * Testi visti di recente (testo → timestamp), con scadenza: permette di riconoscere la voce
+     * scelta da una lista **dopo** che la lista è già sparita dallo schermo.
+     */
+    private val recentVisibleTexts = LinkedHashMap<String, Long>()
+
+    /** Campi valorizzati digitando: esclusi dall'inferenza (sono già `InputText`). */
+    private val recentlyTypedFieldIds = LinkedHashSet<String>()
+
+    private var lastInferredLabel: String? = null
+    private var lastInferredAtMs: Long = 0L
 
     private data class PendingText(
         val packageName: String,
@@ -153,12 +168,14 @@ class ActionRecorder {
                 flushPendingText()?.let(out::add)
                 // Dialog chiuso senza TYPE_VIEW_CLICKED (evidenza KYC AXA): sintetizza dismiss.
                 synthesizeDismissIfDialogClosed(event, packageName, now)?.let(out::add)
+                captureScreenStateAndInfer(rootProvider, packageName, now)?.let(out::add)
                 out += capturePopupOpen(event, packageName, now, rootProvider)
                 if (out.any { it is RecordedAction.AssertVisible }) {
                     lastPopupAssertAtMs = now
                 }
             }
             AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED -> {
+                captureScreenStateAndInfer(rootProvider, packageName, now)?.let(out::add)
                 // Solo se l’evento porta già un titolo “dialog-like” (niente scan root: troppo rumoroso).
                 capturePopupAssert(
                     event = event,
@@ -250,6 +267,11 @@ class ActionRecorder {
         lastPopupAssertAtMs = 0L
         pendingDialog = null
         pickerSession.reset()
+        lastFieldValues = emptyMap()
+        recentVisibleTexts.clear()
+        recentlyTypedFieldIds.clear()
+        lastInferredLabel = null
+        lastInferredAtMs = 0L
     }
 
     /** Picker aperto: stato sessione, overlay strutturale o titolo sheet visibile. */
@@ -274,6 +296,89 @@ class ActionRecorder {
             roots.forEach { it.recycle() }
         }
     }
+
+    /**
+     * Aggiorna lo stato schermo e, se ne trova la prova, ricava la selezione che gli eventi non
+     * hanno riportato.
+     *
+     * Sostituisce l'approccio precedente basato su euristiche di testo ("questo titolo sembra uno
+     * sheet rubrica?"): quelle assunzioni si rompono su qualunque app che non le rispetti — bug
+     * reale su it.nexi.bff/Banca MPS, dove l'intestazione di sezione «Beneficiario» del form veniva
+     * scambiata per il titolo dello sheet di selezione, convincendo il recorder che il picker fosse
+     * perennemente aperto. Qui non si indovina nulla: si confronta lo stato prima/dopo e si
+     * pretende una prova strutturale (vedi [InferredSelectionDetector]).
+     *
+     * @return Tap sintetico sulla voce scelta, o `null` se non c'è prova di una selezione.
+     */
+    private fun captureScreenStateAndInfer(
+        rootProvider: AccessibilityRootProvider,
+        packageName: String,
+        now: Long,
+    ): RecordedAction.Tap? {
+        val roots = rootProvider.roots().ifEmpty { listOfNotNull(rootProvider.root()) }
+        val snapshot = try {
+            InferredSelectionDetector.snapshot(roots)
+        } finally {
+            roots.forEach { it.recycle() }
+        }
+
+        // Campi digitati dall'utente: già coperti da InputText, non vanno reinterpretati come scelte.
+        val typedFieldIds = buildSet {
+            pendingText?.viewId?.let(::add)
+            addAll(recentlyTypedFieldIds)
+        }
+        val inferred = InferredSelectionDetector.inferSelection(
+            before = lastFieldValues,
+            after = snapshot.fieldValues,
+            recentVisibleTexts = recentVisibleTexts.keys,
+            ignoredFieldIds = typedFieldIds,
+        )
+
+        lastFieldValues = snapshot.fieldValues
+        rememberVisibleTexts(snapshot.visibleTexts, now)
+
+        if (inferred == null) return null
+        val label = inferred.matchedVisibleText.take(80)
+        if (label == lastInferredLabel && now - lastInferredAtMs < INFERRED_SELECTION_DEBOUNCE_MS) {
+            return null
+        }
+        lastInferredLabel = label
+        lastInferredAtMs = now
+        pickerSession.close()
+        AppFileLogger.info(
+            "ActionRecorder",
+            "inferred_selection field=${inferred.fieldViewId} label=$label",
+        )
+        return RecordedAction.Tap(
+            packageName = packageName,
+            text = label,
+            timestampMs = now,
+            selectorChain = listOf(SelectorCandidate(text = label)),
+        )
+    }
+
+    /** Memoria a scadenza dei testi visti: serve a riconoscere la voce scelta dopo la chiusura della lista. */
+    private fun rememberVisibleTexts(texts: Set<String>, now: Long) {
+        texts.forEach { recentVisibleTexts[it] = now }
+        if (recentVisibleTexts.size > RECENT_TEXTS_MAX) {
+            val cutoff = now - RECENT_TEXTS_TTL_MS
+            recentVisibleTexts.entries.removeAll { it.value < cutoff }
+            while (recentVisibleTexts.size > RECENT_TEXTS_MAX) {
+                val oldest = recentVisibleTexts.entries.minByOrNull { it.value } ?: break
+                recentVisibleTexts.remove(oldest.key)
+            }
+        }
+    }
+
+    /** Segna un campo come digitato dall'utente (evita di reinterpretarlo come selezione da lista). */
+    private fun markFieldAsTyped(viewId: String?) {
+        if (viewId.isNullOrBlank()) return
+        recentlyTypedFieldIds += viewId
+        if (recentlyTypedFieldIds.size > TYPED_FIELDS_MAX) {
+            recentlyTypedFieldIds.remove(recentlyTypedFieldIds.first())
+        }
+    }
+
 
     /**
      * Sceglie il testo davvero digitato, escludendo l'hint quando trapela come testo del nodo.
@@ -410,6 +515,8 @@ class ActionRecorder {
             isPassword = isPassword,
             timestampMs = ts,
         )
+        // Valore digitato: già coperto da InputText, non va reinterpretato come scelta da lista.
+        markFieldAsTyped(viewId)
         return flushed
     }
 
@@ -1197,6 +1304,11 @@ class ActionRecorder {
         private const val SCROLL_SUPPRESS_AFTER_TAP_MS = 800L
         private const val SCROLL_MIN_DELTA_PX = 12
         private const val POPUP_ASSERT_DEBOUNCE_MS = 1_500L
+        private const val INFERRED_SELECTION_DEBOUNCE_MS = 2_000L
+        /** Testi ricordati per riconoscere la voce scelta dopo la chiusura della lista. */
+        private const val RECENT_TEXTS_MAX = 600
+        private const val RECENT_TEXTS_TTL_MS = 60_000L
+        private const val TYPED_FIELDS_MAX = 32
         private val POPUP_TITLE_HINTS = listOf(
             "caricamento",
             "documento",

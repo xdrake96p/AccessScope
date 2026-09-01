@@ -152,8 +152,15 @@ object FieldInputTargetResolver {
      * Titolo tipico sheet picker beneficiario/IBAN (Banca MPS, Nexi, …).
      */
     fun isSelectionPickerTitle(title: String): Boolean {
-        val lower = title.trim().lowercase()
+        val trimmed = title.trim()
+        val lower = trimmed.lowercase()
         if (lower.isBlank()) return false
+        // Esclude hint di campo form (es. "IBAN (obbligatorio)", "Inserisci dati beneficiario
+        // (obbligatorio)") — un titolo sheet reale non ha mai parentesi. Bug reale: senza questo
+        // controllo il form BONIFICO SEPA, pieno e tornato normale dopo la selezione, veniva
+        // scambiato per lo sheet "SELEZIONA IBAN" ancora aperto (il suo campo IBAN ha per
+        // etichetta proprio "IBAN (obbligatorio)"), bloccando per sempre il rilevamento selezione.
+        if ('(' in trimmed && ')' in trimmed) return false
         return lower.contains("rubrica") ||
             lower.contains("iban") ||
             lower.contains("beneficiar") ||
@@ -197,6 +204,51 @@ object FieldInputTargetResolver {
             if (found != null) return found
         }
         return null
+    }
+
+    /**
+     * Valori correnti di tutti i campi editabili con un valore reale (non hint) nelle root.
+     *
+     * Serve a rilevare la selezione da rubrica/IBAN quando il tap sulla riga della lista non
+     * genera alcun evento di accessibilità (riga "clickable" ma gestita con touch grezzo che
+     * bypassa `View.performClick()` — bug reale su it.nexi.bff/Banca MPS, righe `rv_rubrica`):
+     * si confronta il valore del campo prima/dopo invece di aspettare un click che non arriva.
+     *
+     * **App-agnostico per design**: non filtra per id del campo — l'id del beneficiario su
+     * it.nexi.bff/MPS è `edt_ragione_sociale`, che non somiglia a nessun pattern "beneficiar"/
+     * "iban" noto, e non c'è modo di prevedere la naming convention di ogni app target. Il
+     * filtro sul contenuto (assomiglia a un IBAN, una ragione sociale, ecc.) va applicato dal
+     * chiamante via [looksLikePickerListItem] sul valore cambiato, non qui sull'id.
+     *
+     * Considera "campo" un nodo con `isEditable=true` **oppure** di classe `EditText`: alcuni
+     * campo form-picker-only (bug reale su it.nexi.bff/Banca MPS: `edt_ragione_sociale`/`edt_iban`
+     * sono `EditText` ma non digitabili direttamente, `focusable="false"`, per forzare la selezione
+     * da rubrica/IBAN) non risultano `isEditable=true` pur essendo visivamente campi valore.
+     *
+     * @param roots Root correnti (una root per finestra visibile).
+     * @return Mappa `viewId completo -> valore` per ogni campo con testo reale non vuoto.
+     */
+    fun findEditableFieldValues(roots: List<AccessibilityNodeInfo>): Map<String, String> {
+        val result = mutableMapOf<String, String>()
+        fun walk(node: AccessibilityNodeInfo) {
+            val looksLikeField = node.isEditable ||
+                node.className?.toString()?.contains("EditText", ignoreCase = true) == true
+            if (looksLikeField) {
+                val viewId = node.viewIdResourceName
+                val hint = node.hintText?.toString()?.trim()
+                val text = node.text?.toString()?.trim()
+                if (!viewId.isNullOrBlank() && !text.isNullOrBlank() && text != hint) {
+                    result[viewId] = text
+                }
+            }
+            for (i in 0 until node.childCount) {
+                val child = node.getChild(i) ?: continue
+                walk(child)
+                child.recycle()
+            }
+        }
+        roots.forEach { walk(it) }
+        return result
     }
 
     /**

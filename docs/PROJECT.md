@@ -6,7 +6,7 @@
 **Package:** `dev.accessscope.scanner`  
 **Branch principale sviluppo:** `develop`  
 **Branch release stabile:** `main`  
-**Ultimo aggiornamento:** 1 settembre 2026 (Maestro: fix isNoiseTap su tap solo-contentDescription + rimozione DebugSessionLog)
+**Ultimo aggiornamento:** 1 settembre 2026 (Maestro: InferredSelectionDetector — selezione rubrica/IBAN da stato schermo)
 
 ### Maestro — fix isNoiseTap: tap con solo contentDescription non è rumore (1 settembre 2026)
 
@@ -80,6 +80,8 @@ non venivano registrati (redirect icona→campo, `editable_skip`, assert orphan,
 
 - **`PickerSession`**: stato esplicito Closed → Opening → Open; abilita tap lista anche se l'assert sheet è scartato come orphan.
 - **`picker_selection_rec`**: selezione picker via `TYPE_VIEW_TEXT_CHANGED` sul campo beneficiario/IBAN (Nexi non emette click lista) → tap icona sintetico + tap voce.
+- **`InferredSelectionDetector` + `inferred_selection`**: se il tocco lista non genera eventi a11y, confronto stato schermo prima/dopo (campo valorizzato con testo visto in lista) → tap sintetico (`Fornitore Demo Srl`, IBAN). Fixture dump reali SM-G973F in `app/src/test/resources/dumps/`.
+- **`isSelectionPickerTitle`**: esclude hint con parentesi (`IBAN (obbligatorio)`) — evita falso sheet aperto post-selezione.
 - **`opensSelectionPicker`**: riconosce `img_search_contact` anche su `ImageView` non clickable.
 - **`isPickerBackedViewId`**: campi beneficiario/IBAN per id view.
 - **`isPickerListLabel` / `looksLikePickerListItem`**: tap su beneficiario/IBAN in sheet (testo o contentDescription), bypass `editable_skip` con picker aperto.

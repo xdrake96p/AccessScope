@@ -27,6 +27,20 @@ class FieldInputTargetResolverTest {
     }
 
     @Test
+    fun isSelectionPickerTitle_ignoresFieldHintsWithParentheses() {
+        // Bug reale su it.nexi.bff/Banca MPS: l'etichetta del campo IBAN nel form BONIFICO SEPA
+        // ("IBAN (obbligatorio)") veniva scambiata per il titolo dello sheet "SELEZIONA IBAN",
+        // facendo credere al recorder che il picker fosse ancora aperto anche a form tornato
+        // normale — bloccando per sempre la rilevazione della selezione.
+        assertFalse(FieldInputTargetResolver.isSelectionPickerTitle("IBAN (obbligatorio)"))
+        assertFalse(
+            FieldInputTargetResolver.isSelectionPickerTitle(
+                "Inserisci dati beneficiario (obbligatorio)",
+            ),
+        )
+    }
+
+    @Test
     fun looksLikePickerListItem_beneficiaryAndIban() {
         assertTrue(FieldInputTargetResolver.looksLikePickerListItem("Fornitore Demo Srl"))
         assertTrue(FieldInputTargetResolver.looksLikePickerListItem("IT20A0000000000000000000000"))
