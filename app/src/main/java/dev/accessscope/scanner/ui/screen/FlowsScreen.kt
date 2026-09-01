@@ -7,10 +7,8 @@ import android.content.Intent
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
-import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -28,6 +26,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.outlined.Assessment
 import androidx.compose.material.icons.outlined.Delete
@@ -39,6 +38,9 @@ import androidx.compose.material.icons.outlined.Share
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -59,7 +61,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
-import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.core.content.FileProvider
@@ -132,6 +133,7 @@ fun FlowsScreen(
     var reportFlow by remember { mutableStateOf<SavedFlow?>(null) }
     var reportText by remember { mutableStateOf<String?>(null) }
     var reportHistory by remember { mutableStateOf<List<PlayExecutionReport>>(emptyList()) }
+    var showHowItWorks by remember { mutableStateOf(false) }
 
     fun refresh() {
         ioScope.launch {
@@ -260,14 +262,14 @@ fun FlowsScreen(
                     )
                     Spacer(Modifier.height(8.dp))
                     Text(
-                        "Registra passaggi, importa/crea YAML dal menu ☰, riproduci con Play, " +
-                            "modifica gli step e avvia Scan+Flusso. " +
-                            "Per timeout e selettori più affidabili, esegui prima una scan WCAG sull’app. " +
-                            "Step opzionali (popup) sono esportati con optional: true nel YAML. " +
-                            "Dopo un update APK: disattiva e riattiva AccessScope in Accessibilità.",
+                        "Registra un flusso, poi riproducilo, modificalo o esportalo dal menu ⋮ di ogni card.",
                         style = MaterialTheme.typography.bodyMedium,
                         color = contentSecondary(),
                     )
+                    TextButton(
+                        onClick = { showHowItWorks = true },
+                        modifier = Modifier.padding(top = 4.dp),
+                    ) { Text("Come funziona") }
                 }
             }
 
@@ -618,6 +620,26 @@ fun FlowsScreen(
         )
     }
 
+    if (showHowItWorks) {
+        AlertDialog(
+            onDismissRequest = { showHowItWorks = false },
+            title = { Text("Come funziona Maestro") },
+            text = {
+                Text(
+                    "Registra passaggi, importa/crea YAML dal menu ☰, riproduci con Play, " +
+                        "modifica gli step e avvia Scan+Flusso. " +
+                        "Per timeout e selettori più affidabili, esegui prima una scan WCAG sull’app. " +
+                        "Step opzionali (popup) sono esportati con optional: true nel YAML. " +
+                        "Dopo un update APK: disattiva e riattiva AccessScope in Accessibilità.",
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = { showHowItWorks = false }) { Text("Chiudi") }
+            },
+        )
+    }
+
     previewFlow?.let { flow ->
         AlertDialog(
             onDismissRequest = { previewFlow = null },
@@ -755,7 +777,6 @@ private fun BetaChip() {
     )
 }
 
-@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun FlowListCard(
     flow: SavedFlow,
@@ -783,6 +804,8 @@ private fun FlowListCard(
         }
     }
     val actionsEnabled = flow.hasActionsJson && !playbackBusy
+    var menuExpanded by remember { mutableStateOf(false) }
+    var showDeleteConfirm by remember { mutableStateOf(false) }
     AccessScopeCard(modifier = Modifier.fillMaxWidth()) {
         Text(flow.name, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
         Text(flow.appLabel, style = MaterialTheme.typography.bodySmall, color = contentSecondary())
@@ -814,20 +837,10 @@ private fun FlowListCard(
             horizontalArrangement = Arrangement.End,
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Box(
-                modifier = Modifier
-                    .size(48.dp)
-                    .combinedClickable(
-                        enabled = actionsEnabled,
-                        onClick = onPlay,
-                        onLongClick = onPlayClean,
-                        role = Role.Button,
-                    ),
-                contentAlignment = Alignment.Center,
-            ) {
+            IconButton(onClick = onPlay, enabled = actionsEnabled) {
                 Icon(
                     Icons.Filled.PlayArrow,
-                    contentDescription = "Play flusso (long-press: pulito)",
+                    contentDescription = "Play flusso",
                     tint = if (actionsEnabled) {
                         MaterialTheme.colorScheme.onSurface
                     } else {
@@ -835,33 +848,102 @@ private fun FlowListCard(
                     },
                 )
             }
-            IconButton(onClick = onEdit, enabled = actionsEnabled) {
-                Icon(Icons.Outlined.Edit, contentDescription = "Modifica step")
-            }
-            IconButton(onClick = onRename) {
-                Icon(Icons.Outlined.DriveFileRenameOutline, contentDescription = "Rinomina flusso")
-            }
-            IconButton(onClick = onReport) {
-                Icon(Icons.Outlined.Assessment, contentDescription = "Report test")
-            }
-            IconButton(onClick = onScanWithFlow, enabled = actionsEnabled) {
-                Image(
-                    painter = painterResource(R.drawable.ic_access_scope_logo),
-                    contentDescription = "Scan+Flusso",
-                    modifier = Modifier.size(24.dp),
-                )
-            }
-            TextButton(onClick = onPreview) { Text("YAML") }
-            IconButton(onClick = onDownload) {
-                Icon(Icons.Outlined.Download, contentDescription = "Scarica YAML")
-            }
-            IconButton(onClick = onShare) {
-                Icon(Icons.Outlined.Share, contentDescription = "Condividi")
-            }
-            IconButton(onClick = onDelete) {
-                Icon(Icons.Outlined.Delete, contentDescription = "Elimina")
+            Box {
+                IconButton(onClick = { menuExpanded = true }) {
+                    Icon(Icons.Filled.MoreVert, contentDescription = "Altre azioni")
+                }
+                DropdownMenu(expanded = menuExpanded, onDismissRequest = { menuExpanded = false }) {
+                    DropdownMenuItem(
+                        text = { Text("Modifica step") },
+                        leadingIcon = { Icon(Icons.Outlined.Edit, contentDescription = null) },
+                        enabled = actionsEnabled,
+                        onClick = { menuExpanded = false; onEdit() },
+                    )
+                    DropdownMenuItem(
+                        text = { Text("Rinomina flusso") },
+                        leadingIcon = { Icon(Icons.Outlined.DriveFileRenameOutline, contentDescription = null) },
+                        onClick = { menuExpanded = false; onRename() },
+                    )
+                    DropdownMenuItem(
+                        text = { Text("Report test") },
+                        leadingIcon = { Icon(Icons.Outlined.Assessment, contentDescription = null) },
+                        onClick = { menuExpanded = false; onReport() },
+                    )
+                    DropdownMenuItem(
+                        text = { Text("Scan+Flusso") },
+                        leadingIcon = {
+                            Image(
+                                painter = painterResource(R.drawable.ic_access_scope_logo),
+                                contentDescription = null,
+                                modifier = Modifier.size(24.dp),
+                            )
+                        },
+                        enabled = actionsEnabled,
+                        onClick = { menuExpanded = false; onScanWithFlow() },
+                    )
+                    DropdownMenuItem(
+                        text = {
+                            Column {
+                                Text("Play pulito")
+                                Text(
+                                    "Stop app + avvio a freddo",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = contentSecondary(),
+                                )
+                            }
+                        },
+                        enabled = actionsEnabled,
+                        onClick = { menuExpanded = false; onPlayClean() },
+                    )
+                    HorizontalDivider()
+                    DropdownMenuItem(
+                        text = { Text("Anteprima YAML") },
+                        onClick = { menuExpanded = false; onPreview() },
+                    )
+                    DropdownMenuItem(
+                        text = { Text("Scarica YAML") },
+                        leadingIcon = { Icon(Icons.Outlined.Download, contentDescription = null) },
+                        onClick = { menuExpanded = false; onDownload() },
+                    )
+                    DropdownMenuItem(
+                        text = { Text("Condividi") },
+                        leadingIcon = { Icon(Icons.Outlined.Share, contentDescription = null) },
+                        onClick = { menuExpanded = false; onShare() },
+                    )
+                    HorizontalDivider()
+                    DropdownMenuItem(
+                        text = { Text("Elimina", color = MaterialTheme.colorScheme.error) },
+                        leadingIcon = {
+                            Icon(
+                                Icons.Outlined.Delete,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.error,
+                            )
+                        },
+                        onClick = { menuExpanded = false; showDeleteConfirm = true },
+                    )
+                }
             }
         }
+    }
+
+    if (showDeleteConfirm) {
+        AlertDialog(
+            onDismissRequest = { showDeleteConfirm = false },
+            title = { Text("Eliminare «${flow.name}»?") },
+            text = { Text("Il flusso registrato e il suo YAML verranno eliminati. L'azione non è reversibile.") },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showDeleteConfirm = false
+                        onDelete()
+                    },
+                ) { Text("Elimina", color = MaterialTheme.colorScheme.error) }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDeleteConfirm = false }) { Text("Annulla") }
+            },
+        )
     }
 }
 

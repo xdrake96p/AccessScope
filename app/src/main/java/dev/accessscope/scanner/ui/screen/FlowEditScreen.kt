@@ -35,6 +35,7 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -705,12 +706,20 @@ private fun StepEditDialog(
                     is RecordedAction.DoubleTap,
                     is RecordedAction.LongPress,
                     -> {
-                        OutlinedTextField(viewId, { viewId = it }, label = { Text("id") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                        OutlinedTextField(
+                            viewId,
+                            { viewId = it },
+                            label = { Text("id") },
+                            supportingText = { Text("Identificatore del campo nell'app registrata") },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth(),
+                        )
                         OutlinedTextField(text, { text = it }, label = { Text("text") }, singleLine = true, modifier = Modifier.fillMaxWidth())
                         OutlinedTextField(
                             contentDescription,
                             { contentDescription = it },
                             label = { Text("contentDescription") },
+                            supportingText = { Text("Etichette per lettori di schermo (es. TalkBack)") },
                             singleLine = true,
                             modifier = Modifier.fillMaxWidth(),
                         )
@@ -719,6 +728,7 @@ private fun StepEditDialog(
                                 pointXy,
                                 { pointXy = it },
                                 label = { Text("point x,y % (opz.)") },
+                                supportingText = { Text("Posizione del tap in % schermo, es. 50,80") },
                                 singleLine = true,
                                 modifier = Modifier.fillMaxWidth(),
                             )
@@ -733,13 +743,7 @@ private fun StepEditDialog(
                         OutlinedTextField(viewId, { viewId = it }, label = { Text("id campo (opz.)") }, singleLine = true, modifier = Modifier.fillMaxWidth())
                     }
                     is RecordedAction.Scroll -> {
-                        OutlinedTextField(
-                            direction,
-                            { direction = it.uppercase() },
-                            label = { Text("direction UP/DOWN/LEFT/RIGHT") },
-                            singleLine = true,
-                            modifier = Modifier.fillMaxWidth(),
-                        )
+                        DirectionSelector(selected = direction, onSelect = { direction = it })
                     }
                     is RecordedAction.Wait,
                     is RecordedAction.ScrollUntilVisible,
@@ -748,13 +752,7 @@ private fun StepEditDialog(
                         OutlinedTextField(text, { text = it }, label = { Text("visible text") }, singleLine = true, modifier = Modifier.fillMaxWidth())
                         OutlinedTextField(timeout, { timeout = it }, label = { Text("timeout ms") }, singleLine = true, modifier = Modifier.fillMaxWidth())
                         if (action is RecordedAction.ScrollUntilVisible) {
-                            OutlinedTextField(
-                                direction,
-                                { direction = it.uppercase() },
-                                label = { Text("direction UP/DOWN/LEFT/RIGHT") },
-                                singleLine = true,
-                                modifier = Modifier.fillMaxWidth(),
-                            )
+                            DirectionSelector(selected = direction, onSelect = { direction = it })
                         }
                     }
                     is RecordedAction.AssertVisible,
@@ -777,8 +775,22 @@ private fun StepEditDialog(
                         OutlinedTextField(text, { text = it }, label = { Text("url") }, singleLine = true, modifier = Modifier.fillMaxWidth())
                     }
                     is RecordedAction.Swipe -> {
-                        OutlinedTextField(swipeStart, { swipeStart = it }, label = { Text("start x,y %") }, singleLine = true, modifier = Modifier.fillMaxWidth())
-                        OutlinedTextField(swipeEnd, { swipeEnd = it }, label = { Text("end x,y %") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                        OutlinedTextField(
+                            swipeStart,
+                            { swipeStart = it },
+                            label = { Text("start x,y %") },
+                            supportingText = { Text("Punto di partenza in % schermo, es. 50,80") },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                        OutlinedTextField(
+                            swipeEnd,
+                            { swipeEnd = it },
+                            label = { Text("end x,y %") },
+                            supportingText = { Text("Punto di arrivo in % schermo, es. 50,20") },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth(),
+                        )
                     }
                     is RecordedAction.RawMaestroYaml -> {
                         OutlinedTextField(text, { text = it }, label = { Text("YAML grezzo") }, minLines = 3, modifier = Modifier.fillMaxWidth())
@@ -881,6 +893,42 @@ private fun StepEditDialog(
             TextButton(onClick = onDismiss) { Text("Annulla") }
         },
     )
+}
+
+/**
+ * Selettore direzione scroll a chip (sostituisce il campo testo libero "UP/DOWN/LEFT/RIGHT").
+ *
+ * @param selected Nome di [ScrollDirection] correntemente selezionato.
+ * @param onSelect Callback con il nome della direzione scelta (stessa stringa attesa a valle).
+ */
+@Composable
+private fun DirectionSelector(selected: String, onSelect: (String) -> Unit) {
+    val options = listOf(
+        ScrollDirection.UP to "Su",
+        ScrollDirection.DOWN to "Giù",
+        ScrollDirection.LEFT to "Sinistra",
+        ScrollDirection.RIGHT to "Destra",
+    )
+    Column {
+        Text(
+            "Direzione scroll",
+            style = MaterialTheme.typography.labelMedium,
+            color = contentSecondary(),
+        )
+        Spacer(Modifier.height(4.dp))
+        options.chunked(2).forEach { row ->
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                row.forEach { (dir, label) ->
+                    FilterChip(
+                        selected = selected == dir.name,
+                        onClick = { onSelect(dir.name) },
+                        label = { Text(label) },
+                    )
+                }
+            }
+            Spacer(Modifier.height(4.dp))
+        }
+    }
 }
 
 @Composable

@@ -6,7 +6,35 @@
 **Package:** `dev.accessscope.scanner`  
 **Branch principale sviluppo:** `develop`  
 **Branch release stabile:** `main`  
-**Ultimo aggiornamento:** 1 settembre 2026 (Maestro: report test Play + rinomina flussi)
+**Ultimo aggiornamento:** 1 settembre 2026 (Usabilità Maestro: menu overflow, conferma delete, editor step guidato)
+
+### Usabilità Maestro: card flusso e editor step più puliti (1 settembre 2026)
+
+Piano `docs/restyle/PIANO_RESTYLE.md` (fasi F0–F6, colori/font/navigazione) già completato e mergiato
+(commit `80858d6`). Da lì la pipeline Maestro è cresciuta molto (recorder, ottimizzazione, report play) e
+le schermate che la espongono avevano accumulato debito UX: card flusso con 9 controlli in fila senza
+etichette, un gesto nascosto (long-press = "Play pulito"), eliminazione senza conferma, editor step con
+campi liberi da form di debug. Nessuna modifica a `recorder/`, `service/`, pipeline di ottimizzazione o
+formato dati — solo Compose UI e stringhe (stessa regola d'oro del restyle).
+
+- **`FlowsScreen.kt` — `FlowListCard`**: azione primaria `Play` + menu overflow (⋮, `DropdownMenu`) con
+  Modifica step, Rinomina, Report test, Scan+Flusso, Play pulito (ora scopribile, con sottotitolo, non più
+  solo long-press nascosto), Anteprima YAML, Scarica, Condividi, Elimina. `Elimina` ora chiede conferma
+  (`AlertDialog`) prima di cancellare il flusso — prima cancellava subito, senza rete di sicurezza,
+  inconsistente col resto dell'app (Settings chiede conferma per "Eliminare la cronologia?").
+- Banner in cima a `FlowsScreen` ridotto da un paragrafo di 5 frasi a una riga + link "Come funziona"
+  (stesso testo completo, ora a richiesta invece che sempre a video).
+- **`FlowEditScreen.kt` — `StepEditDialog`**: il campo libero "direction UP/DOWN/LEFT/RIGHT" (`Scroll`,
+  `ScrollUntilVisible`) è ora un selettore a chip (`DirectionSelector`, nuovo composable) — stessa stringa
+  scritta a valle, zero cambi al parsing. Aggiunto `supportingText` esplicativo sui campi più criptici
+  (`id`, `contentDescription`, `point x,y %`, swipe start/end).
+- Verificati (nessun problema trovato, nessuna modifica) `ScanHistoryScreen.kt` e
+  `ViolationDetailScreen.kt`: nessuna azione distruttiva senza conferma, nessuna riga di icone
+  sovraffollata.
+
+Verifica: `./gradlew :app:testDebugUnitTest :app:assembleDebug` — compilazione pulita; 2 fallimenti
+preesistenti e non collegati in `PlayReportCodecTest` (`org.json.JSONObject` non mockato in JVM unit test,
+feature "Report test" in corso d'opera, fuori scope di questo lavoro).
 
 ### Maestro — report esecuzione test (1 settembre 2026)
 
