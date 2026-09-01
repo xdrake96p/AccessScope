@@ -21,7 +21,6 @@ import dev.accessscope.scanner.recorder.optimization.selector.SelectorNormalizer
 import dev.accessscope.scanner.recorder.optimization.selector.SelectorRanker
 import dev.accessscope.scanner.recorder.optimization.timing.BlockingOverlayWaitPlanner
 import dev.accessscope.scanner.recorder.optimization.timing.WaitPlanner
-import dev.accessscope.scanner.util.DebugSessionLog
 
 /**
  * Pipeline: coalesce → dedupe → noise → overlay-order → wait → assert → optional → lint → chain.
@@ -106,23 +105,6 @@ object FlowOptimizationPipeline {
         val normalized = SelectorNormalizer.normalizeViewIds(withAnim, pkg)
         val withChains = SelectorRanker.attachChains(normalized, null, null)
         val finalOrdered = BlockingOverlayOrderHealer.reorder(withChains)
-        // #region agent log
-        DebugSessionLog.log(
-            "H7",
-            "FlowOptimizationPipeline.sanitizeForPlay",
-            "sanitize_counts",
-            mapOf(
-                "in" to actions.size,
-                "out" to finalOrdered.size,
-                "dropped" to (actions.size - finalOrdered.size),
-                "inTypes" to actions.joinToString(",") { it::class.simpleName.orEmpty() },
-                "outTypes" to finalOrdered.joinToString(",") { it::class.simpleName.orEmpty() },
-                "blindWaitsAttached" to finalOrdered.count {
-                    it is RecordedAction.Wait && !it.visibleId.isNullOrBlank()
-                },
-            ),
-        )
-        // #endregion
         return finalOrdered
     }
 

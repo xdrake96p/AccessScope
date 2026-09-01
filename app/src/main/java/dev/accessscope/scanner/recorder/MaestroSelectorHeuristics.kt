@@ -385,10 +385,24 @@ object MaestroSelectorHeuristics {
             t.endsWith("...")
     }
 
+    /**
+     * `true` se il tap non ha alcun selettore utilizzabile (id, testo, contentDescription o punto).
+     *
+     * Il `contentDescription` va controllato esplicitamente: righe di liste composite (es. sheet
+     * "Rubrica"/"Seleziona IBAN" — nome + IBAN su due righe) spesso non hanno `text` né `viewId`
+     * proprio, solo un `contentDescription` sul contenitore (pattern comune per TalkBack). Senza
+     * questo controllo il tap veniva scartato come rumore pur avendo un selettore valido, e la
+     * selezione dalla lista spariva dal flusso esportato.
+     */
     fun isNoiseTap(action: RecordedAction.Tap): Boolean =
         isSystemChromeTap(action.packageName, action.viewId, action.text, action.contentDescription) ||
             isNoiseViewId(action.viewId) ||
-            (action.viewId == null && action.text.isNullOrBlank() && action.pointPercentX == null)
+            (
+                action.viewId == null &&
+                    action.text.isNullOrBlank() &&
+                    action.contentDescription.isNullOrBlank() &&
+                    action.pointPercentX == null
+                )
 
     /**
      * Normalizza id corto in `package:id/name` quando possibile.

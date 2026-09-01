@@ -6,7 +6,6 @@ package dev.accessscope.scanner.recorder.optimization.noise
 import dev.accessscope.scanner.recorder.MaestroSelectorHeuristics
 import dev.accessscope.scanner.recorder.RecordedAction
 import dev.accessscope.scanner.recorder.model.StepExecutionMode
-import dev.accessscope.scanner.util.DebugSessionLog
 
 /**
  * Rimuove tap/wait/scroll non utili per replay e export YAML.
@@ -390,41 +389,7 @@ object NoiseActionFilter {
         if (actions.isEmpty()) return actions
         val coalesced = coalesceDigitSlotInputs(actions)
         val withoutPadDupes = dropRedundantPinPadKeysAndWaits(coalesced)
-        val out = preservePinPadDigitTaps(withoutPadDupes)
-        // #region agent log
-        runCatching {
-            val slotIns = out.count {
-                it is RecordedAction.InputText &&
-                    MaestroSelectorHeuristics.isPinPadDigitSlot(it.viewId)
-            }
-            val optPads = out.count {
-                it is RecordedAction.Tap &&
-                    it.executionMode == StepExecutionMode.Optional &&
-                    MaestroSelectorHeuristics.isPinPadKey(it.viewId, it.text)
-            }
-            val reqPads = out.count {
-                it is RecordedAction.Tap &&
-                    it.executionMode != StepExecutionMode.Optional &&
-                    (
-                        MaestroSelectorHeuristics.isPinPadKey(it.viewId, it.text) ||
-                            MaestroSelectorHeuristics.isPinPadDigitTap(it.text, it.viewId)
-                        )
-            }
-            DebugSessionLog.log(
-                "E",
-                "NoiseActionFilter.normalizePinOrOtpSlotInputs",
-                "normalize_result",
-                mapOf(
-                    "in" to actions.size,
-                    "out" to out.size,
-                    "slotInputs" to slotIns,
-                    "optionalPads" to optPads,
-                    "requiredPads" to reqPads,
-                ),
-            )
-        }
-        // #endregion
-        return out
+        return preservePinPadDigitTaps(withoutPadDupes)
     }
 
     /**

@@ -13,7 +13,6 @@ import dev.accessscope.scanner.recorder.capture.TapIdentityResolver
 import dev.accessscope.scanner.recorder.model.SelectorCandidate
 import dev.accessscope.scanner.recorder.model.StepExecutionMode
 import dev.accessscope.scanner.util.AppFileLogger
-import dev.accessscope.scanner.util.DebugSessionLog
 
 /**
  * Fornisce root accessibility per risolvere nodi quando `event.source` è null.
@@ -101,20 +100,6 @@ class ActionRecorder {
                 )
                 if (tap == null) {
                     logDiscard(event.eventType, packageName, "tap_unresolved")
-                    // #region agent log
-                    DebugSessionLog.log(
-                        "R1",
-                        "ActionRecorder.onEvent",
-                        "tap_discarded",
-                        mapOf(
-                            "reason" to "tap_unresolved",
-                            "pkg" to packageName,
-                            "eventText" to event.text?.firstOrNull()?.toString(),
-                            "eventCd" to event.contentDescription?.toString(),
-                            "hasSource" to (runCatching { event.source != null }.getOrDefault(false)),
-                        ),
-                    )
-                    // #endregion
                 } else {
                     val key = tapKey(tap)
                     val pinPadDigit = tap is RecordedAction.Tap &&
@@ -123,32 +108,12 @@ class ActionRecorder {
                                 MaestroSelectorHeuristics.isPinPadDigitTap(tap.text, tap.viewId)
                             )
                     if (!pinPadDigit && key == lastTapKey && now - lastTapAtMs < TAP_DEBOUNCE_MS) {
-                        // #region agent log
-                        DebugSessionLog.log(
-                            "R2",
-                            "ActionRecorder.onEvent",
-                            "tap_debounced",
-                            mapOf("key" to key, "text" to (tap as? RecordedAction.Tap)?.text),
-                        )
-                        // #endregion
                         return out
                     }
                     lastTapKey = key
                     lastTapAtMs = now
                     clearPendingDialogIfDismiss(tap)
                     out += tap
-                    // #region agent log
-                    DebugSessionLog.log(
-                        "R1",
-                        "ActionRecorder.onEvent",
-                        "tap_recorded",
-                        mapOf(
-                            "text" to (tap as? RecordedAction.Tap)?.text,
-                            "viewId" to (tap as? RecordedAction.Tap)?.viewId,
-                            "hasPoint" to ((tap as? RecordedAction.Tap)?.pointPercentX != null),
-                        ),
-                    )
-                    // #endregion
                 }
             }
             AccessibilityEvent.TYPE_VIEW_LONG_CLICKED -> {
@@ -179,38 +144,12 @@ class ActionRecorder {
                 if (editable) {
                     // PIN + conferma: nuovo focus su editabile → flush campo precedente.
                     if (pendingText != null) {
-                        // #region agent log
-                        DebugSessionLog.log(
-                            "H4",
-                            "ActionRecorder.onEvent",
-                            "flush_on_editable_focus",
-                            mapOf(
-                                "focusViewId" to focusViewId,
-                                "pendingViewId" to pendingText?.viewId,
-                                "pendingPwd" to pendingText?.isPassword,
-                            ),
-                        )
-                        // #endregion
                         flushPendingText()?.let(out::add)
                     }
                     out += updatePendingText(event, packageName, now, rootProvider)
                 }
             }
             AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED -> {
-                // #region agent log
-                if (pendingText != null) {
-                    DebugSessionLog.log(
-                        "H5",
-                        "ActionRecorder.onEvent",
-                        "flush_on_window_state",
-                        mapOf(
-                            "pkg" to packageName,
-                            "pendingViewId" to pendingText?.viewId,
-                            "pendingPwd" to pendingText?.isPassword,
-                        ),
-                    )
-                }
-                // #endregion
                 flushPendingText()?.let(out::add)
                 // Dialog chiuso senza TYPE_VIEW_CLICKED (evidenza KYC AXA): sintetizza dismiss.
                 synthesizeDismissIfDialogClosed(event, packageName, now)?.let(out::add)
@@ -455,21 +394,6 @@ class ActionRecorder {
             else -> null
         }
         if (reason != null) {
-            // #region agent log
-            DebugSessionLog.log(
-                "H4",
-                "ActionRecorder.updatePendingText",
-                "flush_pending_before_update",
-                mapOf(
-                    "reason" to reason,
-                    "pendingViewId" to pending?.viewId,
-                    "newViewId" to viewId,
-                    "isPassword" to isPassword,
-                    "pinLike" to pinLike,
-                    "gapMs" to (pending?.let { now - it.timestampMs }),
-                ),
-            )
-            // #endregion
             flushPendingText()?.let(flushed::add)
         }
 
@@ -914,20 +838,6 @@ class ActionRecorder {
             .distinctBy { it.lowercase() }
         val isDialog = isDialogClass(className) || title != null || dismissLabels.isNotEmpty()
 
-        // #region agent log
-        DebugSessionLog.log(
-            "E",
-            "ActionRecorder.capturePopupOpen",
-            if (isDialog) "popup_open" else "popup_assert_miss",
-            mapOf(
-                "className" to className.substringAfterLast('.').take(48),
-                "itemCount" to items.size,
-                "items" to items.joinToString("|") { it.take(40) }.take(160),
-                "title" to title?.take(80),
-                "dismiss" to dismissLabels.joinToString("|").take(80),
-            ),
-        )
-        // #endregion
 
         if (!isDialog) return emptyList()
 
@@ -989,19 +899,6 @@ class ActionRecorder {
 
         val label = preferDismissLabel(pending.dismissLabels) ?: return null
         pendingDialog = null
-        // #region agent log
-        DebugSessionLog.log(
-            "B",
-            "ActionRecorder.synthesizeDismiss",
-            "dismiss_synthesized",
-            mapOf(
-                "label" to label,
-                "title" to pending.title?.take(60),
-                "pkg" to packageName,
-                "gapMs" to (now - pending.openedAtMs),
-            ),
-        )
-        // #endregion
         return RecordedAction.Tap(
             packageName = pending.packageName.ifBlank { packageName },
             text = label.take(80),
@@ -1092,22 +989,6 @@ class ActionRecorder {
             allowRootScan -> findPopupTitleInRoots(rootProvider)
             else -> null
         }
-        // #region agent log
-        if (allowRootScan || eventTitle != null || items.isNotEmpty()) {
-            DebugSessionLog.log(
-                "E",
-                "ActionRecorder.capturePopupAssert",
-                if (title != null) "popup_assert_candidate" else "popup_assert_miss",
-                mapOf(
-                    "allowRootScan" to allowRootScan,
-                    "className" to className.substringAfterLast('.').take(40),
-                    "eventTitle" to eventTitle?.take(80),
-                    "title" to title?.take(80),
-                    "itemCount" to items.size,
-                ),
-            )
-        }
-        // #endregion
         if (title == null) return null
         val key = "$packageName|$title"
         if (key == lastPopupAssertKey && now - lastPopupAssertAtMs < POPUP_ASSERT_DEBOUNCE_MS) return null

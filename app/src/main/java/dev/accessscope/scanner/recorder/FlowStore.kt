@@ -17,7 +17,6 @@ import dev.accessscope.scanner.recorder.quality.ZeroEditReport
 import dev.accessscope.scanner.recorder.quality.ZeroEditSeverity
 import dev.accessscope.scanner.recorder.telemetry.FlowTelemetryCodec
 import dev.accessscope.scanner.util.AppFileLogger
-import dev.accessscope.scanner.util.DebugSessionLog
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
@@ -158,20 +157,6 @@ class FlowStore(context: Context) {
         lastZeroEditReport = report
         val finalActions = report.actions
         val stepCount = writeArtifacts(id, existing.appId, safeName, finalActions, ctx)
-        // #region agent log
-        DebugSessionLog.log(
-            "H6",
-            "FlowStore.updateFlow",
-            "editor_save",
-            mapOf(
-                "id" to id,
-                "count" to finalActions.size,
-                "types" to finalActions.joinToString(",") { it::class.simpleName.orEmpty() },
-                "optimize" to optimize,
-                "zeroEditErrors" to report.errorCount,
-            ),
-        )
-        // #endregion
         val updated = existing.copy(
             name = safeName,
             stepCount = stepCount,

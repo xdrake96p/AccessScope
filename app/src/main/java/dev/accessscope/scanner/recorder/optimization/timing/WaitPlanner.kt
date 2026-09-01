@@ -10,7 +10,6 @@ import dev.accessscope.scanner.recorder.intelligence.ScanIntelligenceBundle
 import dev.accessscope.scanner.recorder.model.FlowTelemetry
 import dev.accessscope.scanner.recorder.model.TransitionKind
 import dev.accessscope.scanner.recorder.optimization.selector.SelectorRanker
-import dev.accessscope.scanner.util.DebugSessionLog
 
 /**
  * Inserisce `waitForAnimationToEnd` e `extendedWaitUntil` con timeout da telemetria/scan.
@@ -145,24 +144,6 @@ object WaitPlanner {
                                         w
                                     }
                                 }
-                            // #region agent log
-                            DebugSessionLog.log(
-                                "H1",
-                                "WaitPlanner.enrich",
-                                "inserted_wait_after_tap",
-                                mapOf(
-                                    "submit" to submit,
-                                    "tapText" to a.text,
-                                    "tapId" to a.viewId,
-                                    "animMs" to animTimeout,
-                                    "quiescenceMs" to quiescenceWait,
-                                    "hasWaitUntil" to (until != null),
-                                    "waitVisibleId" to until?.visibleId,
-                                    "waitVisibleText" to until?.visibleText,
-                                    "nextKind" to next::class.simpleName,
-                                ),
-                            )
-                            // #endregion
                             until?.let(out::add)
                         }
                     }

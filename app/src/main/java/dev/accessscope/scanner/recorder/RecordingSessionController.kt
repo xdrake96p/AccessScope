@@ -8,7 +8,6 @@ import android.view.accessibility.AccessibilityEvent
 import dev.accessscope.scanner.recorder.model.FlowTelemetry
 import dev.accessscope.scanner.recorder.telemetry.RecordingTelemetry
 import dev.accessscope.scanner.util.AppFileLogger
-import dev.accessscope.scanner.util.DebugSessionLog
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -194,26 +193,7 @@ class RecordingSessionController(
         val pkg = event.packageName?.toString() ?: return
         val isClick = event.eventType == AccessibilityEvent.TYPE_VIEW_CLICKED ||
             event.eventType == AccessibilityEvent.TYPE_VIEW_LONG_CLICKED
-        val isWindow = event.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED
         val relevant = isRelevantPackage(pkg, target, rootProvider)
-        // #region agent log
-        if (isClick || isWindow) {
-            DebugSessionLog.log(
-                if (!relevant) "A" else "A",
-                "RecordingSession.onAccessibilityEvent",
-                if (!relevant) "event_skipped_pkg" else "event_accepted",
-                mapOf(
-                    "type" to event.eventType,
-                    "pkg" to pkg,
-                    "target" to target,
-                    "relevant" to relevant,
-                    "paused" to current.isPaused,
-                    "eventText" to event.text?.joinToString("|") { it?.toString().orEmpty() }?.take(120),
-                    "className" to event.className?.toString()?.substringAfterLast('.')?.take(40),
-                ),
-            )
-        }
-        // #endregion
         if (!relevant) {
             val interesting = isClick ||
                 event.eventType == AccessibilityEvent.TYPE_VIEW_TEXT_CHANGED ||
@@ -230,16 +210,6 @@ class RecordingSessionController(
 
         // In pausa: solo PICK esplicito registra; niente cattura automatica.
         if (current.isPaused && !(current.pickMode && event.eventType == AccessibilityEvent.TYPE_VIEW_CLICKED)) {
-            // #region agent log
-            if (isClick) {
-                DebugSessionLog.log(
-                    "A",
-                    "RecordingSession.onAccessibilityEvent",
-                    "event_skipped_paused",
-                    mapOf("pkg" to pkg, "type" to event.eventType),
-                )
-            }
-            // #endregion
             return
         }
 
@@ -252,28 +222,6 @@ class RecordingSessionController(
         if (event.eventType == AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED) {
             telemetryCollector.onContentChanged(System.currentTimeMillis())
         }
-        // #region agent log
-        if (isClick || isWindow) {
-            DebugSessionLog.log(
-                "B",
-                "RecordingSession.onAccessibilityEvent",
-                "recorder_result",
-                mapOf(
-                    "type" to event.eventType,
-                    "pkg" to pkg,
-                    "added" to newActions.size,
-                    "kinds" to newActions.joinToString(",") { it::class.simpleName.orEmpty() },
-                    "texts" to newActions.mapNotNull {
-                        when (it) {
-                            is RecordedAction.Tap -> it.text
-                            is RecordedAction.AssertVisible -> it.text
-                            else -> null
-                        }
-                    }.joinToString("|").take(100),
-                ),
-            )
-        }
-        // #endregion
         if (newActions.isEmpty()) {
             return
         }

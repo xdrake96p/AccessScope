@@ -6,7 +6,42 @@
 **Package:** `dev.accessscope.scanner`  
 **Branch principale sviluppo:** `develop`  
 **Branch release stabile:** `main`  
-**Ultimo aggiornamento:** 1 settembre 2026 (Maestro: picker rubrica/IBAN — sessione REC, heal pipeline, Play)
+**Ultimo aggiornamento:** 1 settembre 2026 (Maestro: fix isNoiseTap su tap solo-contentDescription + rimozione DebugSessionLog)
+
+### Maestro — fix isNoiseTap: tap con solo contentDescription non è rumore (1 settembre 2026)
+
+Registrando su Banca MPS (`it.nexi.bff`, sheet "RUBRICA"/"SELEZIONA IBAN") il picker veniva rilevato
+correttamente (`assertVisible`) e lo scroll catturato, ma il tap di selezione sulla riga (beneficiario o
+IBAN) non arrivava mai nel flusso esportato, in tutte le registrazioni di test disponibili sul device.
+
+Causa: le righe di liste composite (nome + IBAN su due righe) spesso non hanno `text` né `viewId` proprio,
+solo `contentDescription` sul contenitore (pattern comune per TalkBack). `ActionRecorder` cattura
+correttamente il tap con `contentDescription` valorizzato, ma azzera anche `pointPercentX/Y` quando trova
+un cd (non serve più il punto). `MaestroSelectorHeuristics.isNoiseTap()` classificava però come rumore
+qualunque tap con `viewId == null && text vuoto && pointPercentX == null` **senza mai controllare
+`contentDescription`** — quindi proprio i tap identificabili solo via cd venivano scartati da
+`NoiseActionFilter.dropNoiseTaps()` al salvataggio (e sarebbero stati scartati di nuovo da `FlowPlayer` al
+Play, stessa funzione condivisa).
+
+- `isNoiseTap` ora richiede anche `contentDescription` vuoto prima di considerare un tap rumore.
+  `MaestroYamlExporter` sa già esportare selettori `cd=...`, quindi il fix non introduce YAML non valido.
+- Nuovo `MaestroSelectorHeuristicsTest.kt` con la fixture reale (riga "Fornitore Demo Srl, IBAN
+  IT20A0…") sia su `isNoiseTap` diretto sia attraverso `NoiseActionFilter.dropNoiseTaps`.
+- Diagnosi fatta da device reale: `adb run-as` per estrarre i flussi salvati (`filesDir/maestro_flows/`) e
+  il log diagnostico (`filesDir/logs/accessscope.log`) — il log mostrava i tap effettivamente catturati
+  (`RecordingSession: added ... type=1`) nella finestra dell'interazione, confermando che il problema era
+  a valle della cattura (noise filter), non un touch perso per overlay.
+
+Rimosso anche `DebugSessionLog` (istrumentazione di debug di una sessione Cursor precedente, marcata
+"Rimuovere dopo verifica" nel suo stesso commento): ~47 call site su 8 file (`ActionRecorder.kt`,
+`FlowPlayer.kt`, `WaitPlanner.kt`, `FlowStore.kt`, `RecordingSessionController.kt`,
+`FlowOptimizationPipeline.kt`, `NoiseActionFilter.kt`, `AccessScopeApp.kt`) + il file stesso. Ogni
+digitazione durante la registrazione tentava una POST HTTP verso `127.0.0.1:7281` (silenziosa/innocua su
+device reale ma comunque codice morto) oltre a scrivere su un path assoluto locale del developer.
+Ripulita anche la manciata di `if`/`runCatching` rimasti vuoti dopo la rimozione delle chiamate.
+
+Verifica: `./gradlew :app:testDebugUnitTest :app:assembleDebug` — compilazione pulita, stessi 2 fallimenti
+preesistenti e non collegati in `PlayReportCodecTest` (invariati rispetto a prima di questo lavoro).
 
 ### Usabilità Maestro: card flusso e editor step più puliti (1 settembre 2026)
 

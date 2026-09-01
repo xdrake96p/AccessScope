@@ -18,7 +18,6 @@ import dev.accessscope.scanner.recorder.model.SelectorCandidate
 import dev.accessscope.scanner.recorder.model.SelectorWin
 import dev.accessscope.scanner.recorder.model.StepExecutionMode
 import dev.accessscope.scanner.util.AppFileLogger
-import dev.accessscope.scanner.util.DebugSessionLog
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlin.coroutines.resume
@@ -78,7 +77,6 @@ class FlowPlayer(
             }
         }
         val total = actions.size
-        // #region agent log
         val pinSlotInputs = actions.count {
             it is RecordedAction.InputText &&
                 MaestroSelectorHeuristics.isPinPadDigitSlot(it.viewId)
@@ -98,74 +96,13 @@ class FlowPlayer(
                         MaestroSelectorHeuristics.isPinPadDigitTap(it.text, it.viewId)
                     )
         }
-        DebugSessionLog.log(
-            "E",
-            "FlowPlayer.play",
-            "pin_flow_summary",
-            mapOf(
-                "total" to total,
-                "pinSlotInputs" to pinSlotInputs,
-                "pinPadTaps" to pinPadTaps,
-                "optionalPadTaps" to optionalPadTaps,
-            ),
-        )
         AppFileLogger.info(
             "FlowPlayer",
             "pin_flow_summary slots=$pinSlotInputs pads=$pinPadTaps optPads=$optionalPadTaps total=$total",
         )
-        // #endregion
         for ((index, action) in actions.withIndex()) {
             currentStepIndex = index
             onStep(index, total)
-            // #region agent log
-            DebugSessionLog.log(
-                "H7",
-                "FlowPlayer.play",
-                "step_begin",
-                mapOf(
-                    "index" to index,
-                    "total" to total,
-                    "type" to action::class.simpleName,
-                    "clearState" to clearState,
-                    "execMode" to when (action) {
-                        is RecordedAction.Tap -> action.executionMode.name
-                        else -> null
-                    },
-                    "viewId" to when (action) {
-                        is RecordedAction.InputText -> action.viewId
-                        is RecordedAction.EraseText -> action.viewId
-                        is RecordedAction.Tap -> action.viewId
-                        is RecordedAction.DoubleTap -> action.viewId
-                        is RecordedAction.LongPress -> action.viewId
-                        is RecordedAction.AssertVisible -> action.viewId
-                        is RecordedAction.AssertNotVisible -> action.viewId
-                        is RecordedAction.Wait -> action.visibleId
-                        is RecordedAction.ScrollUntilVisible -> action.visibleId
-                        else -> null
-                    },
-                    "text" to when (action) {
-                        is RecordedAction.Tap -> action.text
-                        is RecordedAction.DoubleTap -> action.text
-                        is RecordedAction.AssertVisible -> action.text
-                        is RecordedAction.AssertNotVisible -> action.text
-                        is RecordedAction.Wait -> action.visibleText
-                        is RecordedAction.ScrollUntilVisible -> action.visibleText
-                        else -> null
-                    },
-                    "timeoutMs" to when (action) {
-                        is RecordedAction.Wait -> action.timeoutMs
-                        is RecordedAction.WaitForAnimation -> action.timeoutMs
-                        is RecordedAction.AssertVisible -> action.timeoutMs
-                        is RecordedAction.AssertNotVisible -> action.timeoutMs
-                        is RecordedAction.ScrollUntilVisible -> action.timeoutMs
-                        else -> null
-                    },
-                    "isPassword" to ((action as? RecordedAction.InputText)?.isPassword ?: false),
-                    "textLen" to ((action as? RecordedAction.InputText)?.text?.length ?: 0),
-                    "textMasked" to ((action as? RecordedAction.InputText)?.text == "****"),
-                ),
-            )
-            // #endregion
             val err = runCatching {
                 lastStepDataUsed = null
                 when {
@@ -175,14 +112,6 @@ class FlowPlayer(
                 }
             }.exceptionOrNull()?.message
             if (err != null) {
-                // #region agent log
-                DebugSessionLog.log(
-                    "D",
-                    "FlowPlayer.play",
-                    "step_fail",
-                    mapOf("index" to index, "err" to err, "type" to action::class.simpleName),
-                )
-                // #endregion
                 if (isOptionalStep(action)) {
                     AppFileLogger.info("FlowPlayer", "skip_optional i=$index err=$err")
                     recordStepResult(action, index, PlayStepStatus.SKIPPED_OPTIONAL, err)
@@ -405,14 +334,6 @@ class FlowPlayer(
         val deadline = System.currentTimeMillis() + timeout
         var lastSig: String? = null
         var stableSince = System.currentTimeMillis()
-        // #region agent log
-        DebugSessionLog.log(
-            "H1",
-            "FlowPlayer.waitForAnimationToEnd",
-            "start",
-            mapOf("timeoutMs" to timeout),
-        )
-        // #endregion
         while (System.currentTimeMillis() < deadline) {
             val sig = uiStabilitySignature()
             val now = System.currentTimeMillis()
@@ -514,26 +435,6 @@ class FlowPlayer(
                 null
             }
             val waitElapsed = System.currentTimeMillis() - waitStarted
-            // #region agent log
-            DebugSessionLog.log(
-                "A",
-                "FlowPlayer.tap",
-                "tap_target",
-                mapOf(
-                    "chainIndex" to ci,
-                    "viewId" to candidate.viewId,
-                    "text" to candidate.text,
-                    "found" to (node != null),
-                    "nodeText" to node?.text?.toString()?.take(40),
-                    "nodeViewId" to node?.viewIdResourceName?.substringAfterLast('/'),
-                    "clickable" to node?.isClickable,
-                    "hasPoint" to (candidate.pointPercentX != null),
-                    "isPinPad" to isPinPad,
-                    "optional" to (action.executionMode == StepExecutionMode.Optional),
-                    "findTimeoutMs" to findTimeout,
-                    "waitElapsedMs" to waitElapsed,
-                ),
-            )
             if (isPinPad) {
                 AppFileLogger.info(
                     "FlowPlayer",
@@ -542,7 +443,6 @@ class FlowPlayer(
                         "opt=${action.executionMode == StepExecutionMode.Optional}",
                 )
             }
-            // #endregion
             if (node != null) {
                 try {
                     performTapOnNode(svc, probe, node)
@@ -562,14 +462,6 @@ class FlowPlayer(
                 }
             }
             if (!hasLogical && candidate.pointPercentX != null && candidate.pointPercentY != null) {
-                // #region agent log
-                DebugSessionLog.log(
-                    "F3",
-                    "FlowPlayer.tap",
-                    "point_only",
-                    mapOf("chainIndex" to ci, "hasPoint" to true),
-                )
-                // #endregion
                 clickPointFallback(svc, candidate.pointPercentX, candidate.pointPercentY, null)
                 if (ci > 0) {
                     selectorWins += SelectorWin(
@@ -587,14 +479,6 @@ class FlowPlayer(
                 return
             }
         }
-        // #region agent log
-        DebugSessionLog.log(
-            "F3",
-            "FlowPlayer.tap",
-            "skip_stale_point_fallback",
-            mapOf("text" to action.text, "viewId" to action.viewId, "chainSize" to chain.size),
-        )
-        // #endregion
         AppFileLogger.info(
             "FlowPlayer",
             "tap_skip_not_found id=${action.viewId} text=${action.text} chain=${chain.size}",
@@ -621,21 +505,6 @@ class FlowPlayer(
             val digit = action.text?.trim()?.takeIf { it.length == 1 && it[0].isDigit() }
                 ?: pinPadKeyToDigit(action.viewId)
             val ok = !digit.isNullOrBlank() && inputPinDigitOnSlots(svc, digit.orEmpty())
-            // #region agent log
-            DebugSessionLog.log(
-                "C",
-                "FlowPlayer.tap",
-                "pin_digit_fallback",
-                mapOf(
-                    "digit" to digit,
-                    "ok" to ok,
-                    "viewId" to action.viewId,
-                    "text" to action.text,
-                    "optional" to (action.executionMode == StepExecutionMode.Optional),
-                    "step" to currentStepIndex,
-                ),
-            )
-            // #endregion
             if (ok) {
                 AppFileLogger.info("FlowPlayer", "pin_digit_fallback digit=$digit ok=true")
                 noteDivergence(
@@ -713,14 +582,6 @@ class FlowPlayer(
                         if (node.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args)) {
                             wrote++
                             done = true
-                            // #region agent log
-                            DebugSessionLog.log(
-                                "B",
-                                "FlowPlayer.inputPinCodeOnSlots",
-                                "wrote_digit",
-                                mapOf("slot" to n, "digit" to ch.toString()),
-                            )
-                            // #endregion
                             break
                         }
                     } finally {
@@ -772,36 +633,16 @@ class FlowPlayer(
                             )
                         }
                         if (node.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args)) {
-                            // #region agent log
-                            DebugSessionLog.log(
-                                "C",
-                                "FlowPlayer.inputPinDigitOnSlots",
-                                "wrote_slot",
-                                mapOf(
-                                    "digit" to digit,
-                                    "slot" to n,
-                                    "slots" to slotSnapshot.joinToString(","),
-                                ),
-                            )
-                            // #endregion
                             return true
                         }
                     } finally {
                         node.recycle()
                     }
                 }
-                // #region agent log
-                DebugSessionLog.log(
-                    "C",
-                    "FlowPlayer.inputPinDigitOnSlots",
-                    "no_empty_slot",
-                    mapOf("digit" to digit, "slots" to slotSnapshot.joinToString(","), "pkg" to pkg),
-                )
                 AppFileLogger.info(
                     "FlowPlayer",
                     "pin_slots_full digit=$digit slots=${slotSnapshot.joinToString(",")}",
                 )
-                // #endregion
             }
             // Campo PIN singolo (pincode) senza slot editN: append cifra.
             if (appendPinDigitOnPinLikeField(roots, digit)) {
@@ -837,12 +678,6 @@ class FlowPlayer(
                     )
                 }
                 if (editable.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args)) {
-                    DebugSessionLog.log(
-                        "C",
-                        "FlowPlayer.appendPinDigitOnPinLikeField",
-                        "appended",
-                        mapOf("viewId" to viewId, "len" to next.length),
-                    )
                     AppFileLogger.info("FlowPlayer", "pin_field_append id=$viewId len=${next.length}")
                     return true
                 }
@@ -941,20 +776,6 @@ class FlowPlayer(
                         target.contentDescription?.toString()?.equals(action.text, ignoreCase = true) == true
                     )
             val preferGesture = ambiguous || (labelLeaf && !target.isClickable)
-            // #region agent log
-            DebugSessionLog.log(
-                "F2",
-                "FlowPlayer.tap",
-                if (preferGesture) "gesture_on_label" else "action_click",
-                mapOf(
-                    "text" to action.text,
-                    "nodeViewId" to vid?.substringAfterLast('/'),
-                    "ambiguous" to ambiguous,
-                    "labelLeaf" to labelLeaf,
-                    "clickable" to target.isClickable,
-                ),
-            )
-            // #endregion
             val clicked = if (!preferGesture) {
                 target.performAction(AccessibilityNodeInfo.ACTION_CLICK)
             } else {
@@ -1181,14 +1002,6 @@ class FlowPlayer(
                 "FlowPlayer",
                 "assertVisible_optional_skip id=${action.viewId} text=${action.text?.take(40)}",
             )
-            // #region agent log
-            DebugSessionLog.log(
-                "F4",
-                "FlowPlayer.assertVisible",
-                "optional_skip",
-                mapOf("text" to action.text?.take(60), "viewId" to action.viewId),
-            )
-            // #endregion
             return
         }
         error("assertVisible fallito id=${action.viewId} text=${action.text}")
@@ -1301,34 +1114,12 @@ class FlowPlayer(
         )
         lastStepDataUsed = maskDataForReport(resolvedText, action)
         val node = waitForInputTarget(svc, action.viewId, action.packageName, INPUT_FIND_TIMEOUT_MS)
-        // #region agent log
-        DebugSessionLog.log(
-            "B",
-            "FlowPlayer.inputText",
-            "target_found",
-            mapOf(
-                "viewId" to action.viewId,
-                "found" to (node != null),
-                "editable" to (node?.isEditable),
-                "password" to (node?.isPassword),
-                "clickable" to (node?.isClickable),
-                "className" to (node?.className?.toString()),
-                "nodeViewId" to (node?.viewIdResourceName),
-                "isPasswordAction" to action.isPassword,
-                "textMasked" to (action.text == "****"),
-                "textLen" to resolvedText.length,
-                "fromVault" to (resolvedText != action.text),
-                "isPinSlot" to MaestroSelectorHeuristics.isPinPadDigitSlot(action.viewId),
-                "step" to currentStepIndex,
-            ),
-        )
         if (MaestroSelectorHeuristics.isPinPadDigitSlot(action.viewId)) {
             AppFileLogger.info(
                 "FlowPlayer",
                 "pin_slot_input_text id=${action.viewId} len=${resolvedText.length} found=${node != null}",
             )
         }
-        // #endregion
         // Slot OTP/PIN: ogni EditText tiene 1 cifra — SET_TEXT del codice intero su edit1
         // lascia solo la prima (evidenza e1:1). Distribuisci su edit1…editN.
         if (MaestroSelectorHeuristics.isPinPadDigitSlot(action.viewId) &&
@@ -1337,18 +1128,10 @@ class FlowPlayer(
         ) {
             node?.recycle()
             val ok = inputPinCodeOnSlots(svc, action.packageName, resolvedText, action.viewId)
-            // #region agent log
-            DebugSessionLog.log(
-                "B",
-                "FlowPlayer.inputText",
-                "pin_code_distributed",
-                mapOf("ok" to ok, "len" to resolvedText.length, "viewId" to action.viewId),
-            )
             AppFileLogger.info(
                 "FlowPlayer",
                 "pin_code_distributed ok=$ok len=${resolvedText.length}",
             )
-            // #endregion
             if (!ok) {
                 if (action.executionMode == StepExecutionMode.Optional) return
                 error("Impossibile inserire PIN/OTP sugli slot (${action.viewId})")
@@ -1371,28 +1154,8 @@ class FlowPlayer(
             // Molti EditText/Compose richiedono CLICK prima di accettare SET_TEXT.
             val clicked = node.performAction(AccessibilityNodeInfo.ACTION_CLICK)
             val focused = node.performAction(AccessibilityNodeInfo.ACTION_FOCUS)
-            // #region agent log
-            DebugSessionLog.log(
-                "B",
-                "FlowPlayer.inputText",
-                "after_click_focus",
-                mapOf(
-                    "clicked" to clicked,
-                    "focused" to focused,
-                    "viewId" to action.viewId,
-                ),
-            )
-            // #endregion
             if (!clicked) {
                 gestureTapOnNode(svc, node)
-                // #region agent log
-                DebugSessionLog.log(
-                    "B",
-                    "FlowPlayer.inputText",
-                    "gesture_fallback_done",
-                    mapOf("viewId" to action.viewId),
-                )
-                // #endregion
             }
             delay(250)
 
@@ -1410,59 +1173,19 @@ class FlowPlayer(
                     "segreto \${$secretName} non risolto (${action.viewId ?: "no-id"}) → " +
                         "in CI serve maestro test -e $secretName=...",
                 )
-                // #region agent log
-                DebugSessionLog.log(
-                    "C",
-                    "FlowPlayer.inputText",
-                    "password_skip_set_text",
-                    mapOf(
-                        "viewId" to action.viewId,
-                        "reason" to "text_is_masked_or_placeholder",
-                        "isPasswordFlag" to action.isPassword,
-                    ),
-                )
-                // #endregion
                 return
             }
 
-            // #region agent log
-            DebugSessionLog.log(
-                "B",
-                "FlowPlayer.inputText",
-                "will_set_text",
-                mapOf(
-                    "viewId" to action.viewId,
-                    "isPasswordFlag" to action.isPassword,
-                    "textLen" to resolvedText.length,
-                    "textMasked" to false,
-                    "isPinSlot" to MaestroSelectorHeuristics.isPinPadDigitSlot(action.viewId),
-                ),
-            )
-            // #endregion
             val args = Bundle().apply {
                 putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, resolvedText)
             }
             val setOk = node.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args)
-            // #region agent log
-            DebugSessionLog.log(
-                "B",
-                "FlowPlayer.inputText",
-                "set_text_primary",
-                mapOf(
-                    "ok" to setOk,
-                    "viewId" to action.viewId,
-                    "stillEditable" to node.isEditable,
-                    "textLen" to resolvedText.length,
-                    "isPinSlot" to MaestroSelectorHeuristics.isPinPadDigitSlot(action.viewId),
-                ),
-            )
             if (MaestroSelectorHeuristics.isPinPadDigitSlot(action.viewId)) {
                 AppFileLogger.info(
                     "FlowPlayer",
                     "pin_slot_set_text id=${action.viewId} ok=$setOk len=${resolvedText.length}",
                 )
             }
-            // #endregion
             if (setOk) {
                 // Chiudi IME così i tap successivi (es. CONTINUA) non restano coperti.
                 hideSoftInputBestEffort()
@@ -1474,19 +1197,6 @@ class FlowPlayer(
             try {
                 val fallbackOk = focusedNode != null &&
                     focusedNode.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args)
-                // #region agent log
-                DebugSessionLog.log(
-                    "E",
-                    "FlowPlayer.inputText",
-                    "set_text_fallback",
-                    mapOf(
-                        "ok" to fallbackOk,
-                        "focusedFound" to (focusedNode != null),
-                        "focusedId" to focusedNode?.viewIdResourceName,
-                        "focusedEditable" to focusedNode?.isEditable,
-                    ),
-                )
-                // #endregion
                 if (fallbackOk) {
                     hideSoftInputBestEffort()
                     delay(400)
@@ -1519,14 +1229,6 @@ class FlowPlayer(
         } finally {
             root?.recycle()
         }
-        // #region agent log
-        DebugSessionLog.log(
-            "P2",
-            "FlowPlayer.hideSoftInput",
-            "clear_focus_only_no_back",
-            mapOf("ok" to true),
-        )
-        // #endregion
     }
 
     /**
@@ -1584,18 +1286,6 @@ class FlowPlayer(
                         }
                     }
                 }
-                // #region agent log
-                DebugSessionLog.log(
-                    "PIN",
-                    "FlowPlayer.findInputTarget",
-                    "strict_miss_no_fallback",
-                    mapOf(
-                        "viewIdQuery" to viewId,
-                        "shortWanted" to shortWanted,
-                        "roots" to roots.size,
-                    ),
-                )
-                // #endregion
                 return null
             }
             // Solo senza id: primo editable (step editor grezzi).
@@ -1649,14 +1339,6 @@ class FlowPlayer(
     private suspend fun waitUntil(action: RecordedAction.Wait) {
         val deadline = System.currentTimeMillis() + action.timeoutMs
         if (action.visibleId.isNullOrBlank() && action.visibleText.isNullOrBlank()) {
-            // #region agent log
-            DebugSessionLog.log(
-                "H8",
-                "FlowPlayer.waitUntil",
-                "timed_wait",
-                mapOf("timeoutMs" to action.timeoutMs),
-            )
-            // #endregion
             // Rispetta il timeout editor (prima era capped a DEFAULT_ANIM_MS → wait + ignorato).
             delay(action.timeoutMs.coerceIn(0L, 60_000L))
             return
@@ -1731,19 +1413,6 @@ class FlowPlayer(
                     findByContentDescription(root, contentDescription)?.let { return it }
                 }
             }
-            // #region agent log
-            DebugSessionLog.log(
-                "P1",
-                "FlowPlayer.findNode",
-                "not_found",
-                mapOf(
-                    "viewId" to viewId,
-                    "text" to text,
-                    "roots" to roots.size,
-                    "rootPkgs" to roots.mapNotNull { it.packageName?.toString() }.joinToString(","),
-                ),
-            )
-            // #endregion
             return null
         } finally {
             roots.forEach { it.recycle() }
@@ -1915,18 +1584,6 @@ class FlowPlayer(
             val cd = node.contentDescription?.toString()
             if (t.equals(label, ignoreCase = true) || cd.equals(label, ignoreCase = true)) {
                 if (node.isClickable || node.isCheckable) {
-                    // #region agent log
-                    DebugSessionLog.log(
-                        "F1",
-                        "FlowPlayer.climbToClickable",
-                        "keep_exact_label_leaf",
-                        mapOf(
-                            "label" to label,
-                            "leafClickable" to true,
-                            "viewId" to node.viewIdResourceName?.substringAfterLast('/'),
-                        ),
-                    )
-                    // #endregion
                     return AccessibilityNodeInfo.obtain(node)
                 }
             }
@@ -1938,31 +1595,8 @@ class FlowPlayer(
             if (c.isClickable || c.isCheckable) {
                 val vid = c.viewIdResourceName
                 if (!MaestroSelectorHeuristics.isAmbiguousSharedViewId(vid)) {
-                    // #region agent log
-                    DebugSessionLog.log(
-                        "F1",
-                        "FlowPlayer.climbToClickable",
-                        "accepted_row",
-                        mapOf(
-                            "label" to label,
-                            "viewId" to vid?.substringAfterLast('/'),
-                            "nodeText" to c.text?.toString()?.take(40),
-                        ),
-                    )
-                    // #endregion
                     return c
                 }
-                // #region agent log
-                DebugSessionLog.log(
-                    "F1",
-                    "FlowPlayer.climbToClickable",
-                    "skip_ambiguous",
-                    mapOf(
-                        "label" to label,
-                        "viewId" to vid?.substringAfterLast('/'),
-                    ),
-                )
-                // #endregion
             }
             val parent = c.parent
             c.recycle()
@@ -1970,18 +1604,6 @@ class FlowPlayer(
             depth++
         }
         current?.recycle()
-        // #region agent log
-        DebugSessionLog.log(
-            "F1",
-            "FlowPlayer.climbToClickable",
-            "keep_leaf_label",
-            mapOf(
-                "label" to label,
-                "leafText" to node.text?.toString()?.take(40),
-                "leafClickable" to node.isClickable,
-            ),
-        )
-        // #endregion
         return AccessibilityNodeInfo.obtain(node)
     }
 

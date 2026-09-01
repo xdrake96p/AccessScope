@@ -36,7 +36,6 @@ import dev.accessscope.scanner.service.PlaybackOverlayService
 import dev.accessscope.scanner.service.RecordingOverlayService
 import dev.accessscope.scanner.service.ScanOverlayService
 import dev.accessscope.scanner.util.AppFileLogger
-import dev.accessscope.scanner.util.DebugSessionLog
 import dev.accessscope.scanner.recorder.ScanRecorderMutexPolicy
 import dev.accessscope.scanner.recorder.intelligence.ScanIntelligenceProvider
 import dev.accessscope.scanner.recorder.model.OptimizationContext
@@ -394,21 +393,6 @@ class AccessScopeApp : Application() {
         val actions = flowStore.readActions(flow.id)
             ?: return "Flusso senza azioni tipizzate — ri-registra o importa YAML."
         val sanitized = FlowOptimizer.sanitizeForPlay(actions)
-        // #region agent log
-        DebugSessionLog.log(
-            "H7",
-            "AccessScopeApp.startFlowPlayback",
-            "play_actions",
-            mapOf(
-                "flowId" to flow.id,
-                "rawCount" to actions.size,
-                "playCount" to sanitized.size,
-                "clearState" to clearState,
-                "rawTypes" to actions.joinToString(",") { it::class.simpleName.orEmpty() },
-                "playTypes" to sanitized.joinToString(",") { it::class.simpleName.orEmpty() },
-            ),
-        )
-        // #endregion
         if (!playbackController.begin(flow.id, sanitized.size, withScan)) {
             return "Impossibile avviare il playback"
         }
