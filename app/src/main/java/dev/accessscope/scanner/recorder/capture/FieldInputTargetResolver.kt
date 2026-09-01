@@ -6,6 +6,7 @@
 package dev.accessscope.scanner.recorder.capture
 
 import android.view.accessibility.AccessibilityNodeInfo
+import dev.accessscope.scanner.recorder.AccessibilityRootProvider
 import dev.accessscope.scanner.recorder.MaestroSelectorHeuristics
 
 /**
@@ -58,6 +59,16 @@ object FieldInputTargetResolver {
         "close", "chiudi", "cancel", "annulla", "dismiss", "back",
     )
 
+    private val DISMISS_ID_FRAGMENTS = listOf(
+        "close",
+        "dismiss",
+        "img_close",
+        "toolbar_close",
+        "btn_close",
+        "iv_close",
+        "ic_close",
+    )
+
     /**
      * `true` se [node] è un'icona accessorio accanto a un EditText (stesso contenitore).
      */
@@ -79,8 +90,152 @@ object FieldInputTargetResolver {
         val redirectedFromIcon: Boolean,
     )
 
+    /**
+     * Tap che apre sheet picker (icona rubrica/IBAN in form).
+     */
+    fun isPickerOpeningTap(viewId: String?, text: String? = null): Boolean {
+        val shortId = MaestroSelectorHeuristics.shortViewId(viewId)?.lowercase().orEmpty()
+        if (shortId.isNotBlank() && PICKER_OPENING_ID_FRAGMENTS.any { shortId.contains(it) }) return true
+        val t = text?.lowercase().orEmpty()
+        return t.contains("rubrica") && t.length < 20
+    }
+
+    /** Fragmenti id che aprono overlay di selezione (rubrica, IBAN, …) — non reindirizzare a REC. */
+    private val PICKER_OPENING_ID_FRAGMENTS = listOf(
+        "contact",
+        "rubrica",
+        "beneficiar",
+        "iban",
+        "bank",
+        "search",
+        "search_contact",
+        "pick",
+        "picker",
+        "browse",
+    )
+
+    /**
+     * `true` se il tap sull'icona deve aprire un picker (rubrica / IBAN), non focalizzare il campo.
+     */
+    fun opensSelectionPicker(node: AccessibilityNodeInfo): Boolean {
+        val shortId = MaestroSelectorHeuristics.shortViewId(node.viewIdResourceName)?.lowercase().orEmpty()
+        if (shortId.isNotBlank() && PICKER_OPENING_ID_FRAGMENTS.any { shortId.contains(it) }) {
+            val cls = node.className?.toString().orEmpty()
+            if (cls.contains("Image", ignoreCase = true) || node.isClickable) return true
+        }
+        if (!isAccessoryWidgetShape(node)) return false
+        if (shortId.isNotBlank() && PICKER_OPENING_ID_FRAGMENTS.any { shortId.contains(it) }) return true
+        val cd = node.contentDescription?.toString()?.lowercase().orEmpty()
+        return listOf("contact", "rubrica", "iban", "bank", "search", "pick", "select", "browse")
+            .any { cd.contains(it) }
+    }
+
+    /** Campo form collegato a picker (beneficiario / IBAN) per id view. */
+    fun isPickerBackedViewId(viewId: String?): Boolean {
+        val id = MaestroSelectorHeuristics.shortViewId(viewId)?.lowercase().orEmpty()
+        if (id.isBlank()) return false
+        return listOf("beneficiar", "iban", "contact", "rubrica", "cd_iban", "search").any { id.contains(it) }
+    }
+
+    /** Overlay picker aperto in almeno una root accessibility. */
+    fun isPickerOverlayOpen(rootProvider: AccessibilityRootProvider): Boolean {
+        val roots = rootProvider.roots().ifEmpty { listOfNotNull(rootProvider.root()) }
+        if (roots.isEmpty()) return false
+        return try {
+            roots.any { isSelectionPickerOverlay(it) }
+        } finally {
+            roots.forEach { it.recycle() }
+        }
+    }
+
+    /**
+     * Titolo tipico sheet picker beneficiario/IBAN (Banca MPS, Nexi, …).
+     */
+    fun isSelectionPickerTitle(title: String): Boolean {
+        val lower = title.trim().lowercase()
+        if (lower.isBlank()) return false
+        return lower.contains("rubrica") ||
+            lower.contains("iban") ||
+            lower.contains("beneficiar") ||
+            lower.contains("seleziona")
+    }
+
+    /**
+     * Voce lista in picker (beneficiario, IBAN, …) — non hint di campo form.
+     */
+    fun looksLikePickerListItem(text: String): Boolean {
+        val t = text.trim()
+        if (t.length < 4) return false
+        val compact = t.replace(" ", "")
+        if (compact.matches(Regex("^IT[0-9A-Z]{13,34}$", RegexOption.IGNORE_CASE))) return true
+        if (t.contains(" Srl", ignoreCase = true) || t.contains(" Spa", ignoreCase = true)) return true
+        if (t.contains(" S.r.l", ignoreCase = true)) return true
+        if (MaestroSelectorHeuristics.isPopupDismissLabel(t)) return false
+        if (looksLikeFieldLabel(t)) return false
+        return t.split(Regex("\\s+")).size >= 2 && t.length >= 8
+    }
+
+    /**
+     * Label evento tap lista: testo principale o contentDescription.
+     */
+    fun isPickerListLabel(text: String?, contentDescription: String? = null): Boolean {
+        if (!text.isNullOrBlank() && looksLikePickerListItem(text)) return true
+        if (!contentDescription.isNullOrBlank() && looksLikePickerListItem(contentDescription)) return true
+        return false
+    }
+
+    /**
+     * Cerca titolo sheet picker visibile nel subtree.
+     */
+    fun findPickerTitleInTree(root: AccessibilityNodeInfo): String? {
+        val direct = root.text?.toString()?.trim()?.takeIf { isSelectionPickerTitle(it) }
+        if (direct != null) return direct
+        for (i in 0 until root.childCount) {
+            val child = root.getChild(i) ?: continue
+            val found = findPickerTitleInTree(child)
+            child.recycle()
+            if (found != null) return found
+        }
+        return null
+    }
+
+    /**
+     * Icona picker sibling di un EditText (rubrica / IBAN trailing).
+     */
+    fun findPickerIconNearEditable(edit: AccessibilityNodeInfo): AccessibilityNodeInfo? {
+        var parent = edit.parent
+        repeat(4) {
+            val p = parent ?: return null
+            for (i in 0 until p.childCount) {
+                val child = p.getChild(i) ?: continue
+                try {
+                    if (opensSelectionPicker(child)) {
+                        return AccessibilityNodeInfo.obtain(child)
+                    }
+                } finally {
+                    child.recycle()
+                }
+            }
+            val next = p.parent
+            p.recycle()
+            parent = next
+        }
+        parent?.recycle()
+        return null
+    }
+
+    /** Campo form con icona picker accanto — tap sul label apre selezione, non digitazione. */
+    fun isPickerBackedField(node: AccessibilityNodeInfo): Boolean {
+        val icon = findPickerIconNearEditable(node) ?: return false
+        icon.recycle()
+        return true
+    }
+
     /** Se [node] è icona accessorio, restituisce l'EditText sibling; altrimenti copia di [node]. */
     fun resolveFieldTarget(node: AccessibilityNodeInfo): FieldTarget {
+        if (opensSelectionPicker(node)) {
+            return FieldTarget(AccessibilityNodeInfo.obtain(node), redirectedFromIcon = false)
+        }
         if (!isFieldAccessoryIcon(node)) {
             return FieldTarget(AccessibilityNodeInfo.obtain(node), redirectedFromIcon = false)
         }
@@ -158,14 +313,28 @@ object FieldInputTargetResolver {
     fun looksLikeFieldHint(text: String): Boolean = looksLikeFieldLabel(text)
 
     /**
-     * Overlay picker/lista aperta per errore (icona campo tap) — struttura a11y, no stringhe app.
+     * Overlay picker/lista aperta — titolo sheet, struttura dismiss+lista, o search+lista.
      */
     fun isSelectionPickerOverlay(root: AccessibilityNodeInfo): Boolean {
+        val pickerTitle = findPickerTitleInTree(root)
+        if (pickerTitle != null && isSelectionPickerTitle(pickerTitle)) {
+            return hasListLikeContent(root) ||
+                findDismissControl(root) != null ||
+                countEditables(root) <= 1
+        }
         val editables = countEditables(root)
         if (editables > 1) return false
         val hasDismiss = findDismissControl(root) != null
         val listLike = hasListLikeContent(root)
         return hasDismiss && (listLike || editables == 0)
+    }
+
+    /** Titolo picker in almeno una root accessibility. */
+    fun findPickerTitleInRoots(roots: List<AccessibilityNodeInfo>): String? {
+        for (root in roots) {
+            findPickerTitleInTree(root)?.let { return it }
+        }
+        return null
     }
 
     private fun isAccessoryWidgetShape(node: AccessibilityNodeInfo): Boolean {
@@ -187,6 +356,12 @@ object FieldInputTargetResolver {
         }
         if (t == "×" || t.equals("x", ignoreCase = true) || cd.equals("close", ignoreCase = true)) {
             return AccessibilityNodeInfo.obtain(root)
+        }
+        val shortId = MaestroSelectorHeuristics.shortViewId(root.viewIdResourceName)?.lowercase().orEmpty()
+        if (shortId.isNotBlank() && DISMISS_ID_FRAGMENTS.any { shortId.contains(it) }) {
+            if (root.isClickable || root.className?.toString().orEmpty().contains("Image", ignoreCase = true)) {
+                return AccessibilityNodeInfo.obtain(root)
+            }
         }
         for (i in 0 until root.childCount) {
             val child = root.getChild(i) ?: continue

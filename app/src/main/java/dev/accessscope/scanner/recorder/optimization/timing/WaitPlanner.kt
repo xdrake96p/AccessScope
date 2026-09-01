@@ -5,6 +5,7 @@ package dev.accessscope.scanner.recorder.optimization.timing
 
 import dev.accessscope.scanner.recorder.MaestroSelectorHeuristics
 import dev.accessscope.scanner.recorder.RecordedAction
+import dev.accessscope.scanner.recorder.capture.FieldInputTargetResolver
 import dev.accessscope.scanner.recorder.intelligence.ScanIntelligenceBundle
 import dev.accessscope.scanner.recorder.model.FlowTelemetry
 import dev.accessscope.scanner.recorder.model.TransitionKind
@@ -243,7 +244,9 @@ object WaitPlanner {
         when (action) {
             is RecordedAction.LaunchApp -> 2_000L
             is RecordedAction.Back -> 1_200L
-            is RecordedAction.Tap -> if (isSubmitLikeTap(action)) 2_000L else 800L
+            is RecordedAction.Tap -> if (isSubmitLikeTap(action)) 2_000L
+            else if (FieldInputTargetResolver.isPickerOpeningTap(action.viewId, action.text)) 1_200L
+            else 800L
             else -> 800L
         }
 

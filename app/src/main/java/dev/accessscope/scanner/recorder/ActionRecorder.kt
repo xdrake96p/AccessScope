@@ -8,6 +8,7 @@ import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
 import dev.accessscope.scanner.recorder.capture.AlertOverlayResolver
 import dev.accessscope.scanner.recorder.capture.FieldInputTargetResolver
+import dev.accessscope.scanner.recorder.capture.PickerSession
 import dev.accessscope.scanner.recorder.capture.TapIdentityResolver
 import dev.accessscope.scanner.recorder.model.SelectorCandidate
 import dev.accessscope.scanner.recorder.model.StepExecutionMode
@@ -50,6 +51,8 @@ class ActionRecorder {
     private var lastPopupAssertAtMs: Long = 0L
     /** Dialog aperto senza tap dismiss a11y (es. KYC Compose/Dialog custom). */
     private var pendingDialog: PendingDialog? = null
+    /** Stato sheet picker rubrica/IBAN durante REC. */
+    private val pickerSession = PickerSession()
 
     private data class PendingText(
         val packageName: String,
@@ -257,12 +260,11 @@ class ActionRecorder {
                 )
             }
             AccessibilityEvent.TYPE_VIEW_SELECTED -> {
-                // Non trattare SELECTED come click generico (tab/list noise).
-                // Accetta solo se il source è clickable/checkable e non duplica un tap recente.
+                val pickerOpen = isPickerRecordingOpen(rootProvider)
                 val src = runCatching { event.source }.getOrNull()
                 val actionable = src != null && (src.isClickable || src.isCheckable)
                 src?.recycle()
-                if (!actionable) {
+                if (!actionable && !pickerOpen) {
                     logDiscard(event.eventType, packageName, "selected_not_actionable")
                     return out
                 }
@@ -308,6 +310,30 @@ class ActionRecorder {
         lastPopupAssertKey = null
         lastPopupAssertAtMs = 0L
         pendingDialog = null
+        pickerSession.reset()
+    }
+
+    /** Picker aperto: stato sessione, overlay strutturale o titolo sheet visibile. */
+    private fun isPickerRecordingOpen(rootProvider: AccessibilityRootProvider): Boolean {
+        if (pickerSession.isOpen()) return true
+        if (FieldInputTargetResolver.isPickerOverlayOpen(rootProvider)) {
+            syncPickerSessionFromOverlay(rootProvider)
+            return true
+        }
+        return false
+    }
+
+    /** Allinea sessione REC se l'overlay picker è visibile ma manca il titolo in stato. */
+    private fun syncPickerSessionFromOverlay(rootProvider: AccessibilityRootProvider) {
+        if (pickerSession.title() != null) return
+        val roots = rootProvider.roots().ifEmpty { listOfNotNull(rootProvider.root()) }
+        try {
+            FieldInputTargetResolver.findPickerTitleInRoots(roots)?.let { title ->
+                pickerSession.onPickerTitle(title, System.currentTimeMillis())
+            }
+        } finally {
+            roots.forEach { it.recycle() }
+        }
     }
 
     /**
@@ -355,6 +381,43 @@ class ActionRecorder {
             hintText = node?.hintText?.toString(),
         )
         val viewId = node?.viewIdResourceName?.takeIf { it.isNotBlank() }
+        val isPickerSelection = node != null && !text.isNullOrBlank() && !isPassword &&
+            (
+                FieldInputTargetResolver.isPickerBackedField(node) ||
+                    FieldInputTargetResolver.isPickerBackedViewId(viewId)
+                ) &&
+            FieldInputTargetResolver.isPickerListLabel(text, null)
+
+        // Selezione da picker: il valore compare come TEXT_CHANGED sul campo (nessun click lista a11y).
+        if (isPickerSelection && node != null) {
+            val out = mutableListOf<RecordedAction>()
+            if (!pickerSession.hasRecentIconTap(now)) {
+                FieldInputTargetResolver.findPickerIconNearEditable(node)?.let { icon ->
+                    val iconId = icon.viewIdResourceName
+                    out += buildPickerIconTap(
+                        packageName = packageName,
+                        icon = icon,
+                        now = now,
+                        screenWidthPx = 0,
+                        screenHeightPx = 0,
+                        event = event,
+                    )
+                    pickerSession.onIconTap(now)
+                    icon.recycle()
+                    AppFileLogger.info(
+                        "ActionRecorder",
+                        "picker_selection_icon_synth id=$iconId value=$text",
+                    )
+                }
+            }
+            pendingText = null
+            out += tapFromEventLabel(packageName, text!!.take(80), now, chainFromLabel = true)
+            pickerSession.close()
+            AppFileLogger.info("ActionRecorder", "picker_selection_rec value=$text viewId=$viewId")
+            resolved.recycleIfNeeded()
+            return out
+        }
+
         resolved.recycleIfNeeded()
         // edit1…edit6 sono EditText reali (OTP SMS / PIN): vanno registrati come inputText.
         // I tap sul pad (uno/due) restano a parte e in optimize diventano Optional se ridondanti.
@@ -485,7 +548,71 @@ class ActionRecorder {
 
         // Popup Compose: click su "Non ora" con source=editabile sotto il dialog.
         val dismissFromEvent = eventLabel != null && MaestroSelectorHeuristics.isPopupDismissLabel(eventLabel)
+        val pickerOpen = isPickerRecordingOpen(rootProvider)
+        val eventCd = event.contentDescription?.toString()?.trim()?.takeIf { it.isNotBlank() }
+
+        // Tap su voce lista picker: source spesso editabile (campo «Ricerca in rubrica» sotto).
+        if (node?.isEditable == true && !longPress && !dismissFromEvent && pickerOpen) {
+            if (FieldInputTargetResolver.isPickerListLabel(eventLabel, eventCd)) {
+                resolved.recycleIfNeeded()
+                AppFileLogger.info(
+                    "ActionRecorder",
+                    "picker_list_item_rec text=${eventLabel ?: eventCd}",
+                )
+                pickerSession.close()
+                return tapFromEventLabel(
+                    packageName,
+                    (eventLabel ?: eventCd)!!.take(80),
+                    now,
+                    chainFromLabel = true,
+                )
+            }
+        }
+
+        // Campo form con icona picker: tap sul label/hint → registra tap icona (apre sheet).
+        if (node != null && node.isEditable && !longPress && !dismissFromEvent) {
+            val fieldLabel = FieldInputTargetResolver.fieldLabelForEditable(node)
+                ?: textOrLabel(eventLabel, node)
+            if (!fieldLabel.isNullOrBlank() &&
+                FieldInputTargetResolver.looksLikeFieldLabel(fieldLabel) &&
+                FieldInputTargetResolver.isPickerBackedField(node)
+            ) {
+                val icon = FieldInputTargetResolver.findPickerIconNearEditable(node)
+                if (icon != null) {
+                    try {
+                        pickerSession.onIconTap(now)
+                        AppFileLogger.info(
+                            "ActionRecorder",
+                            "picker_field_tap_promoted_to_icon label=$fieldLabel id=${icon.viewIdResourceName}",
+                        )
+                        resolved.recycleIfNeeded()
+                        return buildPickerIconTap(
+                            packageName = packageName,
+                            icon = icon,
+                            now = now,
+                            screenWidthPx = screenWidthPx,
+                            screenHeightPx = screenHeightPx,
+                            event = event,
+                        )
+                    } finally {
+                        icon.recycle()
+                    }
+                }
+            }
+        }
+
         if (node?.isEditable == true && !longPress && !dismissFromEvent) {
+            if (pickerOpen && FieldInputTargetResolver.isPickerListLabel(eventLabel, eventCd)) {
+                resolved.recycleIfNeeded()
+                AppFileLogger.info("ActionRecorder", "picker_list_item_rec text=$eventLabel")
+                pickerSession.close()
+                return tapFromEventLabel(
+                    packageName,
+                    (eventLabel ?: eventCd)!!.take(80),
+                    now,
+                    chainFromLabel = true,
+                )
+            }
             val dismissFromUi = alertDismiss?.text
                 ?: findDismissLabelInRoots(rootProvider)
             if (dismissFromUi != null) {
@@ -505,7 +632,8 @@ class ActionRecorder {
             return null
         }
 
-        val iconRedirectEdit = if (node != null && FieldInputTargetResolver.isFieldAccessoryIcon(node)) {
+        val opensPicker = node != null && FieldInputTargetResolver.opensSelectionPicker(node)
+        val iconRedirectEdit = if (node != null && !opensPicker && FieldInputTargetResolver.isFieldAccessoryIcon(node)) {
             FieldInputTargetResolver.findSiblingEditable(node)?.also { edit ->
                 AppFileLogger.info(
                     "ActionRecorder",
@@ -514,6 +642,13 @@ class ActionRecorder {
             }
         } else {
             null
+        }
+        if (opensPicker) {
+            pickerSession.onIconTap(now)
+            AppFileLogger.info(
+                "ActionRecorder",
+                "picker_icon_tap_rec id=${node?.viewIdResourceName} text=$eventLabel",
+            )
         }
         val identity = TapIdentityResolver.resolve(iconRedirectEdit ?: node, event)
         val viewId = identity.viewId
@@ -543,6 +678,13 @@ class ActionRecorder {
                 px = ((x / screenWidthPx) * 100f).coerceIn(0f, 100f)
                 py = ((y / screenHeightPx) * 100f).coerceIn(0f, 100f)
             }
+        } else if (opensPicker && node != null && screenWidthPx > 0 && screenHeightPx > 0) {
+            val bounds = Rect()
+            node.getBoundsInScreen(bounds)
+            if (!bounds.isEmpty) {
+                px = ((bounds.centerX().toFloat() / screenWidthPx) * 100f).coerceIn(0f, 100f)
+                py = ((bounds.centerY().toFloat() / screenHeightPx) * 100f).coerceIn(0f, 100f)
+            }
         } else if (node != null && screenWidthPx > 0 && screenHeightPx > 0) {
             val bounds = Rect()
             node.getBoundsInScreen(bounds)
@@ -566,15 +708,12 @@ class ActionRecorder {
         // Fallback testo evento: Compose dialog senza source ma con label sul click.
         if (viewId == null && text == null && cd == null && (px == null || py == null)) {
             if (!eventLabel.isNullOrBlank()) {
+                if (pickerOpen && FieldInputTargetResolver.isPickerListLabel(eventLabel, eventCd)) {
+                    pickerSession.close()
+                    return tapFromEventLabel(packageName, eventLabel, now, chainFromLabel = true)
+                }
                 val opt = MaestroSelectorHeuristics.isPopupDismissLabel(eventLabel)
-                return RecordedAction.Tap(
-                    packageName = packageName,
-                    text = eventLabel.take(80),
-                    timestampMs = now,
-                    executionMode = if (opt) StepExecutionMode.Optional else StepExecutionMode.Required,
-                    selectorChain = listOf(SelectorCandidate(text = eventLabel.take(80))),
-                    weakSelector = false,
-                )
+                return tapFromEventLabel(packageName, eventLabel, now, optional = opt)
             }
             // Ultima chance: alert overlay / bottone dismiss tipico nelle root.
             val alert = AlertOverlayResolver.findDismiss(rootProvider)
@@ -625,8 +764,51 @@ class ActionRecorder {
                 executionMode = if (optional) StepExecutionMode.Optional else StepExecutionMode.Required,
                 selectorChain = chain,
                 weakSelector = weak,
-            )
+            ).also { tap ->
+                val picked = tap.text ?: eventLabel
+                if (FieldInputTargetResolver.isPickerListLabel(picked, tap.contentDescription)) {
+                    pickerSession.close()
+                }
+            }
         }
+    }
+
+    private fun textOrLabel(eventLabel: String?, node: AccessibilityNodeInfo): String? =
+        eventLabel?.trim()?.takeIf { it.isNotBlank() }
+            ?: node.text?.toString()?.trim()?.takeIf { it.isNotBlank() }
+
+    /** Tap su icona picker (viewId + coordinate centro icona). */
+    private fun buildPickerIconTap(
+        packageName: String,
+        icon: AccessibilityNodeInfo,
+        now: Long,
+        screenWidthPx: Int,
+        screenHeightPx: Int,
+        event: AccessibilityEvent,
+    ): RecordedAction.Tap {
+        val identity = TapIdentityResolver.resolve(icon, event)
+        var px: Float? = null
+        var py: Float? = null
+        if (screenWidthPx > 0 && screenHeightPx > 0) {
+            val bounds = Rect()
+            icon.getBoundsInScreen(bounds)
+            if (!bounds.isEmpty) {
+                px = ((bounds.centerX().toFloat() / screenWidthPx) * 100f).coerceIn(0f, 100f)
+                py = ((bounds.centerY().toFloat() / screenHeightPx) * 100f).coerceIn(0f, 100f)
+            }
+        }
+        val chain = buildRecChain(identity.candidates, px, py)
+        return RecordedAction.Tap(
+            packageName = packageName,
+            viewId = identity.viewId,
+            text = identity.text?.take(80),
+            contentDescription = identity.contentDescription?.take(80),
+            pointPercentX = px,
+            pointPercentY = py,
+            timestampMs = now,
+            selectorChain = chain,
+            weakSelector = identity.weak && identity.viewId == null,
+        )
     }
 
     /**
@@ -761,6 +943,14 @@ class ActionRecorder {
         }
 
         if (title == null) return emptyList()
+        if (FieldInputTargetResolver.isSelectionPickerTitle(title)) {
+            pickerSession.onPickerTitle(title, now)
+            // Sheet comparso senza tap icona recente → rumore REC (assert orphan).
+            if (!pickerSession.hasRecentIconTap(now)) {
+                AppFileLogger.info("ActionRecorder", "picker_assert_skipped_orphan title=$title")
+                return emptyList()
+            }
+        }
         val key = "$packageName|$title"
         if (key == lastPopupAssertKey && now - lastPopupAssertAtMs < POPUP_ASSERT_DEBOUNCE_MS) {
             return emptyList()
@@ -771,6 +961,11 @@ class ActionRecorder {
                 packageName = packageName,
                 text = title.take(80),
                 timestampMs = now,
+                executionMode = if (FieldInputTargetResolver.isSelectionPickerTitle(title)) {
+                    StepExecutionMode.Optional
+                } else {
+                    StepExecutionMode.Required
+                },
             ),
         )
     }
@@ -834,16 +1029,43 @@ class ActionRecorder {
             pending.dismissLabels.any { text.contains(it, ignoreCase = true) }
         ) {
             pendingDialog = null
+            pickerSession.close()
         }
     }
 
     private fun pickPopupTitle(items: List<String>, className: String): String? {
-        val candidates = items.filter { it.length in 8..120 }
+        val candidates = items.filter { it.length in 4..120 && !isNavChromeTitle(it) }
+        candidates.firstOrNull { FieldInputTargetResolver.isSelectionPickerTitle(it) }?.let { return it }
         candidates.firstOrNull { looksLikePopupTitle(it, className) }?.let { return it }
         if (isDialogClass(className)) {
-            return candidates.firstOrNull { !MaestroSelectorHeuristics.isPopupDismissLabel(it) }
+            return candidates.firstOrNull {
+                !MaestroSelectorHeuristics.isPopupDismissLabel(it) && !isNavChromeTitle(it)
+            }
         }
         return null
+    }
+
+    private fun isNavChromeTitle(title: String): Boolean {
+        val lower = title.trim().lowercase()
+        return lower in NAV_CHROME_TITLES || lower.startsWith("torna ")
+    }
+
+    private fun tapFromEventLabel(
+        packageName: String,
+        eventLabel: String,
+        now: Long,
+        optional: Boolean = false,
+        chainFromLabel: Boolean = false,
+    ): RecordedAction.Tap {
+        val label = eventLabel.take(80)
+        return RecordedAction.Tap(
+            packageName = packageName,
+            text = label,
+            timestampMs = now,
+            executionMode = if (optional) StepExecutionMode.Optional else StepExecutionMode.Required,
+            selectorChain = if (chainFromLabel) listOf(SelectorCandidate(text = label)) else emptyList(),
+            weakSelector = false,
+        )
     }
 
     private fun isDialogClass(className: String): Boolean =
@@ -898,6 +1120,8 @@ class ActionRecorder {
     }
 
     private fun looksLikePopupTitle(title: String, className: String): Boolean {
+        if (isNavChromeTitle(title)) return false
+        if (FieldInputTargetResolver.isSelectionPickerTitle(title)) return true
         if (isDialogClass(className)) return true
         val lower = title.lowercase().replace('\n', ' ')
         return POPUP_TITLE_HINTS.any { lower.contains(it) } ||
@@ -1104,6 +1328,13 @@ class ActionRecorder {
             "notifica",
             "abilitare",
             "accedere",
+        )
+        private val NAV_CHROME_TITLES = setOf(
+            "torna indietro",
+            "indietro",
+            "back",
+            "chiudi",
+            "close",
         )
     }
 }

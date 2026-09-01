@@ -6,7 +6,7 @@
 **Package:** `dev.accessscope.scanner`  
 **Branch principale sviluppo:** `develop`  
 **Branch release stabile:** `main`  
-**Ultimo aggiornamento:** 1 settembre 2026 (Usabilità Maestro: menu overflow, conferma delete, editor step guidato)
+**Ultimo aggiornamento:** 1 settembre 2026 (Maestro: picker rubrica/IBAN — sessione REC, heal pipeline, Play)
 
 ### Usabilità Maestro: card flusso e editor step più puliti (1 settembre 2026)
 
@@ -35,6 +35,35 @@ formato dati — solo Compose UI e stringhe (stessa regola d'oro del restyle).
 Verifica: `./gradlew :app:testDebugUnitTest :app:assembleDebug` — compilazione pulita; 2 fallimenti
 preesistenti e non collegati in `PlayReportCodecTest` (`org.json.JSONObject` non mockato in JVM unit test,
 feature "Report test" in corso d'opera, fuori scope di questo lavoro).
+
+### Maestro — picker rubrica/IBAN in registrazione (1 settembre 2026)
+
+Su form BONIFICO SEPA (Banca MPS / Nexi): tap su icona rubrica/IBAN e selezione voce lista
+non venivano registrati (redirect icona→campo, `editable_skip`, assert orphan, Play bloccato ~step 26).
+
+**Registrazione (`ActionRecorder` + `PickerSession`):**
+
+- **`PickerSession`**: stato esplicito Closed → Opening → Open; abilita tap lista anche se l'assert sheet è scartato come orphan.
+- **`picker_selection_rec`**: selezione picker via `TYPE_VIEW_TEXT_CHANGED` sul campo beneficiario/IBAN (Nexi non emette click lista) → tap icona sintetico + tap voce.
+- **`opensSelectionPicker`**: riconosce `img_search_contact` anche su `ImageView` non clickable.
+- **`isPickerBackedViewId`**: campi beneficiario/IBAN per id view.
+- **`isPickerListLabel` / `looksLikePickerListItem`**: tap su beneficiario/IBAN in sheet (testo o contentDescription), bypass `editable_skip` con picker aperto.
+- **`picker_field_tap_promoted_to_icon`**: tap sul label campo con icona picker → registra tap icona (viewId + point).
+- **`isSelectionPickerOverlay`**: rilevamento overlay per titolo sheet + dismiss per id (`img_close`, …).
+
+**Pipeline (`PickerFlowHealer`, `NoiseActionFilter`, `WaitPlanner`):**
+
+- **`dropOrphanPickerAsserts`**: Play non fallisce su assert RUBRICA/SELEZIONA IBAN senza apertura.
+- **`ensurePickerOpenBeforeSelect`**: prima di tap voce lista senza icona nel lookback, reinserisce tap sul campo form.
+- **Wait 1200 ms** dopo tap icona picker.
+
+**Play (`FlowPlayer`):**
+
+- **`waitForInputTarget`**: scroll verso il basso fino a 5 volte prima di fallire (es. `importo_currency` sotto fold form SEPA).
+- **`recoverFromAccidentalPickerOverlay`**: disabilitato per tap icona picker e voci lista.
+- **`tryPickerIconTap`**: fallback tap label campo → icona sibling per flussi legacy.
+
+Test: `PickerFlowHealerTest`, `FieldInputTargetResolverTest`, `FlowOptimizerTest.sanitizeForPlay_*`.
 
 ### Maestro — report esecuzione test (1 settembre 2026)
 

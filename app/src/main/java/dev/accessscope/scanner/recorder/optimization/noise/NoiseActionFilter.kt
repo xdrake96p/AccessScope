@@ -621,6 +621,48 @@ object NoiseActionFilter {
         }
 
     /**
+     * Assert su titolo sheet picker (RUBRICA / SELEZIONA IBAN): optional a Play — verifica REC, non blocco replay.
+     */
+    fun markPickerAssertsOptional(actions: List<RecordedAction>): List<RecordedAction> =
+        actions.map { action ->
+            if (action is RecordedAction.AssertVisible &&
+                action.text != null &&
+                dev.accessscope.scanner.recorder.capture.FieldInputTargetResolver
+                    .isSelectionPickerTitle(action.text)
+            ) {
+                action.copy(executionMode = StepExecutionMode.Optional)
+            } else {
+                action
+            }
+        }
+
+    /**
+     * Rimuove assertVisible su sheet picker senza tap icona/lista che li apre (orphan da WINDOW_STATE).
+     */
+    fun dropOrphanPickerAsserts(actions: List<RecordedAction>): List<RecordedAction> {
+        if (actions.isEmpty()) return actions
+        return actions.filterIndexed { index, action ->
+            if (action !is RecordedAction.AssertVisible || action.text.isNullOrBlank()) return@filterIndexed true
+            if (!dev.accessscope.scanner.recorder.capture.FieldInputTargetResolver
+                    .isSelectionPickerTitle(action.text)
+            ) {
+                return@filterIndexed true
+            }
+            val lookback = (index - 6).coerceAtLeast(0) until index
+            lookback.any { j ->
+                when (val prev = actions[j]) {
+                    is RecordedAction.Tap ->
+                        dev.accessscope.scanner.recorder.capture.FieldInputTargetResolver
+                            .isPickerOpeningTap(prev.viewId, prev.text) ||
+                            dev.accessscope.scanner.recorder.capture.FieldInputTargetResolver
+                                .looksLikePickerListItem(prev.text.orEmpty())
+                    else -> false
+                }
+            }
+        }
+    }
+
+    /**
      * Rimuove tap di focus prima di inputText sullo stesso campo.
      */
     fun dropFocusTapsBeforeInput(actions: List<RecordedAction>): List<RecordedAction> {

@@ -15,6 +15,7 @@ import dev.accessscope.scanner.recorder.optimization.conditional.BlockingOverlay
 import dev.accessscope.scanner.recorder.optimization.conditional.OptionalStepPolicy
 import dev.accessscope.scanner.recorder.optimization.lint.FlowLintAutoFix
 import dev.accessscope.scanner.recorder.optimization.noise.NoiseActionFilter
+import dev.accessscope.scanner.recorder.optimization.picker.PickerFlowHealer
 import dev.accessscope.scanner.recorder.optimization.scroll.ScrollCoalescer
 import dev.accessscope.scanner.recorder.optimization.selector.SelectorNormalizer
 import dev.accessscope.scanner.recorder.optimization.selector.SelectorRanker
@@ -55,7 +56,8 @@ object FlowOptimizationPipeline {
         val afterNoiseTaps = NoiseActionFilter.dropNoiseTaps(afterForeign)
         val afterFocusTaps = NoiseActionFilter.dropFocusTapsBeforeInput(afterNoiseTaps)
         val afterGhost = NoiseActionFilter.dropGhostTapsAfterScrollOrIme(afterFocusTaps) // [condivisa]
-        val afterNoise = ScrollCoalescer.coalesce(afterGhost)
+        val afterPickerHeal = PickerFlowHealer.ensurePickerOpenBeforeSelect(afterGhost, appId)
+        val afterNoise = ScrollCoalescer.coalesce(afterPickerHeal)
         // Prima dei wait: dismiss alert subito dopo CONTINUA (evita input sotto overlay).
         val ordered = BlockingOverlayOrderHealer.reorder(afterNoise)
         val withOverlayWaits = BlockingOverlayWaitPlanner.enrich(ordered, appId)
@@ -88,7 +90,10 @@ object FlowOptimizationPipeline {
         val afterForeign = NoiseActionFilter.dropForeignUiActions(actions, pkg) // [condivisa]
         val afterPinPad = NoiseActionFilter.normalizePinOrOtpSlotInputs(afterForeign) // [condivisa]
         val afterRating = NoiseActionFilter.dropSpuriousRatingAsserts(afterPinPad) // [condivisa]
-        val afterNoiseTaps = NoiseActionFilter.dropPlaybackNoiseTaps(afterRating)
+        val afterPickerAsserts = NoiseActionFilter.markPickerAssertsOptional(afterRating)
+        val afterOrphanPicker = NoiseActionFilter.dropOrphanPickerAsserts(afterPickerAsserts)
+        val afterPickerHeal = PickerFlowHealer.ensurePickerOpenBeforeSelect(afterOrphanPicker, pkg)
+        val afterNoiseTaps = NoiseActionFilter.dropPlaybackNoiseTaps(afterPickerHeal)
         val afterGhost = NoiseActionFilter.dropGhostTapsAfterScrollOrIme(afterNoiseTaps) // [condivisa]
         val afterDupTaps = NoiseActionFilter.dropDuplicateTapsAcrossWaits(afterGhost)
         val afterStructScroll = NoiseActionFilter.dropStructuralScrollUntilVisible(afterDupTaps)

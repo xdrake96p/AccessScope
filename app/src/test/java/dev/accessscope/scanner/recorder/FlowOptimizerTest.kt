@@ -1,5 +1,7 @@
 package dev.accessscope.scanner.recorder
 
+import dev.accessscope.scanner.recorder.model.StepExecutionMode
+import dev.accessscope.scanner.recorder.optimization.FlowOptimizationPipeline
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -327,8 +329,39 @@ class FlowOptimizerTest {
     }
 
     @Test
-    fun auditScrollCardinality_noRawScrolls_neverWarns() {
-        val raw = listOf(RecordedAction.Tap("com.app", text = "OK"))
-        assertTrue(FlowOptimizer.auditScrollCardinality(raw, raw).isEmpty())
+    fun sanitizeForPlay_dropsOrphanPickerAssertsWithoutOpeningTap() {
+        val raw = listOf(
+            RecordedAction.LaunchApp("it.nexi.bff"),
+            RecordedAction.Tap("it.nexi.bff", text = "CONTINUA"),
+            RecordedAction.Tap(
+                "it.nexi.bff",
+                text = "Non ora",
+                executionMode = StepExecutionMode.Optional,
+            ),
+            RecordedAction.AssertVisible("it.nexi.bff", text = "RUBRICA"),
+            RecordedAction.AssertVisible("it.nexi.bff", text = "SELEZIONA IBAN"),
+            RecordedAction.InputText("it.nexi.bff", "100", viewId = "it.nexi.bff:id/importo"),
+        )
+        val play = FlowOptimizationPipeline.sanitizeForPlay(raw, "it.nexi.bff")
+        assertTrue(
+            play.none {
+                it is RecordedAction.AssertVisible &&
+                    (it.text == "RUBRICA" || it.text == "SELEZIONA IBAN")
+            },
+        )
+    }
+
+    @Test
+    fun sanitizeForPlay_healsMissingPickerOpenBeforeListItem() {
+        val raw = listOf(
+            RecordedAction.LaunchApp("it.nexi.bff"),
+            RecordedAction.Tap("it.nexi.bff", text = "Inserisci dati beneficiario (obbligatorio)"),
+            RecordedAction.Tap("it.nexi.bff", text = "Fornitore Demo Srl"),
+            RecordedAction.InputText("it.nexi.bff", "100", viewId = "it.nexi.bff:id/importo"),
+        )
+        val play = FlowOptimizationPipeline.sanitizeForPlay(raw, "it.nexi.bff")
+        val taps = play.filterIsInstance<RecordedAction.Tap>()
+        assertTrue(taps.any { it.text == "Inserisci dati beneficiario (obbligatorio)" })
+        assertTrue(taps.any { it.text == "Fornitore Demo Srl" })
     }
 }

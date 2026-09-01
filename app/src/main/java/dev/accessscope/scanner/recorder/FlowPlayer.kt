@@ -472,6 +472,11 @@ class FlowPlayer(
 
     private suspend fun tap(action: RecordedAction.Tap) {
         val svc = service() ?: error("Servizio accessibilità non collegato")
+        if (!action.text.isNullOrBlank() &&
+            FieldInputTargetResolver.looksLikePickerListItem(action.text)
+        ) {
+            ensurePickerListItemVisible(svc, action.text!!)
+        }
         val chain = action.selectorChain.ifEmpty {
             listOf(
                 SelectorCandidate(
@@ -594,6 +599,21 @@ class FlowPlayer(
             "FlowPlayer",
             "tap_skip_not_found id=${action.viewId} text=${action.text} chain=${chain.size}",
         )
+        tryPickerIconTap(svc, action)?.let { icon ->
+            try {
+                AppFileLogger.info(
+                    "FlowPlayer",
+                    "field_label_picker_icon_fallback label=${action.text} icon=${icon.viewIdResourceName}",
+                )
+                performTapOnNode(svc, action, icon)
+                noteDivergence(
+                    "tap su icona picker al posto del campo (${action.text}) → il CLI userebbe tapOn testo",
+                )
+                return
+            } finally {
+                icon.recycle()
+            }
+        }
         // Pad custom assente dall’albero: digita la cifra sul prossimo EditText editN.
         val isPinPadTap = MaestroSelectorHeuristics.isPinPadKey(action.viewId, action.text) ||
             MaestroSelectorHeuristics.isPinPadDigitTap(action.text, action.viewId)
@@ -849,6 +869,8 @@ class FlowPlayer(
         action: RecordedAction.Tap,
     ) {
         val label = action.text ?: return
+        if (FieldInputTargetResolver.isPickerOpeningTap(action.viewId, action.text)) return
+        if (FieldInputTargetResolver.isPickerListLabel(label, action.contentDescription)) return
         if (!FieldInputTargetResolver.looksLikeFieldLabel(label)) return
         val roots = collectRoots(svc)
         try {
@@ -1045,7 +1067,7 @@ class FlowPlayer(
      */
     private suspend fun eraseText(action: RecordedAction.EraseText) {
         val svc = service() ?: error("Servizio accessibilità non collegato")
-        val node = waitForInputTarget(svc, action.viewId, INPUT_FIND_TIMEOUT_MS)
+        val node = waitForInputTarget(svc, action.viewId, action.packageName, INPUT_FIND_TIMEOUT_MS)
             ?: error("Campo eraseText non trovato (${action.viewId ?: "no-id"})")
         try {
             node.performAction(AccessibilityNodeInfo.ACTION_CLICK)
@@ -1278,7 +1300,7 @@ class FlowPlayer(
             viewId = action.viewId,
         )
         lastStepDataUsed = maskDataForReport(resolvedText, action)
-        val node = waitForInputTarget(svc, action.viewId, INPUT_FIND_TIMEOUT_MS)
+        val node = waitForInputTarget(svc, action.viewId, action.packageName, INPUT_FIND_TIMEOUT_MS)
         // #region agent log
         DebugSessionLog.log(
             "B",
@@ -1513,13 +1535,21 @@ class FlowPlayer(
     private suspend fun waitForInputTarget(
         svc: AccessibilityService,
         viewId: String?,
+        packageName: String,
         timeoutMs: Long,
     ): AccessibilityNodeInfo? {
         val deadline = System.currentTimeMillis() + timeoutMs
+        var scrollAttempts = 0
         while (System.currentTimeMillis() < deadline) {
             val node = findInputTarget(svc, viewId)
             if (node != null) return node
-            delay(250)
+            if (scrollAttempts < 5) {
+                scroll(packageName.ifBlank { svc.packageName }, ScrollDirection.DOWN)
+                scrollAttempts++
+                delay(400)
+            } else {
+                delay(250)
+            }
         }
         return null
     }
@@ -1682,8 +1712,20 @@ class FlowPlayer(
                     }
                 }
                 if (!text.isNullOrBlank()) {
-                    findClickableByLabel(root, text)?.let { return it }
-                    findLabelInTree(root, text)?.let { return it }
+                    if (FieldInputTargetResolver.looksLikePickerListItem(text)) {
+                        val pickerRoots = roots.filter { FieldInputTargetResolver.isSelectionPickerOverlay(it) }
+                        for (root in pickerRoots) {
+                            findClickableByLabel(root, text, allowEditableHint = false)?.let { return it }
+                        }
+                        for (root in roots) {
+                            findClickableByLabel(root, text, allowEditableHint = false)?.let { return it }
+                        }
+                    } else {
+                        for (root in roots) {
+                            findClickableByLabel(root, text)?.let { return it }
+                            findLabelInTree(root, text)?.let { return it }
+                        }
+                    }
                 }
                 if (!contentDescription.isNullOrBlank()) {
                     findByContentDescription(root, contentDescription)?.let { return it }
@@ -1753,8 +1795,14 @@ class FlowPlayer(
     /**
      * Trova nodo cliccabile per testo o contentDescription (bottoni Material/Compose).
      */
-    private fun findClickableByLabel(root: AccessibilityNodeInfo, label: String): AccessibilityNodeInfo? {
-        findEditableByHint(root, label)?.let { return it }
+    private fun findClickableByLabel(
+        root: AccessibilityNodeInfo,
+        label: String,
+        allowEditableHint: Boolean = true,
+    ): AccessibilityNodeInfo? {
+        if (allowEditableHint) {
+            findEditableByHint(root, label)?.let { return it }
+        }
         val list = root.findAccessibilityNodeInfosByText(label)
         try {
             val exact = list?.firstOrNull { node ->
@@ -1776,6 +1824,47 @@ class FlowPlayer(
         }
         return null
     }
+
+    /** Scroll nel picker finché la voce lista non è visibile. */
+    private suspend fun ensurePickerListItemVisible(svc: AccessibilityService, text: String) {
+        repeat(5) {
+            if (findNode(svc, null, text, null) != null) return
+            val roots = collectRoots(svc).filter { FieldInputTargetResolver.isSelectionPickerOverlay(it) }
+            if (roots.isEmpty()) return
+            try {
+                val pkg = roots.first().packageName?.toString() ?: return
+                scroll(pkg, ScrollDirection.DOWN)
+            } finally {
+                roots.forEach { it.recycle() }
+            }
+            delay(350)
+        }
+    }
+
+    /**
+     * REC legacy: tap registrato come label campo → apri picker tramite icona sibling.
+     */
+    private fun tryPickerIconTap(svc: AccessibilityService, action: RecordedAction.Tap): AccessibilityNodeInfo? {
+        val label = action.text ?: return null
+        if (!FieldInputTargetResolver.looksLikeFieldLabel(label)) return null
+        val roots = collectRoots(svc)
+        try {
+            for (root in roots) {
+                val edit = findEditableByHint(root, label) ?: continue
+                try {
+                    findPickerIconNearEditable(edit)?.let { return it }
+                } finally {
+                    edit.recycle()
+                }
+            }
+        } finally {
+            roots.forEach { it.recycle() }
+        }
+        return null
+    }
+
+    private fun findPickerIconNearEditable(edit: AccessibilityNodeInfo): AccessibilityNodeInfo? =
+        FieldInputTargetResolver.findPickerIconNearEditable(edit)
 
     private fun findLabelInTree(node: AccessibilityNodeInfo, label: String): AccessibilityNodeInfo? {
         val t = node.text?.toString()

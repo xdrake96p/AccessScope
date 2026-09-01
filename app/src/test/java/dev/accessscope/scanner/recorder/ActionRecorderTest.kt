@@ -19,6 +19,18 @@ class ActionRecorderTest {
     private val recorder = ActionRecorder()
 
     @Test
+    fun click_withPickerListLabel_producesTap() {
+        val event = AccessibilityEvent.obtain(AccessibilityEvent.TYPE_VIEW_CLICKED).apply {
+            packageName = "it.nexi.bff"
+            text.add("Fornitore Demo Srl")
+        }
+        val actions = recorder.onEvent(event, 1080, 2400)
+        event.recycle()
+        assertEquals(1, actions.size)
+        assertEquals("Fornitore Demo Srl", (actions.first() as RecordedAction.Tap).text)
+    }
+
+    @Test
     fun click_withText_producesTap() {
         val event = AccessibilityEvent.obtain(AccessibilityEvent.TYPE_VIEW_CLICKED).apply {
             packageName = "com.example"
