@@ -50,11 +50,12 @@ object ScreenFingerprint {
     }
 
     /**
-     * Riconduce un fingerprint "quasi duplicato" a uno già visto in sessione, quando la
-     * differenza è solo un piccolo sottoinsieme di chrome transitorio (es. una collapsing
-     * toolbar comparsa/scomparsa per via dello scroll) — senza questo, la stessa schermata
-     * logica produce N fingerprint diversi e frammenta il report in N "schermate" fasulle
-     * (osservato: 3 fingerprint diversi tutti col titolo "Home" nella stessa sessione).
+     * Riconduce un fingerprint "quasi duplicato" a uno già visto in sessione, quando il suo
+     * chrome è un sottoinsieme (in entrambe le direzioni) di quello di un fingerprint noto —
+     * es. una collapsing toolbar comparsa/scomparsa per via dello scroll produce una cattura
+     * parziale, mai un chrome diverso. Senza questo, la stessa schermata logica produce N
+     * fingerprint diversi e frammenta il report in N "schermate" fasulle (osservato: fino a 5
+     * elementi di chrome catturati per una schermata, poi 3, poi 0, sulla stessa visita).
      *
      * Non tocca fingerprint con un tab esplicito diverso (`tab:...`): quello è un cambio di
      * contenuto reale, non chrome transitorio, e deve restare una schermata distinta.
@@ -85,16 +86,22 @@ object ScreenFingerprint {
         return parts[2].split("|").filter { it.isNotBlank() }.toSet()
     }
 
+    /**
+     * `true` se un insieme è sottoinsieme dell'altro (in entrambe le direzioni) — una cattura a
+     * metà transizione produce sempre un *sottoinsieme* del chrome completo, mai un chrome
+     * diverso. Prima si accettava solo una differenza di 1 elemento, insufficiente su un'app
+     * reale (it.nexi.bff/MPS): stessa schermata catturata con chrome a 5, 3 e 0 elementi, dove
+     * ogni insieme più piccolo è un sottoinsieme proprio del precedente — 3 fingerprint invece
+     * di 1. Il sottoinsieme è una generalizzazione stretta della regola precedente (una
+     * differenza di 1 implica sempre un sottoinsieme) e non tocca la regola sui `tab:`.
+     */
     private fun isTransientChromeVariant(candidate: Set<String>, existing: Set<String>): Boolean {
         if (candidate == existing) return true
         val candidateTabs = candidate.filterTo(mutableSetOf()) { it.startsWith("tab:") }
         val existingTabs = existing.filterTo(mutableSetOf()) { it.startsWith("tab:") }
         if (candidateTabs != existingTabs) return false
-        val symmetricDiff = (candidate - existing).size + (existing - candidate).size
-        return symmetricDiff <= MAX_TRANSIENT_CHROME_DIFF
+        return existing.containsAll(candidate) || candidate.containsAll(existing)
     }
-
-    private const val MAX_TRANSIENT_CHROME_DIFF = 1
 
     /**
      * Raccoglie viewId di chrome UI stabile (toolbar, tab, bottom nav) — generico multi-app.

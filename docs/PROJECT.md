@@ -6,7 +6,27 @@
 **Package:** `dev.accessscope.scanner`  
 **Branch principale sviluppo:** `develop`  
 **Branch release stabile:** `main`  
-**Ultimo aggiornamento:** 1 agosto 2026 (piano pre-demo: heading dedotti dal font corretti)
+**Ultimo aggiornamento:** 1 agosto 2026 (piano pre-demo: fingerprint, unione per sottoinsieme)
+
+### Pre-demo — Report dinamico: fingerprint uniti per sottoinsieme, non differenza≤1 (1 agosto 2026)
+
+Stesso test reale su it.nexi.bff/MPS: 23 schermate uniche per 14 titoli reali. `canonicalize`
+univa due fingerprint solo con differenza di chrome-id ≤1 elemento — insufficiente: la stessa
+schermata "REGISTRA NUOVA UTENZA" è stata catturata con 5, poi 3, poi 0 elementi di chrome
+(ogni insieme più piccolo un sottoinsieme proprio del precedente, mai un chrome diverso — la
+raccolta si ferma su `!isVisibleToUser` durante una cattura a metà transizione). La regola a
+differenza≤1 univa solo la coppia più vicina, lasciando comunque 3 fingerprint invece di 1.
+
+- `isTransientChromeVariant`: sostituita la differenza simmetrica (`≤1`) con un controllo di
+  sottoinsieme in entrambe le direzioni — generalizzazione stretta della regola precedente (una
+  differenza di 1 implica sempre un sottoinsieme), non tocca la regola sui `tab:` che tiene
+  separati i cambi di contenuto reali.
+- 2 test nuovi in `ScreenFingerprintCanonicalizeTest.kt` (catena di sottoinsiemi 5→3→0 sul caso
+  reale; chrome disgiunti — caso reale "RUBRICA" — che restano correttamente non uniti). Rimosso
+  il test che assumeva il comportamento precedente (`tooManyChromeDifferences...`), la cui
+  premessa è esattamente quella corretta da questo fix.
+
+Verifica: `./gradlew :app:testDebugUnitTest :app:assembleDebug` verde.
 
 ### Pre-demo — Scanner: heading level dedotti dal font, non da isHeading (1 agosto 2026)
 

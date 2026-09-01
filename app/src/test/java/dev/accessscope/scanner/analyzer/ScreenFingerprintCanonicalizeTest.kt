@@ -56,12 +56,39 @@ class ScreenFingerprintCanonicalizeTest {
     }
 
     @Test
-    fun tooManyChromeDifferences_treatedAsGenuinelyDifferentScreen() {
-        // Più di una differenza di chrome non è più "transitorio", è un layout diverso.
+    fun partialCaptureSubsetOfLargerChrome_merges() {
+        // Regressione reale (it.nexi.bff/MPS): "REGISTRA NUOVA UTENZA" catturata con 5, poi 3,
+        // poi 0 elementi di chrome nella stessa sessione — ogni insieme più piccolo è un
+        // sottoinsieme proprio del precedente (mai un chrome diverso), ma la vecchia regola
+        // (differenza massima di 1 elemento) univa solo la coppia adiacente più vicina,
+        // lasciando comunque 3 fingerprint invece di 1.
         val known = setOf(
-            ScreenFingerprint.formatForTest("com.example.app", "Home", listOf("topbar_toolbar", "bottom_nav")),
+            ScreenFingerprint.formatForTest(
+                "com.example.app",
+                "Home",
+                listOf("action_bar_root", "toolbar", "topbar_icon_left", "topbar_icon_right", "topbar_title"),
+            ),
         )
-        val candidate = ScreenFingerprint.formatForTest("com.example.app", "Home", emptyList())
+        val threeElements = ScreenFingerprint.formatForTest(
+            "com.example.app",
+            "Home",
+            listOf("toolbar", "topbar_icon_right", "topbar_title"),
+        )
+        val noElements = ScreenFingerprint.formatForTest("com.example.app", "Home", emptyList())
+
+        assertEquals(known.first(), ScreenFingerprint.canonicalize(threeElements, known))
+        assertEquals(known.first(), ScreenFingerprint.canonicalize(noElements, known))
+    }
+
+    @Test
+    fun disjointChromeSets_neverMerge() {
+        // Caso reale (RUBRICA su it.nexi.bff/MPS): due catture con chrome completamente
+        // diverso, senza relazione di sottoinsieme — restano schermate distinte piuttosto che
+        // rischiare di unire contenuti davvero diversi.
+        val known = setOf(
+            ScreenFingerprint.formatForTest("com.example.app", "Rubrica", listOf("topbar_search_contact")),
+        )
+        val candidate = ScreenFingerprint.formatForTest("com.example.app", "Rubrica", listOf("toolbar"))
 
         assertEquals(candidate, ScreenFingerprint.canonicalize(candidate, known))
     }
