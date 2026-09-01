@@ -6,7 +6,42 @@
 **Package:** `dev.accessscope.scanner`  
 **Branch principale sviluppo:** `develop`  
 **Branch release stabile:** `main`  
-**Ultimo aggiornamento:** 1 settembre 2026 (Maestro: perché serviva tanto ritocco a mano — scroll multipli persi in export)
+**Ultimo aggiornamento:** 1 settembre 2026 (Riscrittura pipeline Maestro — Fase 1: test di idempotenza sulle fasi condivise)
+
+### Riscrittura pipeline Maestro — Fase 1: idempotenza delle fasi condivise (1 settembre 2026)
+
+Richiesta esplicita dell'utente dopo due bug reali sullo stesso pattern (`dropNoiseScrolls`,
+`ScrollCoalescer`): non più fix caso per caso, riscrivere l'architettura. Mappa completa via 3
+agenti di esplorazione (capture, optimize/sanitizeForPlay, export) — confermato: `optimize()` e
+`sanitizeForPlay()` condividono ~10 delle loro ~20 funzioni `NoiseActionFilter`, ognuna con
+un'assunzione implicita mai scritta ("sono la prima passata") mai verificata.
+
+- **Tentativo iniziale scartato durante l'implementazione**: unificare le fasi condivise in
+  un'unica lista con un ordine comune. Ha rivelato che `optimize()` e `sanitizeForPlay()`
+  eseguono le stesse funzioni in **ordini reciprocamente diversi** oggi — forzare un ordine
+  comune senza saperne il motivo storico avrebbe rischiato un cambio di comportamento
+  silenzioso. Scartato, l'ordine di ciascuna pipeline resta quello di sempre.
+- **Fatto**: entrambe le pipeline riscritte da nesting profondo a catena lineare di `val` (una
+  fase per riga, leggibile dall'alto in basso), con commento `[condivisa]` su ogni fase che gira
+  in entrambe — il rischio "questa gira due volte con vicini diversi" ora è visibile a chi legge,
+  non va più dedotto confrontando due corpi di funzione a mano.
+- **Nuovo `SharedNoiseStageIdempotencyTest.kt`**: verifica meccanicamente, su due fixture
+  modellate sui flussi reali di stanotte (AXA multi-scroll+PIN+popup, foreign-UI/tastiera), che
+  ciascuna delle 6 fasi condivise (`dropForeignUiActions`, `normalizePinOrOtpSlotInputs`,
+  `dropSpuriousRatingAsserts`, `dropGhostTapsAfterScrollOrIme`, `dropNoiseScrolls`,
+  `dropNoiseWaits`) dia lo stesso risultato eseguita una o due volte di fila. Tutte e 6 passano
+  già (il fix di stanotte a `dropNoiseScrolls` era sufficiente) — il valore del test è essere una
+  **guardia permanente**: avrebbe scoperto da solo entrambi i bug di stanotte prima che
+  arrivassero su un flusso reale, e blocca lo stesso pattern in futuro su qualunque fase futura.
+
+Verifica: `./gradlew :app:testDebugUnitTest :app:assembleDebug` verde, nessuna regressione sui
+150 test esistenti (il refactor di questa fase è puramente di leggibilità/osservabilità, zero
+cambi di comportamento).
+
+**Prossime fasi pianificate** (`/Users/davidevisconti/.claude/plans/tingly-bubbling-sprout.md`):
+Fase 2 (un solo controllo "tap rumoroso" invece di 3 copie), Fase 3 (ZeroEditGate impara a
+riconoscere step spariti), Fase 4 (pulizia stato `ActionRecorder`), Fase 5 (precisione export
+`AssertVisible`).
 
 ### Maestro: scroll multipli persi in export — il bug dietro il "ritocco a mano" (1 settembre 2026)
 

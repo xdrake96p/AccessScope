@@ -32,58 +32,41 @@ object FlowOptimizationPipeline {
 
     /**
      * Ottimizza azioni con contesto telemetria/scan.
+     *
+     * Catena lineare (era nesting profondo): ogni riga è una fase, in ordine di esecuzione
+     * dall'alto in basso. Le fasi marcate **[condivisa]** girano anche in [sanitizeForPlay] —
+     * su un `actions.json` già arricchito da questa stessa `optimize()` — e devono restare
+     * sicure da eseguire una seconda volta (vedi `SharedNoiseStageIdempotencyTest.kt`, che
+     * verifica questa proprietà su fixture reali invece di scoprirla di nuovo su un flusso
+     * dell'utente). Le due pipeline **non** condividono lo stesso ordine relativo — non è stato
+     * unificato per non rischiare un cambio di comportamento silenzioso senza saperne il motivo
+     * storico; l'ordine di ciascuna resta quello di sempre.
      */
     fun optimize(actions: List<RecordedAction>, context: OptimizationContext): List<RecordedAction> {
         if (actions.isEmpty()) return actions
         val appId = context.appId.ifBlank {
             actions.firstNotNullOfOrNull { it.packageName.takeIf { it.isNotBlank() } }.orEmpty()
         }
-        val afterNoise = ScrollCoalescer.coalesce(
-            NoiseActionFilter.dropGhostTapsAfterScrollOrIme(
-                NoiseActionFilter.dropFocusTapsBeforeInput(
-                    NoiseActionFilter.dropNoiseTaps(
-                        NoiseActionFilter.dropForeignUiActions(
-                            NoiseActionFilter.dropNoiseScrolls(
-                                NoiseActionFilter.dropSpuriousRatingAsserts(
-                                    NoiseActionFilter.normalizePinOrOtpSlotInputs(
-                                        dedupeTaps(coalesceInputText(actions)),
-                                    ),
-                                ),
-                            ),
-                            appId,
-                        ),
-                    ),
-                ),
-            ),
-        )
+        val afterCoalesceInput = coalesceInputText(actions)
+        val afterDedupeTaps = dedupeTaps(afterCoalesceInput)
+        val afterPinPad = NoiseActionFilter.normalizePinOrOtpSlotInputs(afterDedupeTaps) // [condivisa]
+        val afterRating = NoiseActionFilter.dropSpuriousRatingAsserts(afterPinPad) // [condivisa]
+        val afterNoiseScrolls = NoiseActionFilter.dropNoiseScrolls(afterRating) // [condivisa]
+        val afterForeign = NoiseActionFilter.dropForeignUiActions(afterNoiseScrolls, appId) // [condivisa]
+        val afterNoiseTaps = NoiseActionFilter.dropNoiseTaps(afterForeign)
+        val afterFocusTaps = NoiseActionFilter.dropFocusTapsBeforeInput(afterNoiseTaps)
+        val afterGhost = NoiseActionFilter.dropGhostTapsAfterScrollOrIme(afterFocusTaps) // [condivisa]
+        val afterNoise = ScrollCoalescer.coalesce(afterGhost)
         // Prima dei wait: dismiss alert subito dopo CONTINUA (evita input sotto overlay).
         val ordered = BlockingOverlayOrderHealer.reorder(afterNoise)
         val withOverlayWaits = BlockingOverlayWaitPlanner.enrich(ordered, appId)
-        val cleaned = SelectorRanker.attachChains(
-            FlowLintAutoFix.apply(
-                SelectorNormalizer.normalizeViewIds(
-                    NoiseActionFilter.dropNoiseWaits(
-                        OptionalStepPolicy.apply(
-                            AssertPlanner.enrich(
-                                WaitPlanner.enrich(
-                                    withOverlayWaits,
-                                    appId,
-                                    context.telemetry,
-                                    context.scanIntel,
-                                ),
-                                context.telemetry,
-                            ),
-                            context.telemetry,
-                            context.scanIntel,
-                        ),
-                    ),
-                    appId,
-                ),
-                appId,
-            ),
-            context.scanIntel,
-            context.telemetry,
-        )
+        val withWaits = WaitPlanner.enrich(withOverlayWaits, appId, context.telemetry, context.scanIntel)
+        val withAsserts = AssertPlanner.enrich(withWaits, context.telemetry)
+        val withOptional = OptionalStepPolicy.apply(withAsserts, context.telemetry, context.scanIntel)
+        val afterNoiseWaits = NoiseActionFilter.dropNoiseWaits(withOptional) // [condivisa]
+        val normalized = SelectorNormalizer.normalizeViewIds(afterNoiseWaits, appId)
+        val linted = FlowLintAutoFix.apply(normalized, appId)
+        val cleaned = SelectorRanker.attachChains(linted, context.scanIntel, context.telemetry)
         // Secondo passaggio: wait planner può aver lasciato dismiss dopo nuovi wait.
         return BlockingOverlayOrderHealer.reorder(cleaned)
     }
@@ -92,21 +75,26 @@ object FlowOptimizationPipeline {
      * Sanitize per replay: rimuove solo rumore legacy (SystemUI, progress),
      * **senza** scartare step curati dall’editor (+ wait, hideKeyboard, tap su campi).
      * Riordina anche overlay bloccanti così Play non fallisce su input sotto alert.
+     *
+     * Le fasi marcate **[condivisa]** sono le stesse di [optimize] — qui girano una seconda
+     * volta, dopo che `optimize()` (o una modifica manuale nell'editor) ha già arricchito la
+     * lista con `Wait`/`WaitForAnimation`. Vedi il commento su [optimize] e
+     * `SharedNoiseStageIdempotencyTest.kt`.
      */
     fun sanitizeForPlay(actions: List<RecordedAction>, appId: String): List<RecordedAction> {
         if (actions.isEmpty()) return actions
         val pkg = appId.ifBlank {
             actions.firstNotNullOfOrNull { it.packageName.takeIf { it.isNotBlank() } }.orEmpty()
         }
-        val afterForeign = NoiseActionFilter.dropForeignUiActions(actions, pkg)
-        val afterPinPad = NoiseActionFilter.normalizePinOrOtpSlotInputs(afterForeign)
-        val afterRating = NoiseActionFilter.dropSpuriousRatingAsserts(afterPinPad)
+        val afterForeign = NoiseActionFilter.dropForeignUiActions(actions, pkg) // [condivisa]
+        val afterPinPad = NoiseActionFilter.normalizePinOrOtpSlotInputs(afterForeign) // [condivisa]
+        val afterRating = NoiseActionFilter.dropSpuriousRatingAsserts(afterPinPad) // [condivisa]
         val afterNoiseTaps = NoiseActionFilter.dropPlaybackNoiseTaps(afterRating)
-        val afterGhost = NoiseActionFilter.dropGhostTapsAfterScrollOrIme(afterNoiseTaps)
+        val afterGhost = NoiseActionFilter.dropGhostTapsAfterScrollOrIme(afterNoiseTaps) // [condivisa]
         val afterDupTaps = NoiseActionFilter.dropDuplicateTapsAcrossWaits(afterGhost)
         val afterStructScroll = NoiseActionFilter.dropStructuralScrollUntilVisible(afterDupTaps)
-        val afterNoiseScrolls = NoiseActionFilter.dropNoiseScrolls(afterStructScroll)
-        val afterNoiseWaits = NoiseActionFilter.dropNoiseWaits(afterNoiseScrolls)
+        val afterNoiseScrolls = NoiseActionFilter.dropNoiseScrolls(afterStructScroll) // [condivisa]
+        val afterNoiseWaits = NoiseActionFilter.dropNoiseWaits(afterNoiseScrolls) // [condivisa]
         val ordered = BlockingOverlayOrderHealer.reorder(afterNoiseWaits)
         val withOverlayWaits = BlockingOverlayWaitPlanner.enrich(ordered, pkg)
         val withWaitTargets = WaitPlanner.attachBlindWaitsToNextTarget(withOverlayWaits, pkg)
