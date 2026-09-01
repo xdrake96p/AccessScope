@@ -6,7 +6,30 @@
 **Package:** `dev.accessscope.scanner`  
 **Branch principale sviluppo:** `develop`  
 **Branch release stabile:** `main`  
-**Ultimo aggiornamento:** 1 agosto 2026 (piano pre-demo: fingerprint, unione per sottoinsieme)
+**Ultimo aggiornamento:** 1 agosto 2026 (piano pre-demo: Maestro, l'hint non finisce più in inputText)
+
+### Pre-demo — Maestro: l'hint del campo non finisce più in `inputText` (1 agosto 2026)
+
+Il bug più grave del giro: il flusso reale registrato su it.nexi.bff/MPS conteneva
+`- inputText: "IBAN (obbligatorio)"` su un campo **mai toccato dall'utente** — l'esatto opposto
+dell'obiettivo "zero-edit". Causa: `TextView.getTextForAccessibility()` di AOSP ricade sull'hint
+quando il testo è vuoto, e il focus su un campo ancora vuoto (`TYPE_VIEW_FOCUSED`) passava quel
+valore ad `ActionRecorder.updatePendingText` come se fosse testo digitato — `hintText` non era
+mai letto in tutto il modulo `recorder/`.
+
+- Estratta la decisione in una funzione pura `ActionRecorder.resolveTypedText(eventText,
+  nodeText, hintText)`: un testo che coincide con l'hint (dal nodo o dall'evento) è trattato come
+  campo vuoto, ricadendo nel path "flush pending" già esistente. Limite noto e accettato,
+  documentato in KDoc: un testo digitato che coincide *alla lettera* con l'hint viene anch'esso
+  scartato — impossibile distinguere i due casi con i soli campi `text`/`hintText`, e digitare il
+  placeholder alla lettera è comunque irrealistico in pratica.
+- 5 test nuovi in `ActionRecorderTest.kt`, tutti sulla funzione pura (niente
+  `AccessibilityNodeInfo` reale/`ShadowAccessibilityRecord.setSourceNode`: il primo tentativo con
+  l'iniezione di un nodo reale ha inquinato l'ordine di esecuzione di test successivi non
+  correlati tramite lo stato statico di `ShadowAccessibilityNodeInfo` — la funzione pura evita il
+  problema alla radice ed è comunque la copertura più precisa per questa logica).
+
+Verifica: `./gradlew :app:testDebugUnitTest :app:assembleDebug` verde.
 
 ### Pre-demo — Report dinamico: fingerprint uniti per sottoinsieme, non differenza≤1 (1 agosto 2026)
 

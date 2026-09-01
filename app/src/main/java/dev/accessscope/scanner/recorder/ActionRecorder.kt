@@ -301,6 +301,31 @@ class ActionRecorder {
     }
 
     /**
+     * Sceglie il testo davvero digitato, escludendo l'hint quando trapela come testo del nodo.
+     *
+     * Un campo `EditText` vuoto riporta il proprio hint come testo per l'accessibilità
+     * (`TextView.getTextForAccessibility()` di AOSP ricade su `mHint` quando `mText` è vuoto), e
+     * il focus su un campo ancora vuoto passa da qui (branch `TYPE_VIEW_FOCUSED`). Senza questo
+     * filtro il placeholder finisce dentro un `inputText` esportato — bug reale trovato su
+     * it.nexi.bff/MPS: `- inputText: "IBAN (obbligatorio)"` su un campo mai toccato.
+     *
+     * Limite noto e accettato: un testo digitato che coincide *alla lettera* con l'hint viene
+     * anch'esso trattato come vuoto — non c'è modo affidabile di distinguere i due casi con i
+     * soli campi `text`/`hintText`, e digitare il placeholder alla lettera è comunque
+     * praticamente impossibile in pratica.
+     *
+     * @param eventText Testo portato dall'[AccessibilityEvent] stesso (se presente).
+     * @param nodeText Testo del nodo sorgente.
+     * @param hintText Hint del nodo sorgente.
+     * @return Testo digitato, o `null` se il campo è vuoto (testo assente o coincidente con l'hint).
+     */
+    internal fun resolveTypedText(eventText: String?, nodeText: String?, hintText: String?): String? {
+        val hint = hintText?.trim()?.takeIf { it.isNotBlank() }
+        val text = eventText?.takeIf { it.isNotBlank() } ?: nodeText?.takeIf { it.isNotBlank() }
+        return text?.takeIf { hint == null || it.trim() != hint }
+    }
+
+    /**
      * Aggiorna il buffer testo; se cambia campo, flush del precedente (PIN + conferma).
      *
      * @return Azioni da appendere (0 o 1 InputText flushato).
@@ -314,8 +339,11 @@ class ActionRecorder {
         val resolved = resolveNode(event, rootProvider)
         val node = resolved.node
         val isPassword = node?.isPassword == true
-        val text = event.text?.joinToString("")?.takeIf { it.isNotBlank() }
-            ?: node?.text?.toString()?.takeIf { it.isNotBlank() }
+        val text = resolveTypedText(
+            eventText = event.text?.joinToString(""),
+            nodeText = node?.text?.toString(),
+            hintText = node?.hintText?.toString(),
+        )
         val viewId = node?.viewIdResourceName?.takeIf { it.isNotBlank() }
         resolved.recycleIfNeeded()
         // edit1…edit6 sono EditText reali (OTP SMS / PIN): vanno registrati come inputText.

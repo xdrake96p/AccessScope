@@ -2,6 +2,7 @@ package dev.accessscope.scanner.recorder
 
 import android.view.accessibility.AccessibilityEvent
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -43,6 +44,66 @@ class ActionRecorderTest {
         assertEquals(1, flushed.size)
         val input = flushed.first() as RecordedAction.InputText
         assertEquals("user@test.com", input.text)
+    }
+
+    // resolveTypedText è la funzione pura estratta dal fix hint-leak (bug reale su
+    // it.nexi.bff/MPS: un campo IBAN mai toccato produceva "- inputText: \"IBAN
+    // (obbligatorio)\"" — l'hint, non un testo digitato). Testata qui direttamente, senza
+    // passare da AccessibilityNodeInfo/AccessibilityEvent reali: più precisa e non soggetta
+    // allo stato statico di ShadowAccessibilityNodeInfo tra i test.
+
+    @Test
+    fun resolveTypedText_nodeTextEqualsHint_treatedAsEmpty() {
+        // Campo vuoto: AOSP riporta l'hint come testo del nodo (focus su campo mai toccato).
+        val result = recorder.resolveTypedText(
+            eventText = null,
+            nodeText = "IBAN (obbligatorio)",
+            hintText = "IBAN (obbligatorio)",
+        )
+        assertNull(result)
+    }
+
+    @Test
+    fun resolveTypedText_realTypedText_returnsTypedTextNotHint() {
+        val result = recorder.resolveTypedText(
+            eventText = null,
+            nodeText = "IT60X0542811101000000123456",
+            hintText = "IBAN (obbligatorio)",
+        )
+        assertEquals("IT60X0542811101000000123456", result)
+    }
+
+    @Test
+    fun resolveTypedText_eventTextEqualsHint_alsoTreatedAsEmpty() {
+        // L'evento stesso può portare l'hint (event.text) quando il campo torna vuoto, non
+        // solo il nodo — stessa protezione su entrambe le sorgenti.
+        val result = recorder.resolveTypedText(
+            eventText = "IBAN (obbligatorio)",
+            nodeText = null,
+            hintText = "IBAN (obbligatorio)",
+        )
+        assertNull(result)
+    }
+
+    @Test
+    fun resolveTypedText_typedTextCoincidingWithHint_treatedAsEmpty_acceptedTradeoff() {
+        // Limite noto e accettato: non c'è modo affidabile di distinguere "il campo è ancora
+        // vuoto e mostra l'hint" da "l'utente ha digitato per davvero lo stesso testo
+        // dell'hint" con i soli campi text/hintText — digitare il placeholder alla lettera è
+        // comunque praticamente impossibile in pratica. Preferibile non registrare, piuttosto
+        // che rischiare di nuovo il leak.
+        val result = recorder.resolveTypedText(
+            eventText = "IBAN (obbligatorio)",
+            nodeText = "IBAN (obbligatorio)",
+            hintText = "IBAN (obbligatorio)",
+        )
+        assertNull(result)
+    }
+
+    @Test
+    fun resolveTypedText_noHint_returnsTextUnchanged() {
+        val result = recorder.resolveTypedText(eventText = null, nodeText = "user@test.com", hintText = null)
+        assertEquals("user@test.com", result)
     }
 
     @Test
