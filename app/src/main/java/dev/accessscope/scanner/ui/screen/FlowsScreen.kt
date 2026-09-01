@@ -575,7 +575,22 @@ fun FlowsScreen(
                 ) { Text("Salva e Play") }
             },
             dismissButton = {
-                TextButton(onClick = { vaultPromptFlow = null }) { Text("Annulla") }
+                Row {
+                    // Play senza credenziali: sicuro solo da stasera — FlowPlayer non salta più
+                    // il SET_TEXT in silenzio su ${PIN}/${PASSWORD} non risolti, lo annota come
+                    // nota CI nel messaggio finale ("· N note CI"). Prima di questo fix l'unica
+                    // via era "Salva e Play" — un blocco vero, senza alternativa.
+                    TextButton(
+                        onClick = {
+                            val clear = vaultPromptClear
+                            vaultPromptFlow = null
+                            app.startFlowPlayback(flow, clearState = clear)?.let { err ->
+                                Toast.makeText(context, err, Toast.LENGTH_LONG).show()
+                            }
+                        },
+                    ) { Text("Play senza credenziali") }
+                    TextButton(onClick = { vaultPromptFlow = null }) { Text("Annulla") }
+                }
             },
         )
     }

@@ -6,7 +6,20 @@
 **Package:** `dev.accessscope.scanner`  
 **Branch principale sviluppo:** `develop`  
 **Branch release stabile:** `main`  
-**Ultimo aggiornamento:** 1 agosto 2026 (piano pre-demo: playback in-app, verde annotato con note CI)
+**Ultimo aggiornamento:** 1 agosto 2026 (piano pre-demo: pulsante "Play senza credenziali")
+
+### Pre-demo — UI: "Play senza credenziali" (1 agosto 2026)
+
+Scoperto in demo: il dialog credenziali prima del Play (`FlowsScreen.kt`, quando il flusso usa
+`${PIN}`/`${PASSWORD}` e il vault è vuoto) era un blocco vero — "Salva e Play" o "Annulla",
+nessuna via per riprodurre il flusso senza inserire credenziali reali.
+
+Con il fix di stasera (playback onesto, blocco precedente) è ormai sicuro farlo: `FlowPlayer`
+non salta più il `SET_TEXT` in silenzio, lo annota come nota CI nel messaggio finale. Aggiunto
+un terzo pulsante "Play senza credenziali" nel dialog, che chiama `startFlowPlayback` senza
+salvare nulla nel vault — il playback prosegue e il risultato mostra `· N note CI`.
+
+Verifica: `./gradlew :app:testDebugUnitTest :app:assembleDebug` verde.
 
 ### Pre-demo — Esecuzione: il playback non mente più, verde annotato con note CI (1 agosto 2026)
 
