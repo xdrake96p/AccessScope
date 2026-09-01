@@ -29,7 +29,6 @@ object MaestroSelectorHeuristics {
         "input",
         "textfield",
         "search",
-        "pincode",
         "pin_code",
         "passcode",
         "otp",

@@ -10,6 +10,7 @@ import android.content.Intent
 import android.graphics.Path
 import android.os.Bundle
 import android.view.accessibility.AccessibilityNodeInfo
+import dev.accessscope.scanner.recorder.capture.FieldInputTargetResolver
 import dev.accessscope.scanner.recorder.model.PlayOutcome
 import dev.accessscope.scanner.recorder.model.SelectorCandidate
 import dev.accessscope.scanner.recorder.model.SelectorWin
@@ -439,6 +440,7 @@ class FlowPlayer(
             if (node != null) {
                 try {
                     performTapOnNode(svc, probe, node)
+                    recoverFromAccidentalPickerOverlay(svc, action)
                     if (ci > 0) {
                         selectorWins += SelectorWin(
                             stepIndex = currentStepIndex,
@@ -685,44 +687,109 @@ class FlowPlayer(
         }
     }
 
+    private suspend fun recoverFromAccidentalPickerOverlay(
+        svc: AccessibilityService,
+        action: RecordedAction.Tap,
+    ) {
+        val label = action.text ?: return
+        if (!FieldInputTargetResolver.looksLikeFieldLabel(label)) return
+        val roots = collectRoots(svc)
+        try {
+            val overlayOpen = roots.any { FieldInputTargetResolver.isSelectionPickerOverlay(it) }
+            if (!overlayOpen) return
+        } finally {
+            roots.forEach { it.recycle() }
+        }
+        AppFileLogger.info("FlowPlayer", "field_picker_overlay_recovery label=$label")
+        svc.performGlobalAction(AccessibilityService.GLOBAL_ACTION_BACK)
+        delay(350)
+        val rootsAfter = collectRoots(svc)
+        try {
+            for (root in rootsAfter) {
+                findEditableByHint(root, label)?.let { edit ->
+                    try {
+                        edit.performAction(AccessibilityNodeInfo.ACTION_FOCUS)
+                        FieldInputTargetResolver.tapBoundsLeftOfCenter(edit)?.let { (x, y) ->
+                            val metrics = context.resources.displayMetrics
+                            gestureTap(
+                                svc,
+                                (x / metrics.widthPixels) * 100f,
+                                (y / metrics.heightPixels) * 100f,
+                                null,
+                                longPress = false,
+                            )
+                        }
+                    } finally {
+                        edit.recycle()
+                    }
+                    return
+                }
+            }
+        } finally {
+            rootsAfter.forEach { it.recycle() }
+        }
+    }
+
     private suspend fun performTapOnNode(
         svc: AccessibilityService,
         action: RecordedAction.Tap,
         node: AccessibilityNodeInfo,
     ) {
-        val vid = node.viewIdResourceName
-        val ambiguous = MaestroSelectorHeuristics.isAmbiguousSharedViewId(vid)
-        val labelLeaf = !action.text.isNullOrBlank() &&
-            (
-                node.text?.toString()?.equals(action.text, ignoreCase = true) == true ||
-                    node.contentDescription?.toString()?.equals(action.text, ignoreCase = true) == true
+        val resolved = FieldInputTargetResolver.resolveFieldTarget(node)
+        val target = resolved.node
+        try {
+            if (resolved.redirectedFromIcon) {
+                AppFileLogger.info(
+                    "FlowPlayer",
+                    "field_icon_redirect_play icon=${node.viewIdResourceName} edit=${target.viewIdResourceName}",
                 )
-        val preferGesture = ambiguous || (labelLeaf && !node.isClickable)
-        // #region agent log
-        DebugSessionLog.log(
-            "F2",
-            "FlowPlayer.tap",
-            if (preferGesture) "gesture_on_label" else "action_click",
-            mapOf(
-                "text" to action.text,
-                "nodeViewId" to vid?.substringAfterLast('/'),
-                "ambiguous" to ambiguous,
-                "labelLeaf" to labelLeaf,
-                "clickable" to node.isClickable,
-            ),
-        )
-        // #endregion
-        val clicked = if (!preferGesture) {
-            node.performAction(AccessibilityNodeInfo.ACTION_CLICK)
-        } else {
-            false
-        }
-        if (!clicked) {
-            clickPointFallback(svc, null, null, node)
-            noteDivergence(
-                "tap eseguito via gesture su coordinate (${action.viewId ?: action.text ?: "?"}) invece di " +
-                    "ACTION_CLICK → il CLI userebbe tapOn sul selettore",
+                if (!target.performAction(AccessibilityNodeInfo.ACTION_FOCUS)) {
+                    target.performAction(AccessibilityNodeInfo.ACTION_CLICK)
+                }
+                FieldInputTargetResolver.tapBoundsLeftOfCenter(target)?.let { (x, y) ->
+                    val metrics = context.resources.displayMetrics
+                    val px = (x / metrics.widthPixels) * 100f
+                    val py = (y / metrics.heightPixels) * 100f
+                    gestureTap(svc, px, py, null, longPress = false)
+                }
+                return
+            }
+            val vid = target.viewIdResourceName
+            val ambiguous = MaestroSelectorHeuristics.isAmbiguousSharedViewId(vid)
+            val labelLeaf = !action.text.isNullOrBlank() &&
+                (
+                    target.text?.toString()?.equals(action.text, ignoreCase = true) == true ||
+                        target.contentDescription?.toString()?.equals(action.text, ignoreCase = true) == true
+                    )
+            val preferGesture = ambiguous || (labelLeaf && !target.isClickable)
+            // #region agent log
+            DebugSessionLog.log(
+                "F2",
+                "FlowPlayer.tap",
+                if (preferGesture) "gesture_on_label" else "action_click",
+                mapOf(
+                    "text" to action.text,
+                    "nodeViewId" to vid?.substringAfterLast('/'),
+                    "ambiguous" to ambiguous,
+                    "labelLeaf" to labelLeaf,
+                    "clickable" to target.isClickable,
+                ),
             )
+            // #endregion
+            val clicked = if (!preferGesture) {
+                target.performAction(AccessibilityNodeInfo.ACTION_CLICK)
+            } else {
+                false
+            }
+            if (!clicked) {
+                clickPointFallback(svc, null, null, target)
+                noteDivergence(
+                    "tap eseguito via gesture su coordinate (${action.viewId ?: action.text ?: "?"}) invece di " +
+                        "ACTION_CLICK → il CLI userebbe tapOn sul selettore",
+                )
+            }
+        } finally {
+            target.recycle()
         }
     }
 
@@ -1433,12 +1500,16 @@ class FlowPlayer(
                     for (candidate in candidates.distinct()) {
                         val byFull = root.findAccessibilityNodeInfosByViewId(candidate)
                         if (!byFull.isNullOrEmpty()) {
-                            val keep = AccessibilityNodeInfo.obtain(byFull.first())
+                            val resolved = FieldInputTargetResolver.resolveFieldTarget(byFull.first())
                             byFull.forEach { it.recycle() }
-                            return keep
+                            return resolved.node
                         }
                     }
-                    findByShortId(root, shortId)?.let { return it }
+                    findByShortId(root, shortId)?.let { found ->
+                        val resolved = FieldInputTargetResolver.resolveFieldTarget(found)
+                        found.recycle()
+                        return resolved.node
+                    }
                 }
                 if (!text.isNullOrBlank()) {
                     findClickableByLabel(root, text)?.let { return it }
@@ -1513,6 +1584,7 @@ class FlowPlayer(
      * Trova nodo cliccabile per testo o contentDescription (bottoni Material/Compose).
      */
     private fun findClickableByLabel(root: AccessibilityNodeInfo, label: String): AccessibilityNodeInfo? {
+        findEditableByHint(root, label)?.let { return it }
         val list = root.findAccessibilityNodeInfosByText(label)
         try {
             val exact = list?.firstOrNull { node ->
@@ -1548,6 +1620,25 @@ class FlowPlayer(
         for (i in 0 until node.childCount) {
             val child = node.getChild(i) ?: continue
             val found = findLabelInTree(child, label)
+            child.recycle()
+            if (found != null) return found
+        }
+        return null
+    }
+
+    private fun findEditableByHint(root: AccessibilityNodeInfo, label: String): AccessibilityNodeInfo? {
+        if (root.isEditable) {
+            val hint = root.hintText?.toString().orEmpty()
+            val text = root.text?.toString().orEmpty()
+            if (hint.contains(label, ignoreCase = true) || label.contains(hint, ignoreCase = true) ||
+                text.contains(label, ignoreCase = true) || label.contains(text, ignoreCase = true)
+            ) {
+                return AccessibilityNodeInfo.obtain(root)
+            }
+        }
+        for (i in 0 until root.childCount) {
+            val child = root.getChild(i) ?: continue
+            val found = findEditableByHint(child, label)
             child.recycle()
             if (found != null) return found
         }

@@ -7,6 +7,7 @@ import android.graphics.Rect
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
 import dev.accessscope.scanner.recorder.capture.AlertOverlayResolver
+import dev.accessscope.scanner.recorder.capture.FieldInputTargetResolver
 import dev.accessscope.scanner.recorder.capture.TapIdentityResolver
 import dev.accessscope.scanner.recorder.model.SelectorCandidate
 import dev.accessscope.scanner.recorder.model.StepExecutionMode
@@ -495,9 +496,22 @@ class ActionRecorder {
             return null
         }
 
-        val identity = TapIdentityResolver.resolve(node, event)
+        val iconRedirectEdit = if (node != null && FieldInputTargetResolver.isFieldAccessoryIcon(node)) {
+            FieldInputTargetResolver.findSiblingEditable(node)?.also { edit ->
+                AppFileLogger.info(
+                    "ActionRecorder",
+                    "field_icon_redirect_rec icon=${node.viewIdResourceName} edit=${edit.viewIdResourceName}",
+                )
+            }
+        } else {
+            null
+        }
+        val identity = TapIdentityResolver.resolve(iconRedirectEdit ?: node, event)
         val viewId = identity.viewId
-        val text = identity.text ?: eventLabel
+        var text = identity.text ?: eventLabel
+        if (iconRedirectEdit != null) {
+            FieldInputTargetResolver.fieldLabelForEditable(iconRedirectEdit)?.let { text = it }
+        }
         val cd = identity.contentDescription
 
         if (MaestroSelectorHeuristics.isSystemChromeTap(packageName, viewId, text, cd) ||
@@ -515,7 +529,12 @@ class ActionRecorder {
 
         var px: Float? = null
         var py: Float? = null
-        if (node != null && screenWidthPx > 0 && screenHeightPx > 0) {
+        if (iconRedirectEdit != null && screenWidthPx > 0 && screenHeightPx > 0) {
+            FieldInputTargetResolver.tapBoundsLeftOfCenter(iconRedirectEdit)?.let { (x, y) ->
+                px = ((x / screenWidthPx) * 100f).coerceIn(0f, 100f)
+                py = ((y / screenHeightPx) * 100f).coerceIn(0f, 100f)
+            }
+        } else if (node != null && screenWidthPx > 0 && screenHeightPx > 0) {
             val bounds = Rect()
             node.getBoundsInScreen(bounds)
             if (!bounds.isEmpty) {
@@ -524,11 +543,12 @@ class ActionRecorder {
             }
         }
         identity.clickableBounds?.let { b ->
-            if (screenWidthPx > 0 && screenHeightPx > 0 && !b.isEmpty) {
+            if (iconRedirectEdit == null && screenWidthPx > 0 && screenHeightPx > 0 && !b.isEmpty) {
                 px = ((b.centerX().toFloat() / screenWidthPx) * 100f).coerceIn(0f, 100f)
                 py = ((b.centerY().toFloat() / screenHeightPx) * 100f).coerceIn(0f, 100f)
             }
         }
+        iconRedirectEdit?.recycle()
         resolved.recycleIfNeeded()
 
         val optional = MaestroSelectorHeuristics.isPopupDismissLabel(text ?: cd ?: eventLabel)
