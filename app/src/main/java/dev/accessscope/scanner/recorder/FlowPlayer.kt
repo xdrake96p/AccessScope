@@ -1000,20 +1000,44 @@ class FlowPlayer(
 
     /**
      * Scroll ripetuti finché il target è visibile o timeout.
+     *
+     * Bug reale osservato su un flusso AXA registrato: la direzione salvata nello YAML (l'ultima
+     * scroll del run collassato da `ScrollCoalescer` in fase di registrazione) può non essere
+     * quella che serve a raggiungere il target da uno stato fresco dell'app — es. l'utente aveva
+     * corretto una sovra-scrollata durante la registrazione, ma da `launchApp` la lista parte
+     * già in cima e la correzione registrata (UP) non porta a nulla. Prima, in quel caso, il
+     * player martellava la stessa direzione fallimentare (`scroll_noop` ogni giro) per l'intero
+     * timeout — un errore bloccante che interrompeva tutto il resto del flusso.
      */
     private suspend fun scrollUntilVisible(action: RecordedAction.ScrollUntilVisible) {
         if (action.visibleId.isNullOrBlank() && action.visibleText.isNullOrBlank()) {
             error("scrollUntilVisible senza selettore")
         }
         val deadline = System.currentTimeMillis() + action.timeoutMs
+        var direction = action.direction
+        var noopStreak = 0
+        var flipped = false
         while (System.currentTimeMillis() < deadline) {
             val svc = service() ?: error("Servizio accessibilità non collegato")
             val node = findNode(svc, action.visibleId, action.visibleText, null)
             if (node != null) {
                 node.recycle()
+                if (flipped) {
+                    noteDivergence(
+                        "scrollUntilVisible su ${action.visibleId ?: action.visibleText} ha invertito " +
+                            "la direzione registrata (${action.direction}→$direction) per trovare il " +
+                            "target → il CLI userebbe solo la direzione dello YAML e potrebbe fallire",
+                    )
+                }
                 return
             }
-            scroll(action.packageName, action.direction)
+            val scrolled = scroll(action.packageName, direction)
+            noopStreak = if (scrolled) 0 else noopStreak + 1
+            if (noopStreak >= SCROLL_NOOP_FLIP_THRESHOLD) {
+                direction = oppositeScrollDirection(direction)
+                noopStreak = 0
+                flipped = true
+            }
             delay(400)
         }
         error(
@@ -1332,7 +1356,8 @@ class FlowPlayer(
         gestureTap(svc, xPct, yPct, null, longPress = false)
     }
 
-    private fun scroll(packageName: String, direction: ScrollDirection = ScrollDirection.DOWN) {
+    /** @return `true` se lo scroll ha avuto effetto, `false` se noop (nulla da scrollare in quella direzione). */
+    private fun scroll(packageName: String, direction: ScrollDirection = ScrollDirection.DOWN): Boolean {
         val svc = service() ?: error("Servizio accessibilità non collegato")
         val root = svc.rootInActiveWindow ?: error("Nessuna finestra attiva")
         try {
@@ -1343,10 +1368,12 @@ class FlowPlayer(
                 ScrollDirection.DOWN, ScrollDirection.RIGHT ->
                     AccessibilityNodeInfo.ACTION_SCROLL_FORWARD
             }
-            if (scrollable == null || !scrollable.performAction(actionId)) {
+            val scrolled = scrollable != null && scrollable.performAction(actionId)
+            if (!scrolled) {
                 AppFileLogger.info("FlowPlayer", "scroll_noop pkg=$packageName dir=$direction")
             }
             scrollable?.recycle()
+            return scrolled
         } finally {
             root.recycle()
         }
@@ -1717,5 +1744,15 @@ class FlowPlayer(
         private const val OPTIONAL_TAP_FIND_TIMEOUT_MS = 1_200L
         /** Timeout più lungo per campi post-loader (PIN dopo CONTINUA). */
         private const val INPUT_FIND_TIMEOUT_MS = 15_000L
+        /** Scroll consecutivi senza effetto prima di provare la direzione opposta. */
+        private const val SCROLL_NOOP_FLIP_THRESHOLD = 2
+
+        /** Direzione opposta sullo stesso asse (`UP`↔`DOWN`, `LEFT`↔`RIGHT`). */
+        internal fun oppositeScrollDirection(direction: ScrollDirection): ScrollDirection = when (direction) {
+            ScrollDirection.UP -> ScrollDirection.DOWN
+            ScrollDirection.DOWN -> ScrollDirection.UP
+            ScrollDirection.LEFT -> ScrollDirection.RIGHT
+            ScrollDirection.RIGHT -> ScrollDirection.LEFT
+        }
     }
 }

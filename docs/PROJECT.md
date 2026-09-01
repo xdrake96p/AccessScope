@@ -6,7 +6,42 @@
 **Package:** `dev.accessscope.scanner`  
 **Branch principale sviluppo:** `develop`  
 **Branch release stabile:** `main`  
-**Ultimo aggiornamento:** 1 agosto 2026 (piano pre-demo: pulsante "Play senza credenziali")
+**Ultimo aggiornamento:** 1 settembre 2026 (Maestro: perché il replay saltava i passaggi — scroll bidirezionale + soglia dedup)
+
+### Maestro: replay che si fermava a metà — diagnosi da device reale + fix (1 settembre 2026)
+
+Segnalazione utente: "la replica dei test Maestro salta dei passaggi". Recuperati da un flusso
+AXA registrato (`45b161e4`, 48-51 step) `actions.json`, lo YAML esportato e **il logcat di 6
+tentativi di Play reali**. Prova diretta, non un'ipotesi: in **5 tentativi su 6** il player
+entra in un loop di `scroll_noop` (~40 volte, ogni ~0.45s) su uno `scrollUntilVisible`, poi
+timeout, poi `step_fail` — un errore bloccante che interrompe l'intero flusso. Tutto ciò che
+segue quello step non viene mai eseguito: è questo che si percepisce come "salta dei passaggi",
+non una perdita di singoli step sparsi.
+
+- **`FlowPlayer.scrollUntilVisible`**: la direzione salvata nello YAML (l'ultima scroll del run
+  collassato da `ScrollCoalescer` in registrazione) può non essere quella che serve a raggiungere
+  il target da uno stato fresco dell'app — es. l'utente aveva corretto una sovra-scrollata
+  durante la registrazione, ma da `launchApp` la lista parte già in cima e quella correzione (UP)
+  non porta a nulla in replay. Ora: dopo 2 `scroll_noop` consecutivi, la direzione si inverte
+  automaticamente invece di martellare quella fallimentare fino al timeout. Se serve invertire,
+  viene registrata una nota CI (`PlayOutcome.divergences`) — il CLI reale userebbe solo la
+  direzione dello YAML e potrebbe fallire dove il Play in-app si è auto-corretto.
+- **`NoiseActionFilter.dropDuplicateTapsAcrossWaits`**: rimuoveva due tap con lo stesso testo
+  separati solo da wait, **senza alcun limite di tempo** — sui dati reali i doppi tap umani
+  genuini erano tutti a 0.8–1.8s, ma senza un tetto la stessa regola avrebbe unito erroneamente
+  due tap sullo stesso testo separati da un caricamento lento di decine di secondi. Aggiunto un
+  tetto di 4s (`DUPLICATE_TAP_MAX_GAP_MS`).
+- Non toccato: perché la direzione sbagliata viene registrata in origine (`ScrollCoalescer`) — il
+  fix a runtime rende il problema irrilevante a prescindere; un secondo fallimento osservato una
+  sola volta (`Tap non trovato text=Le mie garanzie`, tab di navigazione senza `viewId`) — dati
+  insufficienti per una correzione mirata, segnalato come rischio noto.
+- Test nuovi: `FlowPlayerScrollDirectionTest.kt` (funzione pura `oppositeScrollDirection`, dato
+  che `FlowPlayer` richiede un `AccessibilityService` live non testabile su JVM); 2 test aggiunti
+  a `NoiseActionFilterGhostTest.kt` (gap reale osservato → merge invariato; gap oltre soglia →
+  entrambi i tap mantenuti).
+
+Verifica: `./gradlew :app:testDebugUnitTest :app:assembleDebug` verde. Verifica reale sul device
+in corso (reinstall + replay dello stesso flusso AXA).
 
 ### Pre-demo — UI: "Play senza credenziali" (1 agosto 2026)
 

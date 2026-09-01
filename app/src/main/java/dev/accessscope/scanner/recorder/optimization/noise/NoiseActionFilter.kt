@@ -242,9 +242,18 @@ object NoiseActionFilter {
             }
         }
 
+    /** Tetto massimo tra due tap "duplicati" perché considerati lo stesso doppio tap umano. */
+    private const val DUPLICATE_TAP_MAX_GAP_MS = 4_000L
+
     /**
      * Collassa tap identici (stesso testo/id) separati solo da Wait / HideKeyboard.
      * Evita doppio tap accordion da a11y duplicati.
+     *
+     * Limitato a [DUPLICATE_TAP_MAX_GAP_MS]: senza un tetto, due tap sullo stesso testo separati
+     * da un caricamento lento di decine di secondi verrebbero uniti allo stesso modo di un vero
+     * doppio tap umano — un rischio strutturale non ancora osservato ma plausibile. Sui dati
+     * reali che hanno motivato questa funzione (flusso AXA registrato) i doppi tap genuini erano
+     * tutti a 0.8–1.8s di distanza, ampiamente sotto la soglia.
      */
     fun dropDuplicateTapsAcrossWaits(actions: List<RecordedAction>): List<RecordedAction> {
         if (actions.size < 2) return actions
@@ -255,7 +264,8 @@ object NoiseActionFilter {
                 if (lastTapIdx >= 0) {
                     val prev = out[lastTapIdx] as RecordedAction.Tap
                     val onlyWaitsBetween = out.subList(lastTapIdx + 1, out.size).all { isWaitLike(it) }
-                    if (onlyWaitsBetween && sameLogicalTap(prev, action)) {
+                    val withinGap = action.timestampMs - prev.timestampMs <= DUPLICATE_TAP_MAX_GAP_MS
+                    if (onlyWaitsBetween && withinGap && sameLogicalTap(prev, action)) {
                         continue
                     }
                 }
